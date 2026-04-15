@@ -13,14 +13,12 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
   const [isDrawing, setIsDrawing] = useState(false);
   const [prize, setPrize] = useState<number>(0);
 
-  // Simulate prize result (in production, this reads from the ticket PDA after VRF)
   useEffect(() => {
     const prizes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 10, 0, 0, 0, 0, 0, 0, 0, 0, 25, 0, 0, 50];
     const idx = slotNumber % prizes.length;
     setPrize(prizes[idx]);
   }, [slotNumber]);
 
-  // Initialize gold scratch overlay
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -28,48 +26,46 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Gold gradient scratch layer
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    gradient.addColorStop(0, "#C9A84C");
-    gradient.addColorStop(0.5, "#F7D774");
-    gradient.addColorStop(1, "#C9A84C");
+    gradient.addColorStop(0, "#f97316");
+    gradient.addColorStop(0.5, "#fb923c");
+    gradient.addColorStop(1, "#f97316");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // "SCRATCH HERE" text
-    ctx.font = "bold 20px 'Manrope', sans-serif";
-    ctx.fillStyle = "rgba(5, 8, 15, 0.5)";
+    // Pattern overlay
+    ctx.fillStyle = "rgba(0,0,0,0.08)";
+    for (let x = 0; x < canvas.width; x += 8) {
+      for (let y = 0; y < canvas.height; y += 8) {
+        if ((x + y) % 16 === 0) ctx.fillRect(x, y, 4, 4);
+      }
+    }
+
+    ctx.font = "600 18px 'Inter', sans-serif";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
     ctx.textAlign = "center";
-    ctx.fillText("SCRATCH HERE", canvas.width / 2, canvas.height / 2 + 7);
+    ctx.fillText("SCRATCH TO REVEAL", canvas.width / 2, canvas.height / 2 + 6);
   }, []);
 
   const scratch = useCallback(
     (clientX: number, clientY: number) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-
       const rect = canvas.getBoundingClientRect();
       const x = clientX - rect.left;
       const y = clientY - rect.top;
-
       ctx.globalCompositeOperation = "destination-out";
       ctx.beginPath();
       ctx.arc(x, y, 25, 0, Math.PI * 2);
       ctx.fill();
-
-      // Check how much is scratched
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       let transparent = 0;
       for (let i = 3; i < imageData.data.length; i += 4) {
         if (imageData.data[i] === 0) transparent++;
       }
-      const total = imageData.data.length / 4;
-      if (transparent / total > 0.5) {
-        setIsScratched(true);
-      }
+      if (transparent / (imageData.data.length / 4) > 0.5) setIsScratched(true);
     },
     []
   );
@@ -80,45 +76,37 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
     if (isDrawing) scratch(e.clientX, e.clientY);
   };
   const handleTouchMove = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    scratch(touch.clientX, touch.clientY);
+    scratch(e.touches[0].clientX, e.touches[0].clientY);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-      <div className="bg-bg border border-white/10 rounded-2xl p-6 max-w-sm w-full">
-        <h3 className="font-heading font-bold text-2xl text-center mb-4">
-          Scratch & Reveal
-        </h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4">
+      <div className="glass rounded-3xl p-8 max-w-sm w-full border border-white/[0.08] shadow-2xl">
+        <div className="text-center mb-6">
+          <h3 className="font-bold text-2xl tracking-tight mb-1">Scratch & Reveal</h3>
+          <p className="text-xs text-muted/40 font-mono">Ticket #{slotNumber}</p>
+        </div>
 
-        <div className="relative w-full aspect-[3/2] rounded-xl overflow-hidden mb-4">
-          {/* Prize underneath */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-[#1a1f2e] to-bg">
+        <div className="relative w-full aspect-[3/2] rounded-2xl overflow-hidden mb-6 ring-1 ring-white/[0.06]">
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-surface to-bg">
             {prize > 0 ? (
               <>
-                <span className="text-accent text-lg font-body mb-1">
-                  YOU WON
+                <span className="text-emerald-400 text-sm font-semibold mb-2 uppercase tracking-widest">
+                  You Won
                 </span>
-                <span className="text-5xl font-heading font-black text-primary">
+                <span className="text-6xl font-black gradient-text">
                   ${prize}
                 </span>
-                <span className="text-text/60 text-sm font-body mt-1">
-                  USDC
-                </span>
+                <span className="text-muted/40 text-sm mt-2">USDC</span>
               </>
             ) : (
               <>
-                <span className="text-text/40 text-lg font-body mb-1">
-                  Not this time
-                </span>
-                <span className="text-2xl font-heading text-text/20">
-                  Better luck next draw!
-                </span>
+                <span className="text-muted/30 text-base mb-1">Not this time</span>
+                <span className="text-muted/15 text-sm">Better luck next draw</span>
               </>
             )}
           </div>
 
-          {/* Scratch canvas overlay */}
           <canvas
             ref={canvasRef}
             width={350}
@@ -135,20 +123,16 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
         </div>
 
         {isScratched && prize > 0 && (
-          <div className="bg-accent/10 border border-accent/20 rounded-xl p-3 mb-4 text-center">
-            <p className="text-accent text-sm font-body">
-              Arriving in your wallet within 24 hours
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 mb-5 text-center">
+            <p className="text-emerald-400 text-sm font-medium">
+              Prize arriving in your wallet within 24h
             </p>
           </div>
         )}
 
-        <p className="text-xs text-text/30 text-center mb-4 font-mono">
-          Ticket #{slotNumber}
-        </p>
-
         <button
           onClick={onClose}
-          className="w-full py-3 rounded-xl bg-white/10 text-text font-body font-medium hover:bg-white/20 transition-colors"
+          className="w-full py-3.5 rounded-xl bg-white/[0.04] text-text font-medium text-sm hover:bg-white/[0.08] transition-all duration-200 border border-white/[0.04]"
         >
           {isScratched ? "Done" : "Skip & Close"}
         </button>

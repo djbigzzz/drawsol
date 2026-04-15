@@ -12,24 +12,20 @@ const WalletMultiButton = dynamic(
 
 export default function Nav() {
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-bg/80 backdrop-blur-md border-b border-white/5">
-      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-        {/* Logo */}
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-bg/70 backdrop-blur-xl border-b border-white/[0.04]">
+      <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
-            <span className="font-heading font-bold text-bg text-sm">D</span>
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-orange-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/20">
+            <span className="font-bold text-white text-sm tracking-tight">DS</span>
           </div>
-          <span className="font-heading font-bold text-xl text-text">
-            Draw<span className="text-primary">Sol</span>
+          <span className="font-bold text-lg tracking-tight text-text">
+            Draw<span className="gradient-text">Sol</span>
           </span>
-          {/* Live dot */}
-          <div className="flex items-center gap-1.5 ml-2">
-            <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-            <span className="text-xs font-mono text-accent">LIVE</span>
+          <div className="flex items-center gap-1.5 ml-3 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[10px] font-mono font-semibold text-emerald-400 uppercase tracking-wider">Live</span>
           </div>
         </div>
-
-        {/* Wallet */}
         <WalletMultiButton />
       </div>
     </nav>

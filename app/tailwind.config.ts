@@ -9,15 +9,16 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: "#05080F",
-        primary: "#F7931A",
-        accent: "#00C896",
-        text: "#EDE9E3",
+        bg: "#09090b",
+        surface: "#18181b",
+        primary: "#f97316",
+        accent: "#10b981",
+        text: "#fafafa",
+        muted: "#a1a1aa",
       },
       fontFamily: {
-        heading: ["Playfair Display", "serif"],
-        mono: ["Space Mono", "monospace"],
-        body: ["Manrope", "sans-serif"],
+        sans: ["Inter", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono", "monospace"],
       },
     },
   },

@@ -12,9 +12,10 @@ export default function ThresholdBar() {
     ? drawState.usdcCollected.toNumber() / 1_000_000
     : 0;
 
-  const threshold = drawState && drawState.thresholdUsdc.toNumber() > 0
-    ? drawState.thresholdUsdc.toNumber() / 1_000_000
-    : price
+  const threshold =
+    drawState && drawState.thresholdUsdc.toNumber() > 0
+      ? drawState.thresholdUsdc.toNumber() / 1_000_000
+      : price
       ? price * GRAND_PRIZE_SOL * 1.5
       : 12_600;
 
@@ -22,38 +23,49 @@ export default function ThresholdBar() {
   const ticketsSold = drawState?.ticketsSold ?? 0;
 
   return (
-    <section className="px-4 pb-8 max-w-2xl mx-auto">
-      <div className="bg-white/5 rounded-2xl p-6 border border-white/10">
-        <div className="flex justify-between items-center mb-3">
-          <span className="text-sm text-text/60 font-body">Prize Pool Progress</span>
-          <span className="text-sm font-mono text-primary">
-            {ticketsSold.toLocaleString()} tickets sold
-          </span>
+    <section className="px-4 pb-6 max-w-2xl mx-auto">
+      <div className="glass rounded-2xl p-6 space-y-5">
+        {/* Stats row */}
+        <div className="grid grid-cols-3 gap-4">
+          <div className="text-center">
+            <p className="text-xs text-muted/50 mb-1 font-medium uppercase tracking-wider">Tickets Sold</p>
+            <p className="font-mono text-xl font-bold text-text">{ticketsSold.toLocaleString()}</p>
+          </div>
+          <div className="text-center border-x border-white/[0.04]">
+            <p className="text-xs text-muted/50 mb-1 font-medium uppercase tracking-wider">Collected</p>
+            <p className="font-mono text-xl font-bold gradient-text">
+              ${collected.toLocaleString("en-US", { minimumFractionDigits: 0 })}
+            </p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-muted/50 mb-1 font-medium uppercase tracking-wider">Target</p>
+            <p className="font-mono text-xl font-bold text-muted/70">
+              ${threshold.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+            </p>
+          </div>
         </div>
 
         {/* Progress bar */}
-        <div className="relative h-4 bg-white/10 rounded-full overflow-hidden mb-3">
-          <div
-            className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-primary to-accent transition-all duration-1000 progress-glow"
-            style={{ width: `${progress}%` }}
-          />
+        <div className="space-y-2">
+          <div className="relative h-3 bg-white/[0.04] rounded-full overflow-hidden">
+            <div
+              className="absolute inset-y-0 left-0 rounded-full progress-bar transition-all duration-1000 ease-out"
+              style={{ width: `${Math.max(progress, 1.5)}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-xs">
+            <span className="text-muted/40">{progress.toFixed(1)}% to threshold</span>
+            <span className="text-muted/40 font-mono">Draw fires automatically</span>
+          </div>
         </div>
 
-        <div className="flex justify-between items-center">
-          <span className="font-mono text-lg text-text">
-            ${collected.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-          </span>
-          <span className="text-sm text-text/40 font-body">
-            Draw fires at{" "}
-            <span className="text-primary font-mono">
-              ${threshold.toLocaleString("en-US", { maximumFractionDigits: 0 })}
-            </span>
-          </span>
+        {/* Countdown */}
+        <div className="pt-3 border-t border-white/[0.04] text-center">
+          <p className="text-xs text-muted/40 mb-1">Status</p>
+          <p className="font-mono text-sm font-semibold text-emerald-400">
+            Accepting entries — waiting for threshold
+          </p>
         </div>
-
-        {loading && (
-          <div className="mt-2 text-xs text-text/30 text-center">Loading...</div>
-        )}
       </div>
     </section>
   );
