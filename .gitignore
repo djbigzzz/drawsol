@@ -6,5 +6,6 @@ node_modules
 test-ledger
 .yarn
 app/.next
+app/out
 app/node_modules
 keeper/node_modules
