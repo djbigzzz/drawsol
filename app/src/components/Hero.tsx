@@ -12,46 +12,61 @@ export default function Hero() {
     : "...";
 
   return (
-    <section className="relative pt-32 pb-20 px-5 text-center overflow-hidden">
-      {/* Outer golden glow */}
-      <div className="glow-breathe absolute top-[38%] left-1/2 w-[800px] h-[450px] rounded-full blur-[160px] bg-gold/[0.1] pointer-events-none" />
-      {/* Inner bright halo */}
-      <div className="glow-breathe absolute top-[42%] left-1/2 w-[400px] h-[220px] rounded-full blur-[80px] bg-gold-bright/[0.15] pointer-events-none" />
+    <section className="relative pt-28 pb-12 px-5 text-center overflow-hidden">
+      {/* Background glows */}
+      <div className="glow-breathe absolute top-[38%] left-1/2 w-[800px] h-[450px] rounded-full blur-[160px] bg-gold/[0.08] pointer-events-none" />
+      <div className="glow-breathe absolute top-[42%] left-1/2 w-[400px] h-[220px] rounded-full blur-[80px] bg-gold-bright/[0.12] pointer-events-none" />
 
       {/* Floating particles */}
-      <div className="float-1 absolute top-[20%] left-[20%] w-1.5 h-1.5 rounded-full bg-gold/70" />
-      <div className="float-2 absolute top-[30%] right-[22%] w-1 h-1 rounded-full bg-primary-light/50" />
-      <div className="float-3 absolute top-[55%] left-[30%] w-1 h-1 rounded-full bg-gold-bright/60" />
-      <div className="float-4 absolute top-[45%] right-[30%] w-1.5 h-1.5 rounded-full bg-primary/40" />
-      <div className="float-2 absolute bottom-[25%] left-[25%] w-1 h-1 rounded-full bg-gold/50" />
-      <div className="float-3 absolute bottom-[30%] right-[20%] w-1 h-1 rounded-full bg-primary-light/30" />
+      <div className="float-1 absolute top-[18%] left-[18%] w-1.5 h-1.5 rounded-full bg-gold/70" />
+      <div className="float-2 absolute top-[28%] right-[20%] w-1 h-1 rounded-full bg-primary-light/50" />
+      <div className="float-3 absolute top-[50%] left-[28%] w-1 h-1 rounded-full bg-sol-green/40" />
+      <div className="float-4 absolute top-[40%] right-[28%] w-1.5 h-1.5 rounded-full bg-primary/40" />
+      <div className="float-2 absolute bottom-[20%] left-[22%] w-1 h-1 rounded-full bg-gold/50" />
+      <div className="float-3 absolute bottom-[25%] right-[18%] w-1 h-1 rounded-full bg-sol-green/30" />
 
       {/* Badge */}
-      <div className="relative inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/[0.12] border border-primary/[0.2] mb-8">
-        <span className="w-2 h-2 rounded-full bg-gold-bright animate-pulse" />
-        <span className="text-primary-light text-[13px] font-semibold tracking-wider">GRAND PRIZE</span>
+      <div className="relative inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-sol-green/[0.08] border border-sol-green/[0.15] mb-8">
+        <span className="w-2 h-2 rounded-full bg-sol-green animate-pulse" />
+        <span className="text-sol-green text-[13px] font-semibold tracking-wider">LIVE DRAW</span>
       </div>
 
       {/* Prize headline with shimmer */}
-      <div className="relative" style={{ filter: "drop-shadow(0 0 60px rgba(245, 183, 49, 0.3))" }}>
-        <h1 className="font-display font-bold text-[100px] md:text-[140px] leading-[0.85] tracking-[-0.03em] mb-4">
+      <div className="relative" style={{ filter: "drop-shadow(0 0 60px rgba(245, 183, 49, 0.25))" }}>
+        <h1 className="font-display font-bold text-[100px] md:text-[140px] leading-[0.85] tracking-[-0.03em] mb-3">
           <span className="shimmer-gold">100 SOL</span>
         </h1>
       </div>
 
-      {/* USD value in gold, not green */}
-      <p className="relative font-mono text-[30px] md:text-[40px] font-bold tracking-tight mb-7 bg-gradient-to-r from-gold to-gold-bright bg-clip-text text-transparent">
+      {/* USD value in gold */}
+      <p className="relative font-mono text-[30px] md:text-[40px] font-bold tracking-tight mb-8 bg-gradient-to-r from-gold to-gold-bright bg-clip-text text-transparent">
         ${usdValue}
       </p>
 
-      <p className="relative text-secondary text-[16px] max-w-md mx-auto leading-relaxed mb-12">
-        Buy a ticket, scratch for instant wins, and enter the grand draw.
-        Provably fair with on-chain VRF.
+      {/* Scratch card visual */}
+      <div className="relative mx-auto w-[280px] h-[170px] mb-10">
+        <div
+          className="card-shimmer relative w-full h-full rounded-2xl overflow-hidden shadow-[0_20px_60px_rgba(245,183,49,0.15)]"
+          style={{ transform: "rotate(-2deg)" }}
+        >
+          <div className="absolute inset-0 bg-gradient-to-br from-[#F7D14B] via-[#E8A817] to-[#C88A0A]" />
+          <div className="absolute inset-0 crosshatch" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <span className="text-white/50 text-[10px] font-bold tracking-[0.25em]">SCRATCH & WIN</span>
+            <span className="text-white/30 text-5xl font-display font-bold mt-1">???</span>
+            <span className="text-white/45 text-[11px] font-semibold mt-2">UP TO $50 INSTANT</span>
+          </div>
+        </div>
+        <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-[240px] h-[20px] bg-gold/[0.15] rounded-full blur-xl" />
+      </div>
+
+      <p className="relative text-secondary text-[16px] max-w-lg mx-auto leading-relaxed mb-10">
+        Every ticket includes an instant scratch card. Answer a skill question, buy tickets, and enter the provably fair grand draw.
       </p>
 
       <a
         href="#buy"
-        className="pulse-cta relative inline-flex bg-gradient-to-r from-primary to-primary-light text-white font-bold text-[16px] px-10 py-4 rounded-[12px] transition-all shadow-[0_0_30px_rgba(124,58,237,0.35)] hover:shadow-[0_0_50px_rgba(124,58,237,0.5)] active:scale-[0.97] border border-white/[0.15] hover:-translate-y-0.5"
+        className="pulse-cta relative inline-flex bg-gradient-to-r from-primary to-primary-light text-white font-bold text-[16px] px-10 py-4 rounded-full transition-all shadow-[0_0_30px_rgba(124,58,237,0.35)] hover:shadow-[0_0_50px_rgba(124,58,237,0.5)] active:scale-[0.97] border border-white/[0.15] hover:-translate-y-0.5"
       >
         Get Tickets
       </a>

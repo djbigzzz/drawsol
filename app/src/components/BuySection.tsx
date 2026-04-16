@@ -92,7 +92,7 @@ export default function BuySection() {
                 <button
                   key={q}
                   onClick={() => setQuantity(q)}
-                  className={`py-2.5 rounded-[10px] text-[14px] font-semibold transition-all ${
+                  className={`py-2.5 rounded-full text-[14px] font-semibold transition-all ${
                     quantity === q
                       ? "bg-gradient-to-r from-primary to-primary-light text-white shadow-[0_0_16px_rgba(124,58,237,0.3)]"
                       : "bg-elevated text-secondary hover:text-text hover:bg-hover border border-white/[0.04]"
@@ -106,11 +106,11 @@ export default function BuySection() {
 
           {/* Discount indicator */}
           {discount > 0 && (
-            <div className="flex items-center justify-between mb-5 px-4 py-2.5 bg-success/[0.08] border border-success/[0.12] rounded-[10px]">
-              <span className="text-success text-[13px] font-semibold">
+            <div className="flex items-center justify-between mb-5 px-4 py-2.5 bg-sol-green/[0.06] border border-sol-green/[0.1] rounded-full">
+              <span className="text-sol-green text-[13px] font-semibold">
                 {discount}% bulk discount
               </span>
-              <span className="text-success font-mono text-[14px] font-bold">
+              <span className="text-sol-green font-mono text-[14px] font-bold">
                 -${savings.toFixed(2)}
               </span>
             </div>
@@ -135,14 +135,14 @@ export default function BuySection() {
 
           {/* CTA */}
           {!wallet.publicKey ? (
-            <div className="text-center py-4 rounded-[12px] border border-dashed border-white/[0.08] bg-white/[0.01]">
+            <div className="text-center py-4 rounded-full border border-dashed border-white/[0.08] bg-white/[0.01]">
               <p className="text-tertiary text-[14px]">Connect wallet to purchase</p>
             </div>
           ) : (
             <button
               onClick={handleBuy}
               disabled={purchasing || !answer.trim() || !isDrawOpen}
-              className="w-full py-4 rounded-[12px] bg-gradient-to-r from-primary to-primary-light text-white font-bold text-[16px] transition-all shadow-[0_0_24px_rgba(124,58,237,0.25)] hover:shadow-[0_0_40px_rgba(124,58,237,0.4)] active:scale-[0.97] border border-white/[0.12] hover:-translate-y-0.5 disabled:bg-elevated disabled:from-elevated disabled:to-elevated disabled:text-tertiary disabled:shadow-none disabled:cursor-not-allowed disabled:border-white/[0.04] disabled:transform-none"
+              className="w-full py-4 rounded-full bg-gradient-to-r from-primary to-primary-light text-white font-bold text-[16px] transition-all shadow-[0_0_24px_rgba(124,58,237,0.25)] hover:shadow-[0_0_40px_rgba(124,58,237,0.4)] active:scale-[0.97] border border-white/[0.12] hover:-translate-y-0.5 disabled:bg-elevated disabled:from-elevated disabled:to-elevated disabled:text-tertiary disabled:shadow-none disabled:cursor-not-allowed disabled:border-white/[0.04] disabled:transform-none"
             >
               {purchasing
                 ? "Processing..."

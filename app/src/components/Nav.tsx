@@ -18,9 +18,9 @@ export default function Nav() {
           <span className="font-display font-bold text-[17px] bg-gradient-to-r from-primary-light via-text to-gold bg-clip-text text-transparent tracking-tight">
             DrawSol
           </span>
-          <div className="hidden sm:flex items-center gap-1.5 text-[12px] text-success font-medium">
-            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-            <span>Draw #1 Open</span>
+          <div className="hidden sm:flex items-center gap-1.5 text-[12px] text-sol-green font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-sol-green animate-pulse" />
+            <span>Draw #1 Live</span>
           </div>
         </div>
         <WalletMultiButton />

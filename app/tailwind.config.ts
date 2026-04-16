@@ -10,7 +10,7 @@ const config: Config = {
     extend: {
       colors: {
         bg: "#080B12",
-        surface: "#131825",
+        surface: "#111827",
         elevated: "#1A2133",
         hover: "#212A40",
         primary: "#7C3AED",
@@ -18,6 +18,7 @@ const config: Config = {
         gold: "#F5B731",
         "gold-bright": "#FBBF24",
         success: "#10B981",
+        "sol-green": "#14F195",
         hot: "#EC4899",
         text: "#F1F5F9",
         secondary: "#94A3B8",
