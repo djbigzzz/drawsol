@@ -55,7 +55,7 @@ export default function BuySection() {
   return (
     <>
       <div id="buy">
-        <div className="bg-surface border border-white/[0.05] rounded-[16px] p-6">
+        <div className="bg-surface border border-white/[0.06] rounded-[16px] p-6">
           <h2 className="font-display font-bold text-lg mb-5">Get Tickets</h2>
 
           {/* Skill question */}
@@ -69,7 +69,7 @@ export default function BuySection() {
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               placeholder="Your answer..."
-              className="w-full bg-elevated border border-white/[0.05] rounded-[10px] px-4 py-3 text-text text-sm placeholder:text-tertiary/50 focus:outline-none focus:border-primary/40 transition-colors"
+              className="w-full bg-elevated border border-white/[0.06] rounded-[10px] px-4 py-3 text-text text-sm placeholder:text-tertiary/50 focus:outline-none focus:border-primary/50 focus:shadow-[0_0_0_3px_rgba(124,58,237,0.1)] transition-all"
             />
           </div>
 
@@ -92,10 +92,10 @@ export default function BuySection() {
                 <button
                   key={q}
                   onClick={() => setQuantity(q)}
-                  className={`py-2 rounded-[8px] text-[13px] font-semibold transition-colors ${
+                  className={`py-2 rounded-[8px] text-[13px] font-semibold transition-all ${
                     quantity === q
-                      ? "bg-primary text-white"
-                      : "bg-elevated text-secondary hover:text-text"
+                      ? "bg-primary text-white shadow-[0_0_12px_rgba(124,58,237,0.3)]"
+                      : "bg-elevated text-secondary hover:text-text hover:bg-hover"
                   }`}
                 >
                   {q}
@@ -106,7 +106,7 @@ export default function BuySection() {
 
           {/* Discount indicator */}
           {discount > 0 && (
-            <div className="flex items-center justify-between mb-4 px-3 py-2 bg-success/[0.06] rounded-[8px]">
+            <div className="flex items-center justify-between mb-4 px-3 py-2 bg-success/[0.08] border border-success/[0.1] rounded-[8px]">
               <span className="text-success text-[13px] font-medium">
                 {discount}% bulk discount
               </span>
@@ -135,14 +135,14 @@ export default function BuySection() {
 
           {/* CTA */}
           {!wallet.publicKey ? (
-            <div className="text-center py-3.5 rounded-[10px] border border-dashed border-white/[0.06]">
+            <div className="text-center py-3.5 rounded-[10px] border border-dashed border-white/[0.08]">
               <p className="text-tertiary text-[13px]">Connect wallet to purchase</p>
             </div>
           ) : (
             <button
               onClick={handleBuy}
               disabled={purchasing || !answer.trim() || !isDrawOpen}
-              className="w-full py-3.5 rounded-[10px] bg-primary hover:bg-[#C05E1A] text-white font-semibold text-[15px] transition-all shadow-[0_0_24px_rgba(212,105,31,0.2)] hover:shadow-[0_0_32px_rgba(212,105,31,0.3)] active:scale-[0.97] disabled:bg-elevated disabled:text-tertiary disabled:shadow-none disabled:cursor-not-allowed"
+              className="w-full py-3.5 rounded-[10px] bg-gradient-to-r from-primary to-primary-light text-white font-semibold text-[15px] transition-all shadow-[0_0_24px_rgba(124,58,237,0.25)] hover:shadow-[0_0_36px_rgba(124,58,237,0.4)] active:scale-[0.97] border border-white/[0.1] disabled:bg-elevated disabled:from-elevated disabled:to-elevated disabled:text-tertiary disabled:shadow-none disabled:cursor-not-allowed disabled:border-white/[0.04]"
             >
               {purchasing
                 ? "Processing..."

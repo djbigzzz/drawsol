@@ -24,13 +24,12 @@ export default function ProofSection() {
   return (
     <section className="px-5 pt-20 pb-16">
       <div className="max-w-[560px] mx-auto">
-        {/* How it works */}
         <h2 className="font-display font-bold text-xl mb-8">How it works</h2>
 
         <div className="space-y-0 mb-20">
           {steps.map(({ title, desc }, i) => (
             <div key={i} className="flex gap-4 py-5 border-b border-white/[0.04]">
-              <span className="font-mono text-[11px] text-tertiary tabular-nums pt-1 shrink-0 w-5">
+              <span className="shrink-0 w-7 h-7 rounded-lg bg-primary/[0.12] flex items-center justify-center font-mono text-[11px] text-primary-light tabular-nums">
                 {String(i + 1).padStart(2, "0")}
               </span>
               <div>
@@ -41,7 +40,6 @@ export default function ProofSection() {
           ))}
         </div>
 
-        {/* Provably fair */}
         <div className="mb-6">
           <h2 className="font-display font-bold text-xl mb-2">Provably Fair</h2>
           <p className="text-secondary text-[14px] leading-relaxed">
@@ -53,7 +51,7 @@ export default function ProofSection() {
           {addresses.map(({ label, value }) => (
             <div
               key={label}
-              className="bg-surface rounded-[12px] border border-white/[0.05] px-4 py-3 flex items-center gap-4 hover:border-white/[0.08] transition-colors"
+              className="bg-surface rounded-[12px] border border-white/[0.06] px-4 py-3 flex items-center gap-4 hover:border-primary/[0.15] transition-colors"
             >
               <span className="text-tertiary text-[11px] font-semibold w-14 shrink-0">{label}</span>
               <code className="font-mono text-[11px] text-secondary break-all">{value}</code>

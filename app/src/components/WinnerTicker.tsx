@@ -24,7 +24,11 @@ export default function WinnerTicker() {
   const [wins] = useState<RecentWin[]>(DEMO_WINS);
 
   return (
-    <section className="py-3 overflow-hidden bg-surface/50 border-y border-white/[0.03]">
+    <section className="relative py-3 overflow-hidden bg-surface/50 border-y border-white/[0.04]">
+      {/* Edge fade gradients */}
+      <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-bg to-transparent z-10" />
+      <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-bg to-transparent z-10" />
+
       <div className="flex items-center">
         <div className="overflow-hidden relative flex-1">
           <div className="ticker-scroll flex gap-3 whitespace-nowrap">
@@ -33,7 +37,7 @@ export default function WinnerTicker() {
                 key={i}
                 className="inline-flex items-center gap-1.5 px-3 py-1"
               >
-                <span className="font-mono text-[13px] font-semibold text-success">
+                <span className="font-mono text-[13px] font-semibold text-gold">
                   +${win.amount}
                 </span>
                 <span className="text-tertiary font-mono text-[11px]">

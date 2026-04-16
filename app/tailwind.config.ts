@@ -9,15 +9,19 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        bg: "#0B0A08",
-        surface: "#15140F",
-        elevated: "#1E1C16",
-        primary: "#D4691F",
-        gold: "#E2A336",
-        success: "#2FB88A",
-        text: "#E8E6E1",
-        secondary: "#918E86",
-        tertiary: "#5C5A54",
+        bg: "#080B12",
+        surface: "#131825",
+        elevated: "#1A2133",
+        hover: "#212A40",
+        primary: "#7C3AED",
+        "primary-light": "#8B5CF6",
+        gold: "#F5B731",
+        "gold-bright": "#FBBF24",
+        success: "#10B981",
+        hot: "#EC4899",
+        text: "#F1F5F9",
+        secondary: "#94A3B8",
+        tertiary: "#64748B",
       },
       fontFamily: {
         display: ["Clash Display", "system-ui", "sans-serif"],

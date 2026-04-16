@@ -23,7 +23,7 @@ export default function ThresholdBar() {
   const ticketsSold = drawState?.ticketsSold ?? 0;
 
   return (
-    <div className="bg-surface border border-white/[0.05] rounded-[16px] p-6 mb-5">
+    <div className="bg-surface border border-white/[0.06] rounded-[16px] p-6 mb-5">
       <div className="flex justify-between items-baseline mb-5">
         <span className="text-[13px] text-secondary font-medium">Prize Pool</span>
         <span className="text-[13px] font-mono text-secondary">
@@ -31,10 +31,9 @@ export default function ThresholdBar() {
         </span>
       </div>
 
-      {/* Big numbers */}
       <div className="flex items-baseline justify-between mb-5">
         <div>
-          <span className="font-mono text-3xl font-bold text-primary">
+          <span className="font-mono text-3xl font-bold bg-gradient-to-r from-primary-light to-gold bg-clip-text text-transparent">
             ${collected.toLocaleString("en-US", { minimumFractionDigits: 0 })}
           </span>
         </div>
@@ -46,10 +45,10 @@ export default function ThresholdBar() {
         </div>
       </div>
 
-      {/* Progress */}
-      <div className="h-2 bg-white/[0.04] rounded-full overflow-hidden mb-3">
+      {/* Progress bar with violet-to-gold gradient */}
+      <div className="h-2.5 bg-white/[0.04] rounded-full overflow-hidden mb-3">
         <div
-          className="h-full rounded-full bg-primary transition-all duration-700"
+          className="h-full rounded-full bg-gradient-to-r from-primary via-primary-light to-gold transition-all duration-700 shadow-[0_0_12px_rgba(124,58,237,0.4)]"
           style={{ width: `${Math.max(progress, 2)}%` }}
         />
       </div>

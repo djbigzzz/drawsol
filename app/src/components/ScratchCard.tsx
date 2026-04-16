@@ -24,10 +24,13 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    ctx.fillStyle = "#D4691F";
+    const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    gradient.addColorStop(0, "#7C3AED");
+    gradient.addColorStop(1, "#8B5CF6");
+    ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = "rgba(0,0,0,0.05)";
+    ctx.fillStyle = "rgba(255,255,255,0.04)";
     for (let x = 0; x < canvas.width; x += 6) {
       for (let y = 0; y < canvas.height; y += 6) {
         if ((x + y) % 12 === 0) ctx.fillRect(x, y, 3, 3);
@@ -35,7 +38,7 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
     }
 
     ctx.font = "600 16px Satoshi, sans-serif";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
     ctx.textAlign = "center";
     ctx.fillText("SCRATCH TO REVEAL", canvas.width / 2, canvas.height / 2 + 5);
   }, []);
@@ -60,16 +63,16 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-5">
-      <div className="bg-surface border border-white/[0.06] rounded-[20px] p-7 max-w-[360px] w-full">
+      <div className="bg-surface border border-white/[0.08] rounded-[20px] p-7 max-w-[360px] w-full shadow-[0_0_60px_rgba(124,58,237,0.15)]">
         <h3 className="font-display font-bold text-xl mb-0.5 text-center">Scratch & Reveal</h3>
         <p className="text-tertiary text-[12px] font-mono text-center mb-5">Ticket #{slotNumber}</p>
 
-        <div className="relative w-full aspect-[3/2] rounded-[12px] overflow-hidden mb-5 border border-white/[0.05]">
+        <div className="relative w-full aspect-[3/2] rounded-[12px] overflow-hidden mb-5 border border-white/[0.06]">
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-elevated">
             {prize > 0 ? (
               <>
-                <span className="text-success text-[12px] font-semibold mb-1.5 tracking-wide">YOU WON</span>
-                <span className="text-5xl font-display font-bold text-text">${prize}</span>
+                <span className="text-gold text-[12px] font-semibold mb-1.5 tracking-wide">YOU WON</span>
+                <span className="text-5xl font-display font-bold bg-gradient-to-b from-gold-bright to-gold bg-clip-text text-transparent">${prize}</span>
                 <span className="text-tertiary text-[13px] mt-1">USDC</span>
               </>
             ) : (
@@ -96,8 +99,8 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
         </div>
 
         {isScratched && prize > 0 && (
-          <div className="bg-success/[0.06] border border-success/[0.1] rounded-[8px] p-3 mb-4 text-center">
-            <p className="text-success text-[13px] font-medium">Arriving in your wallet within 24h</p>
+          <div className="bg-gold/[0.08] border border-gold/[0.15] rounded-[8px] p-3 mb-4 text-center">
+            <p className="text-gold text-[13px] font-medium">Arriving in your wallet within 24h</p>
           </div>
         )}
 

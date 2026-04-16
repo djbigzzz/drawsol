@@ -10,55 +10,62 @@ import { PROGRAM_ID } from "@/lib/constants";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-bg relative">
-      <Nav />
-
-      {/* Hero with single ambient glow */}
-      <div className="relative">
-        <div className="absolute top-[30%] left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-primary/[0.06] rounded-full blur-[150px] pointer-events-none" />
-        <Hero />
+    <main className="min-h-screen bg-bg relative overflow-x-hidden">
+      {/* Ambient background gradients */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] bg-primary/[0.07] rounded-full blur-[180px]" />
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-gold/[0.04] rounded-full blur-[160px]" />
       </div>
 
-      <WinnerTicker />
+      <div className="relative z-10">
+        <Nav />
 
-      <div className="max-w-[560px] mx-auto px-5 pt-16 pb-8">
-        <ThresholdBar />
-      </div>
-
-      <div className="max-w-[560px] mx-auto px-5 pb-20">
-        <BuySection />
-      </div>
-
-      <ProofSection />
-
-      <footer className="border-t border-white/[0.04] py-14 px-5">
-        <div className="max-w-[560px] mx-auto text-center space-y-4">
-          <div className="flex flex-wrap justify-center gap-6 text-[13px] text-tertiary">
-            <a href="#" className="hover:text-secondary transition-colors">Terms</a>
-            <a href="#" className="hover:text-secondary transition-colors">Free Entry</a>
-            <a
-              href={`https://solscan.io/account/${PROGRAM_ID.toBase58()}?cluster=devnet`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-secondary transition-colors"
-            >
-              Verify On-chain
-            </a>
-            <a
-              href="https://github.com/djbigzzz/drawsol"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="hover:text-secondary transition-colors"
-            >
-              Source
-            </a>
-          </div>
-          <p className="text-[11px] text-tertiary/50 max-w-xs mx-auto leading-relaxed">
-            DrawSol is a skill-based competition. Tickets are non-refundable.
-            Colosseum Frontier Hackathon 2026.
-          </p>
+        {/* Hero with glow */}
+        <div className="relative">
+          <Hero />
         </div>
-      </footer>
+
+        <WinnerTicker />
+
+        <div className="max-w-[560px] mx-auto px-5 pt-16 pb-8">
+          <ThresholdBar />
+        </div>
+
+        <div className="max-w-[560px] mx-auto px-5 pb-20">
+          <BuySection />
+        </div>
+
+        <ProofSection />
+
+        <footer className="border-t border-white/[0.04] py-14 px-5">
+          <div className="max-w-[560px] mx-auto text-center space-y-4">
+            <div className="flex flex-wrap justify-center gap-6 text-[13px] text-tertiary">
+              <a href="#" className="hover:text-secondary transition-colors">Terms</a>
+              <a href="#" className="hover:text-secondary transition-colors">Free Entry</a>
+              <a
+                href={`https://solscan.io/account/${PROGRAM_ID.toBase58()}?cluster=devnet`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-secondary transition-colors"
+              >
+                Verify On-chain
+              </a>
+              <a
+                href="https://github.com/djbigzzz/drawsol"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-secondary transition-colors"
+              >
+                Source
+              </a>
+            </div>
+            <p className="text-[11px] text-tertiary/50 max-w-xs mx-auto leading-relaxed">
+              DrawSol is a skill-based competition. Tickets are non-refundable.
+              Colosseum Frontier Hackathon 2026.
+            </p>
+          </div>
+        </footer>
+      </div>
     </main>
   );
 }
