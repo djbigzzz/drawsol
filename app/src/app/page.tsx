@@ -29,7 +29,7 @@ export default function Home() {
 
         <ScarcityBar />
 
-        <div className="max-w-[880px] mx-auto px-5 pt-10 pb-8">
+        <div className="max-w-[880px] mx-auto px-5 pt-8 pb-6">
           <ThresholdBar />
         </div>
 
