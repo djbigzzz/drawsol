@@ -22,22 +22,22 @@ export default function WinnerTicker() {
   const [wins] = useState<RecentWin[]>(DEMO_WINS);
 
   return (
-    <section className="py-5 overflow-hidden border-y border-white/[0.03] bg-white/[0.01]">
+    <section className="py-4 mt-12 overflow-hidden border-y border-white/[0.04]">
       <div className="flex items-center">
-        <span className="text-[10px] text-muted/30 px-5 whitespace-nowrap uppercase tracking-widest font-semibold">
-          Recent Wins
+        <span className="text-[10px] text-tertiary px-5 whitespace-nowrap font-medium tracking-wide">
+          RECENT WINS
         </span>
         <div className="overflow-hidden relative flex-1">
-          <div className="ticker-scroll flex gap-4 whitespace-nowrap">
+          <div className="ticker-scroll flex gap-3 whitespace-nowrap">
             {[...wins, ...wins].map((win, i) => (
               <div
                 key={i}
-                className="inline-flex items-center gap-2 bg-white/[0.03] rounded-full px-4 py-1.5 border border-white/[0.04]"
+                className="inline-flex items-center gap-2 bg-surface rounded-full px-3.5 py-1 border border-white/[0.04]"
               >
-                <span className="font-mono text-sm font-bold gradient-text-green">
+                <span className="font-mono text-[13px] font-semibold text-success">
                   +${win.amount}
                 </span>
-                <span className="text-muted/30 font-mono text-xs">
+                <span className="text-tertiary font-mono text-[11px]">
                   {win.wallet}
                 </span>
               </div>

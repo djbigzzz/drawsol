@@ -54,37 +54,30 @@ export default function BuySection() {
 
   return (
     <>
-      <section className="px-4 py-8 max-w-lg mx-auto" id="buy">
-        <div className="glass rounded-2xl p-8">
-          <div className="text-center mb-8">
-            <h2 className="font-bold text-2xl tracking-tight mb-1">Get Your Tickets</h2>
-            <p className="text-sm text-muted/50">Each ticket includes an instant scratch card</p>
-          </div>
+      <div className="mb-6" id="buy">
+        <div className="bg-surface rounded-card border border-white/[0.06] p-6">
+          <h2 className="font-display font-bold text-xl mb-6">Get Tickets</h2>
 
           {/* Skill question */}
-          <div className="mb-6">
-            <label className="block text-xs text-muted/50 mb-1.5 uppercase tracking-wider font-medium">
-              Skill Question
+          <div className="mb-5">
+            <label className="block text-tertiary text-[11px] font-medium mb-1.5">
+              SKILL QUESTION
             </label>
-            <p className="text-text text-[15px] mb-3 font-medium">
-              {skillQuestion}
-            </p>
+            <p className="text-text text-[15px] mb-2.5">{skillQuestion}</p>
             <input
               type="text"
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
-              placeholder="Type your answer..."
-              className="w-full bg-white/[0.03] border border-white/[0.06] rounded-xl px-4 py-3.5 text-text text-sm placeholder:text-muted/30 focus:outline-none focus:border-orange-500/40 focus:bg-white/[0.05] transition-all duration-200"
+              placeholder="Your answer..."
+              className="w-full bg-elevated border border-white/[0.06] rounded-btn px-4 py-3 text-text text-sm placeholder:text-tertiary/60 focus:outline-none focus:border-white/[0.14] transition-colors"
             />
           </div>
 
           {/* Quantity */}
-          <div className="mb-6">
-            <div className="flex justify-between items-center mb-3">
-              <label className="text-xs text-muted/50 uppercase tracking-wider font-medium">
-                Quantity
-              </label>
-              <span className="font-mono text-2xl font-bold gradient-text">{quantity}</span>
+          <div className="mb-5">
+            <div className="flex justify-between items-baseline mb-3">
+              <label className="text-tertiary text-[11px] font-medium">QUANTITY</label>
+              <span className="font-mono text-2xl font-bold text-text">{quantity}</span>
             </div>
             <input
               type="range"
@@ -92,90 +85,73 @@ export default function BuySection() {
               max={100}
               value={quantity}
               onChange={(e) => setQuantity(parseInt(e.target.value))}
-              className="w-full"
+              className="w-full mb-3"
             />
-          </div>
-
-          {/* Quick select */}
-          <div className="grid grid-cols-4 gap-2 mb-4">
-            {[1, 10, 30, 70].map((q) => (
-              <button
-                key={q}
-                onClick={() => setQuantity(q)}
-                className={`py-2.5 rounded-xl text-sm font-mono font-semibold transition-all duration-200 ${
-                  quantity === q
-                    ? "bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-lg shadow-orange-500/20"
-                    : "bg-white/[0.03] text-muted/60 hover:bg-white/[0.06] border border-white/[0.04]"
-                }`}
-              >
-                {q}x
-              </button>
-            ))}
+            <div className="grid grid-cols-4 gap-2">
+              {[1, 10, 30, 70].map((q) => (
+                <button
+                  key={q}
+                  onClick={() => setQuantity(q)}
+                  className={`py-2 rounded-btn text-[13px] font-semibold transition-colors ${
+                    quantity === q
+                      ? "bg-primary text-white"
+                      : "bg-elevated text-secondary border border-white/[0.06] hover:border-white/[0.12]"
+                  }`}
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Discount tiers */}
-          <div className="grid grid-cols-3 gap-2 mb-6">
-            {DISCOUNT_TIERS.map((tier) => (
-              <button
-                key={tier.min}
-                onClick={() => setQuantity(tier.min)}
-                className={`py-2 rounded-lg text-[11px] font-semibold transition-all duration-200 ${
-                  quantity >= tier.min && quantity <= tier.max
-                    ? "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                    : "bg-white/[0.02] text-muted/40 border border-white/[0.04] hover:border-white/[0.08]"
-                }`}
-              >
-                {tier.min}+ saves {tier.label}
-              </button>
-            ))}
-          </div>
+          {discount > 0 && (
+            <div className="flex items-center gap-2 mb-5 px-3 py-2 bg-success/[0.06] rounded-btn border border-success/[0.12]">
+              <span className="text-success text-[13px] font-medium">
+                {discount}% bulk discount applied
+              </span>
+              <span className="text-success/60 text-[13px] font-mono ml-auto">
+                -${savings.toFixed(2)}
+              </span>
+            </div>
+          )}
 
-          {/* Price breakdown */}
-          <div className="bg-white/[0.02] rounded-xl p-4 mb-6 space-y-2.5 border border-white/[0.03]">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted/50">
+          {/* Price */}
+          <div className="bg-elevated rounded-[12px] p-4 mb-5">
+            <div className="flex justify-between text-[13px] mb-2">
+              <span className="text-secondary">
                 {quantity} ticket{quantity > 1 ? "s" : ""} @ ${TICKET_PRICE_USDC}
               </span>
-              <span className="font-mono text-muted/60">${basePrice.toFixed(2)}</span>
+              <span className="font-mono text-secondary">${basePrice.toFixed(2)}</span>
             </div>
-            {discount > 0 && (
-              <div className="flex justify-between text-sm">
-                <span className="text-emerald-400">
-                  Bulk discount ({discount}%)
-                </span>
-                <span className="font-mono text-emerald-400">
-                  -${savings.toFixed(2)}
-                </span>
-              </div>
-            )}
-            <div className="border-t border-white/[0.04] pt-2.5 flex justify-between items-center">
-              <span className="font-semibold text-sm">Total</span>
-              <span className="font-mono font-bold text-xl gradient-text">
-                ${totalPrice.toFixed(2)} USDC
+            <div className="border-t border-white/[0.04] pt-2 flex justify-between items-baseline">
+              <span className="text-[13px] font-medium text-text">Total</span>
+              <span className="font-mono text-lg font-bold text-text">
+                ${totalPrice.toFixed(2)} <span className="text-secondary text-sm">USDC</span>
               </span>
             </div>
           </div>
 
-          {/* Buy button */}
+          {/* CTA */}
           {!wallet.publicKey ? (
-            <div className="text-center py-4 rounded-xl bg-white/[0.02] border border-dashed border-white/[0.06]">
-              <p className="text-muted/40 text-sm">Connect wallet to purchase</p>
+            <div className="text-center py-3 rounded-btn border border-dashed border-white/[0.08]">
+              <p className="text-tertiary text-[13px]">Connect wallet to continue</p>
             </div>
           ) : (
             <button
               onClick={handleBuy}
               disabled={purchasing || !answer.trim() || !isDrawOpen}
-              className="w-full py-4 rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 text-white font-semibold text-base transition-all duration-200 hover:shadow-lg hover:shadow-orange-500/25 hover:brightness-110 disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:shadow-none disabled:hover:brightness-100 active:scale-[0.98]"
+              className="w-full py-3.5 rounded-btn bg-primary hover:bg-[#D4691F] text-white font-semibold text-[15px] transition-colors active:scale-[0.98] disabled:bg-elevated disabled:text-tertiary disabled:cursor-not-allowed"
             >
               {purchasing
                 ? "Processing..."
                 : !isDrawOpen
                 ? "Draw Closed"
-                : `Buy ${quantity} Ticket${quantity > 1 ? "s" : ""} for $${totalPrice.toFixed(2)}`}
+                : `Buy ${quantity} Ticket${quantity > 1 ? "s" : ""}`}
             </button>
           )}
         </div>
-      </section>
+      </div>
 
       {showScratchCard && purchasedSlot !== null && (
         <ScratchCard
