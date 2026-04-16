@@ -23,39 +23,52 @@ export default function ThresholdBar() {
   const ticketsSold = drawState?.ticketsSold ?? 0;
 
   return (
-    <div className="bg-surface border border-white/[0.06] rounded-[16px] p-6 mb-5">
-      <div className="flex justify-between items-baseline mb-5">
-        <span className="text-[13px] text-secondary font-medium">Prize Pool</span>
+    <div className="card-glow bg-surface border border-white/[0.06] rounded-[20px] p-7 mb-5">
+      <div className="flex justify-between items-baseline mb-6">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+          <span className="text-[14px] text-text font-semibold">Prize Pool</span>
+        </div>
         <span className="text-[13px] font-mono text-secondary">
           {ticketsSold} ticket{ticketsSold !== 1 ? "s" : ""} sold
         </span>
       </div>
 
-      <div className="flex items-baseline justify-between mb-5">
+      <div className="flex items-end justify-between mb-6">
         <div>
-          <span className="font-mono text-3xl font-bold bg-gradient-to-r from-primary-light to-gold bg-clip-text text-transparent">
+          <span className="font-mono text-4xl font-bold bg-gradient-to-r from-primary-light via-gold to-gold-bright bg-clip-text text-transparent">
             ${collected.toLocaleString("en-US", { minimumFractionDigits: 0 })}
           </span>
         </div>
-        <div className="text-right">
-          <span className="text-tertiary text-[12px]">of </span>
-          <span className="font-mono text-xl text-secondary">
+        <div className="text-right pb-1">
+          <span className="text-tertiary text-[13px]">of </span>
+          <span className="font-mono text-xl font-semibold text-secondary">
             ${threshold.toLocaleString("en-US", { maximumFractionDigits: 0 })}
           </span>
         </div>
       </div>
 
-      {/* Progress bar with violet-to-gold gradient */}
-      <div className="h-2.5 bg-white/[0.04] rounded-full overflow-hidden mb-3">
+      {/* Progress bar — thicker with glow */}
+      <div className="h-3 bg-white/[0.04] rounded-full overflow-hidden mb-3 relative">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-primary via-primary-light to-gold transition-all duration-700 shadow-[0_0_12px_rgba(124,58,237,0.4)]"
-          style={{ width: `${Math.max(progress, 2)}%` }}
-        />
+          className="h-full rounded-full bg-gradient-to-r from-primary via-primary-light to-gold transition-all duration-700 relative"
+          style={{
+            width: `${Math.max(progress, 3)}%`,
+            boxShadow: "0 0 16px rgba(124, 58, 237, 0.5), 0 0 4px rgba(251, 191, 36, 0.3)",
+          }}
+        >
+          <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/[0.15] to-transparent" />
+        </div>
       </div>
 
-      <p className="text-tertiary text-[12px] text-center">
-        Draw fires automatically at target
-      </p>
+      <div className="flex justify-between items-center">
+        <p className="text-tertiary text-[12px]">
+          Draw fires automatically at target
+        </p>
+        <span className="font-mono text-[12px] text-primary-light font-semibold">
+          {progress.toFixed(1)}%
+        </span>
+      </div>
     </div>
   );
 }

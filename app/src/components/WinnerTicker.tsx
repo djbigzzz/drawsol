@@ -24,23 +24,29 @@ export default function WinnerTicker() {
   const [wins] = useState<RecentWin[]>(DEMO_WINS);
 
   return (
-    <section className="relative py-3 overflow-hidden bg-surface/50 border-y border-white/[0.04]">
-      {/* Edge fade gradients */}
-      <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-bg to-transparent z-10" />
-      <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-bg to-transparent z-10" />
+    <section className="relative py-4 overflow-hidden bg-surface/60 border-y border-white/[0.05]">
+      {/* Edge fades */}
+      <div className="absolute left-0 top-0 bottom-0 w-20 bg-gradient-to-r from-bg to-transparent z-10" />
+      <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-bg to-transparent z-10" />
 
-      <div className="flex items-center">
+      {/* Label */}
+      <div className="absolute left-5 top-1/2 -translate-y-1/2 z-20 hidden md:flex items-center gap-2 px-3 py-1 bg-surface rounded-full border border-white/[0.06]">
+        <span className="w-1.5 h-1.5 rounded-full bg-gold-bright animate-pulse" />
+        <span className="text-[11px] text-secondary font-semibold tracking-wide">RECENT WINS</span>
+      </div>
+
+      <div className="flex items-center md:pl-40">
         <div className="overflow-hidden relative flex-1">
-          <div className="ticker-scroll flex gap-3 whitespace-nowrap">
+          <div className="ticker-scroll flex gap-4 whitespace-nowrap">
             {[...wins, ...wins].map((win, i) => (
               <div
                 key={i}
-                className="inline-flex items-center gap-1.5 px-3 py-1"
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/[0.03]"
               >
-                <span className="font-mono text-[13px] font-semibold text-gold">
+                <span className="font-mono text-[14px] font-bold text-gold">
                   +${win.amount}
                 </span>
-                <span className="text-tertiary font-mono text-[11px]">
+                <span className="text-secondary font-mono text-[12px]">
                   {win.wallet}
                 </span>
               </div>

@@ -25,20 +25,21 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
     if (!ctx) return;
 
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-    gradient.addColorStop(0, "#7C3AED");
+    gradient.addColorStop(0, "#6D28D9");
+    gradient.addColorStop(0.5, "#7C3AED");
     gradient.addColorStop(1, "#8B5CF6");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = "rgba(255,255,255,0.04)";
-    for (let x = 0; x < canvas.width; x += 6) {
-      for (let y = 0; y < canvas.height; y += 6) {
-        if ((x + y) % 12 === 0) ctx.fillRect(x, y, 3, 3);
+    ctx.fillStyle = "rgba(255,255,255,0.03)";
+    for (let x = 0; x < canvas.width; x += 8) {
+      for (let y = 0; y < canvas.height; y += 8) {
+        if ((x + y) % 16 === 0) ctx.fillRect(x, y, 4, 4);
       }
     }
 
-    ctx.font = "600 16px Satoshi, sans-serif";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+    ctx.font = "700 15px Satoshi, sans-serif";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.25)";
     ctx.textAlign = "center";
     ctx.fillText("SCRATCH TO REVEAL", canvas.width / 2, canvas.height / 2 + 5);
   }, []);
@@ -51,7 +52,7 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
     const rect = canvas.getBoundingClientRect();
     ctx.globalCompositeOperation = "destination-out";
     ctx.beginPath();
-    ctx.arc(clientX - rect.left, clientY - rect.top, 24, 0, Math.PI * 2);
+    ctx.arc(clientX - rect.left, clientY - rect.top, 26, 0, Math.PI * 2);
     ctx.fill();
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     let transparent = 0;
@@ -62,22 +63,22 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-5">
-      <div className="bg-surface border border-white/[0.08] rounded-[20px] p-7 max-w-[360px] w-full shadow-[0_0_60px_rgba(124,58,237,0.15)]">
-        <h3 className="font-display font-bold text-xl mb-0.5 text-center">Scratch & Reveal</h3>
-        <p className="text-tertiary text-[12px] font-mono text-center mb-5">Ticket #{slotNumber}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-5">
+      <div className="bg-surface border border-white/[0.08] rounded-[24px] p-8 max-w-[380px] w-full shadow-[0_0_80px_rgba(124,58,237,0.2)]">
+        <h3 className="font-display font-bold text-2xl mb-0.5 text-center">Scratch & Reveal</h3>
+        <p className="text-tertiary text-[12px] font-mono text-center mb-6">Ticket #{slotNumber}</p>
 
-        <div className="relative w-full aspect-[3/2] rounded-[12px] overflow-hidden mb-5 border border-white/[0.06]">
+        <div className="relative w-full aspect-[3/2] rounded-[14px] overflow-hidden mb-6 border border-white/[0.06]">
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-elevated">
             {prize > 0 ? (
               <>
-                <span className="text-gold text-[12px] font-semibold mb-1.5 tracking-wide">YOU WON</span>
-                <span className="text-5xl font-display font-bold bg-gradient-to-b from-gold-bright to-gold bg-clip-text text-transparent">${prize}</span>
-                <span className="text-tertiary text-[13px] mt-1">USDC</span>
+                <span className="text-gold text-[12px] font-bold mb-2 tracking-widest">YOU WON</span>
+                <span className="text-5xl font-display font-bold shimmer-gold">${prize}</span>
+                <span className="text-tertiary text-[13px] mt-1.5 font-medium">USDC</span>
               </>
             ) : (
               <>
-                <span className="text-secondary text-[15px]">Not this time</span>
+                <span className="text-secondary text-[16px] font-medium">Not this time</span>
                 <span className="text-tertiary text-[13px] mt-1">Better luck next draw</span>
               </>
             )}
@@ -99,14 +100,14 @@ export default function ScratchCard({ slotNumber, onClose }: ScratchCardProps) {
         </div>
 
         {isScratched && prize > 0 && (
-          <div className="bg-gold/[0.08] border border-gold/[0.15] rounded-[8px] p-3 mb-4 text-center">
-            <p className="text-gold text-[13px] font-medium">Arriving in your wallet within 24h</p>
+          <div className="bg-gold/[0.08] border border-gold/[0.15] rounded-[10px] p-3.5 mb-5 text-center">
+            <p className="text-gold text-[13px] font-semibold">Arriving in your wallet within 24h</p>
           </div>
         )}
 
         <button
           onClick={onClose}
-          className="w-full py-3 rounded-[10px] bg-elevated text-text text-[14px] font-medium hover:bg-hover transition-colors"
+          className="w-full py-3.5 rounded-[12px] bg-elevated text-text text-[14px] font-semibold hover:bg-hover transition-colors border border-white/[0.04]"
         >
           {isScratched ? "Done" : "Skip & Close"}
         </button>

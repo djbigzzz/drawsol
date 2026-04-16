@@ -12,32 +12,46 @@ export default function Hero() {
     : "...";
 
   return (
-    <section className="relative pt-36 pb-16 px-5 text-center">
-      {/* Breathing glow behind prize */}
-      <div className="glow-breathe absolute top-[35%] left-1/2 w-[500px] h-[300px] rounded-full blur-[120px] bg-gradient-to-r from-gold/30 via-primary/20 to-gold/30 pointer-events-none" />
+    <section className="relative pt-32 pb-20 px-5 text-center overflow-hidden">
+      {/* Outer golden glow */}
+      <div className="glow-breathe absolute top-[38%] left-1/2 w-[800px] h-[450px] rounded-full blur-[160px] bg-gold/[0.1] pointer-events-none" />
+      {/* Inner bright halo */}
+      <div className="glow-breathe absolute top-[42%] left-1/2 w-[400px] h-[220px] rounded-full blur-[80px] bg-gold-bright/[0.15] pointer-events-none" />
 
-      <p className="relative text-secondary text-[14px] font-medium tracking-wide uppercase mb-4">
-        Grand Prize
-      </p>
+      {/* Floating particles */}
+      <div className="float-1 absolute top-[20%] left-[20%] w-1.5 h-1.5 rounded-full bg-gold/70" />
+      <div className="float-2 absolute top-[30%] right-[22%] w-1 h-1 rounded-full bg-primary-light/50" />
+      <div className="float-3 absolute top-[55%] left-[30%] w-1 h-1 rounded-full bg-gold-bright/60" />
+      <div className="float-4 absolute top-[45%] right-[30%] w-1.5 h-1.5 rounded-full bg-primary/40" />
+      <div className="float-2 absolute bottom-[25%] left-[25%] w-1 h-1 rounded-full bg-gold/50" />
+      <div className="float-3 absolute bottom-[30%] right-[20%] w-1 h-1 rounded-full bg-primary-light/30" />
 
-      <h1 className="relative font-display font-bold text-[90px] md:text-[130px] leading-[0.85] tracking-[-0.03em] mb-3">
-        <span className="bg-gradient-to-b from-gold-bright via-gold to-gold/60 bg-clip-text text-transparent drop-shadow-[0_0_40px_rgba(245,183,49,0.3)]">
-          100 SOL
-        </span>
-      </h1>
+      {/* Badge */}
+      <div className="relative inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/[0.12] border border-primary/[0.2] mb-8">
+        <span className="w-2 h-2 rounded-full bg-gold-bright animate-pulse" />
+        <span className="text-primary-light text-[13px] font-semibold tracking-wider">GRAND PRIZE</span>
+      </div>
 
-      <p className="relative font-mono text-[28px] md:text-[36px] text-success font-medium tracking-tight mb-6">
+      {/* Prize headline with shimmer */}
+      <div className="relative" style={{ filter: "drop-shadow(0 0 60px rgba(245, 183, 49, 0.3))" }}>
+        <h1 className="font-display font-bold text-[100px] md:text-[140px] leading-[0.85] tracking-[-0.03em] mb-4">
+          <span className="shimmer-gold">100 SOL</span>
+        </h1>
+      </div>
+
+      {/* USD value in gold, not green */}
+      <p className="relative font-mono text-[30px] md:text-[40px] font-bold tracking-tight mb-7 bg-gradient-to-r from-gold to-gold-bright bg-clip-text text-transparent">
         ${usdValue}
       </p>
 
-      <p className="relative text-secondary text-[15px] max-w-sm mx-auto leading-relaxed mb-10">
+      <p className="relative text-secondary text-[16px] max-w-md mx-auto leading-relaxed mb-12">
         Buy a ticket, scratch for instant wins, and enter the grand draw.
         Provably fair with on-chain VRF.
       </p>
 
       <a
         href="#buy"
-        className="relative inline-flex bg-gradient-to-r from-primary to-primary-light text-white font-semibold text-[15px] px-8 py-3.5 rounded-[10px] transition-all shadow-[0_0_30px_rgba(124,58,237,0.3)] hover:shadow-[0_0_40px_rgba(124,58,237,0.45)] active:scale-[0.97] border border-white/[0.1]"
+        className="pulse-cta relative inline-flex bg-gradient-to-r from-primary to-primary-light text-white font-bold text-[16px] px-10 py-4 rounded-[12px] transition-all shadow-[0_0_30px_rgba(124,58,237,0.35)] hover:shadow-[0_0_50px_rgba(124,58,237,0.5)] active:scale-[0.97] border border-white/[0.15] hover:-translate-y-0.5"
       >
         Get Tickets
       </a>

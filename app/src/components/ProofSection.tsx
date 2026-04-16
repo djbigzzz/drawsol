@@ -23,38 +23,38 @@ export default function ProofSection() {
 
   return (
     <section className="px-5 pt-20 pb-16">
-      <div className="max-w-[560px] mx-auto">
-        <h2 className="font-display font-bold text-xl mb-8">How it works</h2>
+      <div className="max-w-[640px] mx-auto">
+        <h2 className="font-display font-bold text-2xl mb-10">How it works</h2>
 
         <div className="space-y-0 mb-20">
           {steps.map(({ title, desc }, i) => (
-            <div key={i} className="flex gap-4 py-5 border-b border-white/[0.04]">
-              <span className="shrink-0 w-7 h-7 rounded-lg bg-primary/[0.12] flex items-center justify-center font-mono text-[11px] text-primary-light tabular-nums">
+            <div key={i} className="flex gap-5 py-6 border-b border-white/[0.04] group">
+              <span className="shrink-0 w-9 h-9 rounded-[10px] bg-primary/[0.1] border border-primary/[0.12] flex items-center justify-center font-mono text-[12px] font-bold text-primary-light tabular-nums group-hover:bg-primary/[0.18] transition-colors">
                 {String(i + 1).padStart(2, "0")}
               </span>
               <div>
-                <h3 className="text-[15px] font-semibold text-text mb-0.5">{title}</h3>
+                <h3 className="text-[16px] font-semibold text-text mb-1">{title}</h3>
                 <p className="text-secondary text-[14px] leading-relaxed">{desc}</p>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="mb-6">
-          <h2 className="font-display font-bold text-xl mb-2">Provably Fair</h2>
-          <p className="text-secondary text-[14px] leading-relaxed">
+        <div className="mb-8">
+          <h2 className="font-display font-bold text-2xl mb-2">Provably Fair</h2>
+          <p className="text-secondary text-[15px] leading-relaxed">
             All randomness is on-chain via ORAO VRF. Every address is public and verifiable.
           </p>
         </div>
 
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           {addresses.map(({ label, value }) => (
             <div
               key={label}
-              className="bg-surface rounded-[12px] border border-white/[0.06] px-4 py-3 flex items-center gap-4 hover:border-primary/[0.15] transition-colors"
+              className="card-glow bg-surface rounded-[14px] border border-white/[0.06] px-5 py-3.5 flex items-center gap-4"
             >
-              <span className="text-tertiary text-[11px] font-semibold w-14 shrink-0">{label}</span>
-              <code className="font-mono text-[11px] text-secondary break-all">{value}</code>
+              <span className="text-tertiary text-[11px] font-bold tracking-wide w-16 shrink-0">{label}</span>
+              <code className="font-mono text-[11px] text-secondary break-all leading-relaxed">{value}</code>
             </div>
           ))}
         </div>

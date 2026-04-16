@@ -11,34 +11,33 @@ import { PROGRAM_ID } from "@/lib/constants";
 export default function Home() {
   return (
     <main className="min-h-screen bg-bg relative overflow-x-hidden">
-      {/* Ambient background gradients */}
+      {/* Ambient background gradients — more visible */}
       <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] bg-primary/[0.07] rounded-full blur-[180px]" />
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-gold/[0.04] rounded-full blur-[160px]" />
+        <div className="absolute top-[-200px] left-1/2 -translate-x-1/2 w-[1200px] h-[800px] bg-primary/[0.08] rounded-full blur-[200px]" />
+        <div className="absolute bottom-[-100px] left-1/2 -translate-x-1/2 w-[1000px] h-[500px] bg-gold/[0.05] rounded-full blur-[180px]" />
+        <div className="absolute top-[40%] left-[-200px] w-[500px] h-[500px] bg-primary/[0.04] rounded-full blur-[150px]" />
+        <div className="absolute top-[60%] right-[-200px] w-[500px] h-[500px] bg-gold/[0.03] rounded-full blur-[150px]" />
       </div>
 
       <div className="relative z-10">
         <Nav />
 
-        {/* Hero with glow */}
-        <div className="relative">
-          <Hero />
-        </div>
+        <Hero />
 
         <WinnerTicker />
 
-        <div className="max-w-[560px] mx-auto px-5 pt-16 pb-8">
+        <div className="max-w-[640px] mx-auto px-5 pt-16 pb-8">
           <ThresholdBar />
         </div>
 
-        <div className="max-w-[560px] mx-auto px-5 pb-20">
+        <div className="max-w-[640px] mx-auto px-5 pb-20">
           <BuySection />
         </div>
 
         <ProofSection />
 
         <footer className="border-t border-white/[0.04] py-14 px-5">
-          <div className="max-w-[560px] mx-auto text-center space-y-4">
+          <div className="max-w-[640px] mx-auto text-center space-y-4">
             <div className="flex flex-wrap justify-center gap-6 text-[13px] text-tertiary">
               <a href="#" className="hover:text-secondary transition-colors">Terms</a>
               <a href="#" className="hover:text-secondary transition-colors">Free Entry</a>
