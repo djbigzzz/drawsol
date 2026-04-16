@@ -15,24 +15,23 @@ const DEMO_WINS: RecentWin[] = [
   { wallet: "2vYt...cA9n", amount: 5 },
   { wallet: "8wDz...fL4x", amount: 10 },
   { wallet: "4jHm...eK7v", amount: 5 },
-  { wallet: "6nBs...iQ1w", amount: 5 },
+  { wallet: "6nBs...iQ1w", amount: 50 },
+  { wallet: "1dPw...kR8m", amount: 25 },
+  { wallet: "9fTq...wV3n", amount: 10 },
 ];
 
 export default function WinnerTicker() {
   const [wins] = useState<RecentWin[]>(DEMO_WINS);
 
   return (
-    <section className="py-4 mt-12 overflow-hidden border-y border-white/[0.04]">
+    <section className="py-3 overflow-hidden bg-surface/50 border-y border-white/[0.03]">
       <div className="flex items-center">
-        <span className="text-[10px] text-tertiary px-5 whitespace-nowrap font-medium tracking-wide">
-          RECENT WINS
-        </span>
         <div className="overflow-hidden relative flex-1">
           <div className="ticker-scroll flex gap-3 whitespace-nowrap">
             {[...wins, ...wins].map((win, i) => (
               <div
                 key={i}
-                className="inline-flex items-center gap-2 bg-surface rounded-full px-3.5 py-1 border border-white/[0.04]"
+                className="inline-flex items-center gap-1.5 px-3 py-1"
               >
                 <span className="font-mono text-[13px] font-semibold text-success">
                   +${win.amount}

@@ -4,26 +4,10 @@ import { PROGRAM_ID, ORAO_VRF_PROGRAM, DRAW_NUMBER } from "@/lib/constants";
 import { getDrawStatePda, getVaultPda } from "@/lib/anchor";
 
 const steps = [
-  {
-    num: "01",
-    title: "Answer & Buy",
-    desc: "Answer a skill question and purchase tickets with USDC.",
-  },
-  {
-    num: "02",
-    title: "Scratch & Win",
-    desc: "Each ticket includes an instant scratch card. Win up to $50.",
-  },
-  {
-    num: "03",
-    title: "Threshold Hit",
-    desc: "When the pool reaches the target, the grand draw fires.",
-  },
-  {
-    num: "04",
-    title: "Winner Paid",
-    desc: "VRF picks a random ticket. 100 SOL sent to the winner.",
-  },
+  { title: "Answer & Buy", desc: "Answer a skill question and purchase tickets with USDC. Bulk discounts up to 30%." },
+  { title: "Scratch & Win", desc: "Every ticket includes an instant scratch card powered by ORAO VRF. Win up to $50." },
+  { title: "Threshold Hit", desc: "When the prize pool reaches the target, the grand draw fires automatically." },
+  { title: "Winner Paid", desc: "VRF selects a random winning ticket. 100 SOL transferred directly to the winner." },
 ];
 
 export default function ProofSection() {
@@ -38,50 +22,44 @@ export default function ProofSection() {
   ];
 
   return (
-    <section className="px-5 py-24 max-w-[640px] mx-auto">
-      {/* How it works */}
-      <h2 className="font-display font-bold text-2xl mb-10">How it works</h2>
+    <section className="px-5 pt-20 pb-16">
+      <div className="max-w-[560px] mx-auto">
+        {/* How it works */}
+        <h2 className="font-display font-bold text-xl mb-8">How it works</h2>
 
-      <div className="space-y-1 mb-24">
-        {steps.map(({ num, title, desc }) => (
-          <div
-            key={num}
-            className="flex gap-5 py-5 border-b border-white/[0.04] group"
-          >
-            <span className="font-mono text-[12px] text-tertiary pt-0.5 shrink-0">{num}</span>
-            <div>
-              <h3 className="font-semibold text-[15px] text-text mb-1">{title}</h3>
-              <p className="text-secondary text-[14px] leading-relaxed">{desc}</p>
+        <div className="space-y-0 mb-20">
+          {steps.map(({ title, desc }, i) => (
+            <div key={i} className="flex gap-4 py-5 border-b border-white/[0.04]">
+              <span className="font-mono text-[11px] text-tertiary tabular-nums pt-1 shrink-0 w-5">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <div>
+                <h3 className="text-[15px] font-semibold text-text mb-0.5">{title}</h3>
+                <p className="text-secondary text-[14px] leading-relaxed">{desc}</p>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      {/* Provably Fair */}
-      <div className="flex items-center gap-3 mb-6">
-        <h2 className="font-display font-bold text-2xl">Provably Fair</h2>
-        <span className="text-[11px] font-medium text-success bg-success/[0.08] px-2 py-0.5 rounded-full border border-success/[0.12]">
-          Verified
-        </span>
-      </div>
+        {/* Provably fair */}
+        <div className="mb-6">
+          <h2 className="font-display font-bold text-xl mb-2">Provably Fair</h2>
+          <p className="text-secondary text-[14px] leading-relaxed">
+            All randomness is on-chain via ORAO VRF. Every address is public and verifiable.
+          </p>
+        </div>
 
-      <p className="text-secondary text-[14px] leading-relaxed mb-8">
-        Every outcome is determined by ORAO VRF on-chain randomness.
-        All contract addresses are public.
-      </p>
-
-      <div className="space-y-2">
-        {addresses.map(({ label, value }) => (
-          <div
-            key={label}
-            className="bg-surface rounded-[12px] border border-white/[0.06] px-4 py-3 flex items-center gap-4 group hover:border-white/[0.1] transition-colors"
-          >
-            <span className="text-tertiary text-[11px] font-medium w-16 shrink-0">{label}</span>
-            <code className="font-mono text-[12px] text-secondary break-all leading-relaxed">
-              {value}
-            </code>
-          </div>
-        ))}
+        <div className="space-y-1.5">
+          {addresses.map(({ label, value }) => (
+            <div
+              key={label}
+              className="bg-surface rounded-[12px] border border-white/[0.05] px-4 py-3 flex items-center gap-4 hover:border-white/[0.08] transition-colors"
+            >
+              <span className="text-tertiary text-[11px] font-semibold w-14 shrink-0">{label}</span>
+              <code className="font-mono text-[11px] text-secondary break-all">{value}</code>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );

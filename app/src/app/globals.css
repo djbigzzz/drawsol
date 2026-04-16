@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://api.fontshare.com/v2/css?f[]=clash-display@700,600&f[]=satoshi@400,500,700&display=swap');
+@import url('https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,600,700&display=swap');
 
 html {
   scroll-behavior: smooth;
@@ -10,38 +10,45 @@ html {
 
 body {
   font-family: 'Satoshi', system-ui, -apple-system, sans-serif;
-  background-color: #09090B;
-  color: #EDEDEF;
+  background-color: #0B0A08;
+  color: #E8E6E1;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Wallet adapter overrides */
+/* Noise grain texture — subtle tactile depth */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  opacity: 0.025;
+  pointer-events: none;
+  z-index: 50;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Wallet adapter */
 .wallet-adapter-button {
-  background: #E8762D !important;
+  background: #D4691F !important;
   border-radius: 10px !important;
   font-family: 'Satoshi', sans-serif !important;
   font-weight: 600 !important;
   font-size: 14px !important;
   padding: 10px 20px !important;
-  transition: background 0.15s ease !important;
+  transition: all 0.15s ease !important;
+  box-shadow: 0 0 20px rgba(212, 105, 31, 0.2) !important;
 }
 .wallet-adapter-button:hover {
-  background: #D4691F !important;
+  background: #C05E1A !important;
+  box-shadow: 0 0 28px rgba(212, 105, 31, 0.3) !important;
 }
 
-/* Scratch card shimmer */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-/* Ticker scroll */
+/* Ticker */
 @keyframes ticker-scroll {
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
 }
 .ticker-scroll {
-  animation: ticker-scroll 30s linear infinite;
+  animation: ticker-scroll 25s linear infinite;
 }
 
 /* Range slider */
@@ -60,18 +67,17 @@ input[type="range"]::-webkit-slider-thumb {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #E8762D;
+  background: #D4691F;
   cursor: pointer;
-  transition: transform 0.1s ease;
-}
-input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.1);
+  border: 3px solid #0B0A08;
+  box-shadow: 0 0 0 2px rgba(212, 105, 31, 0.3);
 }
 input[type="range"]::-moz-range-thumb {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: #E8762D;
+  background: #D4691F;
   cursor: pointer;
-  border: none;
+  border: 3px solid #0B0A08;
+  box-shadow: 0 0 0 2px rgba(212, 105, 31, 0.3);
 }

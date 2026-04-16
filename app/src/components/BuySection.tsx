@@ -54,13 +54,13 @@ export default function BuySection() {
 
   return (
     <>
-      <div className="mb-6" id="buy">
-        <div className="bg-surface rounded-card border border-white/[0.06] p-6">
-          <h2 className="font-display font-bold text-xl mb-6">Get Tickets</h2>
+      <div id="buy">
+        <div className="bg-surface border border-white/[0.05] rounded-[16px] p-6">
+          <h2 className="font-display font-bold text-lg mb-5">Get Tickets</h2>
 
           {/* Skill question */}
           <div className="mb-5">
-            <label className="block text-tertiary text-[11px] font-medium mb-1.5">
+            <label className="block text-tertiary text-[11px] font-semibold tracking-wide mb-1.5">
               SKILL QUESTION
             </label>
             <p className="text-text text-[15px] mb-2.5">{skillQuestion}</p>
@@ -69,14 +69,14 @@ export default function BuySection() {
               value={answer}
               onChange={(e) => setAnswer(e.target.value)}
               placeholder="Your answer..."
-              className="w-full bg-elevated border border-white/[0.06] rounded-btn px-4 py-3 text-text text-sm placeholder:text-tertiary/60 focus:outline-none focus:border-white/[0.14] transition-colors"
+              className="w-full bg-elevated border border-white/[0.05] rounded-[10px] px-4 py-3 text-text text-sm placeholder:text-tertiary/50 focus:outline-none focus:border-primary/40 transition-colors"
             />
           </div>
 
           {/* Quantity */}
           <div className="mb-5">
             <div className="flex justify-between items-baseline mb-3">
-              <label className="text-tertiary text-[11px] font-medium">QUANTITY</label>
+              <label className="text-tertiary text-[11px] font-semibold tracking-wide">QUANTITY</label>
               <span className="font-mono text-2xl font-bold text-text">{quantity}</span>
             </div>
             <input
@@ -87,15 +87,15 @@ export default function BuySection() {
               onChange={(e) => setQuantity(parseInt(e.target.value))}
               className="w-full mb-3"
             />
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-4 gap-1.5">
               {[1, 10, 30, 70].map((q) => (
                 <button
                   key={q}
                   onClick={() => setQuantity(q)}
-                  className={`py-2 rounded-btn text-[13px] font-semibold transition-colors ${
+                  className={`py-2 rounded-[8px] text-[13px] font-semibold transition-colors ${
                     quantity === q
                       ? "bg-primary text-white"
-                      : "bg-elevated text-secondary border border-white/[0.06] hover:border-white/[0.12]"
+                      : "bg-elevated text-secondary hover:text-text"
                   }`}
                 >
                   {q}
@@ -104,13 +104,13 @@ export default function BuySection() {
             </div>
           </div>
 
-          {/* Discount tiers */}
+          {/* Discount indicator */}
           {discount > 0 && (
-            <div className="flex items-center gap-2 mb-5 px-3 py-2 bg-success/[0.06] rounded-btn border border-success/[0.12]">
+            <div className="flex items-center justify-between mb-4 px-3 py-2 bg-success/[0.06] rounded-[8px]">
               <span className="text-success text-[13px] font-medium">
-                {discount}% bulk discount applied
+                {discount}% bulk discount
               </span>
-              <span className="text-success/60 text-[13px] font-mono ml-auto">
+              <span className="text-success font-mono text-[13px]">
                 -${savings.toFixed(2)}
               </span>
             </div>
@@ -120,28 +120,29 @@ export default function BuySection() {
           <div className="bg-elevated rounded-[12px] p-4 mb-5">
             <div className="flex justify-between text-[13px] mb-2">
               <span className="text-secondary">
-                {quantity} ticket{quantity > 1 ? "s" : ""} @ ${TICKET_PRICE_USDC}
+                {quantity} x ${TICKET_PRICE_USDC}
               </span>
               <span className="font-mono text-secondary">${basePrice.toFixed(2)}</span>
             </div>
             <div className="border-t border-white/[0.04] pt-2 flex justify-between items-baseline">
-              <span className="text-[13px] font-medium text-text">Total</span>
+              <span className="text-[13px] font-medium">Total</span>
               <span className="font-mono text-lg font-bold text-text">
-                ${totalPrice.toFixed(2)} <span className="text-secondary text-sm">USDC</span>
+                ${totalPrice.toFixed(2)}
+                <span className="text-secondary text-[13px] font-normal ml-1">USDC</span>
               </span>
             </div>
           </div>
 
           {/* CTA */}
           {!wallet.publicKey ? (
-            <div className="text-center py-3 rounded-btn border border-dashed border-white/[0.08]">
-              <p className="text-tertiary text-[13px]">Connect wallet to continue</p>
+            <div className="text-center py-3.5 rounded-[10px] border border-dashed border-white/[0.06]">
+              <p className="text-tertiary text-[13px]">Connect wallet to purchase</p>
             </div>
           ) : (
             <button
               onClick={handleBuy}
               disabled={purchasing || !answer.trim() || !isDrawOpen}
-              className="w-full py-3.5 rounded-btn bg-primary hover:bg-[#D4691F] text-white font-semibold text-[15px] transition-colors active:scale-[0.98] disabled:bg-elevated disabled:text-tertiary disabled:cursor-not-allowed"
+              className="w-full py-3.5 rounded-[10px] bg-primary hover:bg-[#C05E1A] text-white font-semibold text-[15px] transition-all shadow-[0_0_24px_rgba(212,105,31,0.2)] hover:shadow-[0_0_32px_rgba(212,105,31,0.3)] active:scale-[0.97] disabled:bg-elevated disabled:text-tertiary disabled:shadow-none disabled:cursor-not-allowed"
             >
               {purchasing
                 ? "Processing..."

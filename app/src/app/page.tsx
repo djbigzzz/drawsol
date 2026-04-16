@@ -10,20 +10,29 @@ import { PROGRAM_ID } from "@/lib/constants";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-bg">
+    <main className="min-h-screen bg-bg relative">
       <Nav />
-      <Hero />
 
-      <div className="max-w-[640px] mx-auto px-5">
-        <ThresholdBar />
-        <BuySection />
+      {/* Hero with single ambient glow */}
+      <div className="relative">
+        <div className="absolute top-[30%] left-1/2 -translate-x-1/2 w-[700px] h-[400px] bg-primary/[0.06] rounded-full blur-[150px] pointer-events-none" />
+        <Hero />
       </div>
 
       <WinnerTicker />
+
+      <div className="max-w-[560px] mx-auto px-5 pt-16 pb-8">
+        <ThresholdBar />
+      </div>
+
+      <div className="max-w-[560px] mx-auto px-5 pb-20">
+        <BuySection />
+      </div>
+
       <ProofSection />
 
-      <footer className="border-t border-white/[0.04] py-16 px-5">
-        <div className="max-w-[640px] mx-auto text-center space-y-4">
+      <footer className="border-t border-white/[0.04] py-14 px-5">
+        <div className="max-w-[560px] mx-auto text-center space-y-4">
           <div className="flex flex-wrap justify-center gap-6 text-[13px] text-tertiary">
             <a href="#" className="hover:text-secondary transition-colors">Terms</a>
             <a href="#" className="hover:text-secondary transition-colors">Free Entry</a>
@@ -41,12 +50,12 @@ export default function Home() {
               rel="noopener noreferrer"
               className="hover:text-secondary transition-colors"
             >
-              GitHub
+              Source
             </a>
           </div>
-          <p className="text-[11px] text-tertiary/60 max-w-sm mx-auto leading-relaxed">
+          <p className="text-[11px] text-tertiary/50 max-w-xs mx-auto leading-relaxed">
             DrawSol is a skill-based competition. Tickets are non-refundable.
-            Built for Colosseum Frontier Hackathon 2026.
+            Colosseum Frontier Hackathon 2026.
           </p>
         </div>
       </footer>
