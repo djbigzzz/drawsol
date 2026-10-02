@@ -80,7 +80,7 @@ function baseDraw(id: number, now: number, status: DrawStatus): DrawView {
     proceedsWithdrawn: false,
     reserveWithdrawn: false,
     // Draw 1's real published terms hash (they mention the since-removed question), so the note shows
-    termsHash: Uint8Array.from(Buffer.from(QUESTION_TERMS_HASHES[1], "hex")),
+    termsHash: Uint8Array.from(QUESTION_TERMS_HASHES[1].match(/../g)!.map((x) => parseInt(x, 16))),
   };
 }
 

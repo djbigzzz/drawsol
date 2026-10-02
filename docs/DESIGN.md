@@ -1059,7 +1059,7 @@ Removed: SplitFlap serials, `Verify` chips and the "Proof / Hide proof" ghost bu
 
 **House rules** (under a double rule): `[248 head "House rules" | 1fr list]` at ≥ 1024px, with the list in 2 columns. Items are `.t-small` ink-2, each with a 6px ink dot bullet. The items are in §6; one item holds the text button "Claim free entry" and another the BeGambleAware link.
 
-**Terms lines** (`.t-fine` ink-3): for a draw created before 2 Oct 2026 (`QUESTION_REMOVED_AT`), first "Draw Nº 1's published terms (committed in `terms_hash`) mention an in-app question. It was removed on 2 Oct 2026, and it was never checked on-chain."; then "These terms are committed on-chain as {first 8…last 8 of `toHex(d.termsHash)`}." with the text button "Show full hash". The house rules' "Claim free entry" opens the stub's free tab (`showFree()`).
+**Terms lines** (`.t-fine` ink-3): for a draw whose `terms_hash` is one of the published terms that mention the in-app question (`QUESTION_TERMS_HASHES`: `scripts/terms/draw-0.md` and `draw-1.md`), first "Draw Nº 1's published terms (committed in `terms_hash`) mention an in-app question. It was removed on 2 Oct 2026, and it was never checked on-chain."; then "These terms are committed on-chain as {first 8…last 8 of `toHex(d.termsHash)`}." with the text button "Show full hash". The house rules' "Claim free entry" opens the stub's free tab (`showFree()`).
 
 Removed:
 - the 2×2 bordered guarantee grid with numbered mono indices;
