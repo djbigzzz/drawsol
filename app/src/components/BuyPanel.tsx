@@ -254,7 +254,7 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
               ) : (
                 <div>
                   <dt>You can still buy</dt>
-                  <dd>{mineRead ? Math.min(allowance.wallet, remaining(d)) : <span className="c-ink-3">…</span>}</dd>
+                  <dd>{mineRead ? Math.min(allowance.wallet, remaining(d)) : <span className="c-ink-3">{myState === "error" ? "—" : "…"}</span>}</dd>
                 </div>
               )}
             </>

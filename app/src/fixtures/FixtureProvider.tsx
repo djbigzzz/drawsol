@@ -24,11 +24,16 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
   const now = realNow + offset;
   const [name, setName] = useState<Scenario>("loading");
   const [raw, setRaw] = useState("open");
+  // &my=loading|error: this wallet's accounts not read yet / failed, as the live provider reports them
+  const [my, setMy] = useState<DrawSolData["myState"]>("ready");
   useEffect(() => {
     // pick the scenario after mount so the prerendered HTML (a loading ticket) hydrates cleanly
-    const p = new URLSearchParams(window.location.search).get("fx") ?? "open";
+    const q = new URLSearchParams(window.location.search);
+    const p = q.get("fx") ?? "open";
     setRaw(p);
     setName((SCENARIOS as string[]).includes(p) ? (p as Scenario) : "open");
+    const m = q.get("my");
+    if (m === "loading" || m === "error") setMy(m);
   }, []);
   const fx = useMemo(() => scenario(name, FIXED_NOW), [name]);
   const [session, setSession] = useState<RevealSession | null>(fx.session);
@@ -51,9 +56,9 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
     entries: fx.entries,
     entriesState: "ready",
     wallet: fx.wallet,
-    player: fx.player,
-    myEntries: fx.mine,
-    myState: "ready",
+    player: my === "ready" ? fx.player : null,
+    myEntries: my === "ready" ? fx.mine : [],
+    myState: my,
     drawRandomness: fx.drawRandomness,
     costs: { oraoFee: BigInt(500_000), entryRent: BigInt(2_276_160), playerRent: BigInt(1_545_600) },
     now,
