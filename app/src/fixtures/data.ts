@@ -9,7 +9,7 @@ import { sha256 } from "@noble/hashes/sha256";
 import { utils } from "@coral-xyz/anchor";
 import { rollEntry, winningTicket } from "@/lib/fairness";
 import type { DrawStatus, DrawView, EntryView, PlayerView, RandomnessView } from "@/lib/types";
-import type { RevealSession } from "@/hooks/context";
+import type { Actions, RevealSession } from "@/hooks/context";
 import { drawPda, entryPda, playerPda } from "@/lib/chain";
 
 const enc = new TextEncoder();
@@ -107,14 +107,15 @@ export interface FxWorld {
   entryRandomness: Map<string, Uint8Array>;
 }
 
-export function buildWorld(id: number, now: number, status: DrawStatus, sell = 1, alsoMine: string[] = []): FxWorld {
+export function buildWorld(id: number, now: number, status: DrawStatus, sell = 1, alsoMine: string[] = [], freeNotMine = false): FxWorld {
   const d = baseDraw(id, now, status);
   const entries: EntryView[] = [];
   const entryRandomness = new Map<string, Uint8Array>();
   let next = 0;
   const script = SCRIPT.slice(0, Math.max(0, Math.round(SCRIPT.length * sell)));
   script.forEach(([who, count, free, revealed, minsAgo], seq) => {
-    const owner = who === "me" || alsoMine.includes(who) ? ME : fxKey(`player-${who}`);
+    // freeNotMine: this wallet's scripted free entry belongs to another wallet, so this one can still claim
+    const owner = who === "me" && free && freeNotMine ? fxKey("player-k") : who === "me" || alsoMine.includes(who) ? ME : fxKey(`player-${who}`);
     const address = entryPda(d.address, seq);
     const rand = fxRand(`entry-${id}-${seq}`);
     entryRandomness.set(address.toBase58(), rand);
@@ -207,6 +208,16 @@ export type Scenario =
   | "open-guest"
   | "open-low"
   | "open-cap"
+  | "open-max"
+  | "open-free"
+  | "open-free-claimed"
+  | "open-free-out"
+  | "open-free-guest"
+  | "confirm-free"
+  | "open-lowish"
+  | "open-low-pending"
+  | "open-low-failed"
+  | "open-low-done"
   | "empty"
   | "due"
   | "drawing"
@@ -228,7 +239,8 @@ export type Scenario =
 
 /** Every scenario the fixture build understands (anything else falls back to "open"). */
 export const SCENARIOS: Scenario[] = [
-  "open", "open-guest", "open-low", "open-cap", "empty", "due", "drawing", "drawing-wait", "settled",
+  "open", "open-guest", "open-low", "open-cap", "open-max", "open-free", "open-free-claimed", "open-free-out", "open-free-guest",
+  "confirm-free", "open-lowish", "open-low-pending", "open-low-failed", "open-low-done", "empty", "due", "drawing", "drawing-wait", "settled",
   "cancelled", "nodraw", "loading", "error", "confirm", "reveal", "reveal-done", "reveal-5",
   "reveal-buying", "reveal-wait", "reveal-approve", "reveal-failed", "reveal-nowin",
 ];
@@ -275,6 +287,10 @@ export interface FxState {
   session: RevealSession | null;
   settleTx: Map<string, string>;
   entryRandomness: Map<string, Uint8Array>;
+  /** in-flight, failed or finished actions to start from (airdrop states) */
+  phase?: Actions["phase"];
+  errors?: Actions["errors"];
+  lastSig?: Actions["lastSig"];
 }
 
 export function scenario(s: Scenario, now: number): FxState {
@@ -309,6 +325,8 @@ export function scenario(s: Scenario, now: number): FxState {
   else if (nowin) w = buildWorld(3, now, "open", 1, [nowin]);
   // wallet at its limit: three more of the scripted purchases are this wallet's, so it really holds 50
   else if (s === "open-cap") w = buildWorld(3, now, "open", 1, ["b", "c", "h"]);
+  // the free-entry tab, claimable: this wallet's scripted free entry (#0059) belongs to someone else
+  else if (s === "open-free" || s === "open-free-out" || s === "confirm-free" || s === "open-free-guest" || s === "open-lowish") w = buildWorld(3, now, "open", 1, [], true);
   else w = buildWorld(3, now, "open");
 
   if (s === "due") {
@@ -357,12 +375,27 @@ export function scenario(s: Scenario, now: number): FxState {
   fx.draws = [w.draw, past2.draw, past1.draw];
   fx.entryRandomness = w.entryRandomness;
 
-  if (s === "open-guest") {
+  // free entries all claimed: the draw's cap is the two already taken (#0041 and #0059), none by this wallet
+  if (s === "open-free-out") w.draw.freeCap = w.draw.freeTickets;
+  if (s === "open-guest" || s === "open-free-guest") {
     fx.wallet = null;
     fx.mine = [];
     fx.player = null;
   }
-  if (s === "open-low") fx.wallet = { address: ME, balance: sol(0.0123) };
+  // low balance: below one ticket plus fees (open-low*), or enough for a ticket but under 0.05 SOL (open-lowish)
+  if (s === "open-low" || s === "open-low-pending" || s === "open-low-failed") fx.wallet = { address: ME, balance: sol(0.0123) };
+  if (s === "open-lowish") fx.wallet = { address: ME, balance: sol(0.031) };
+  if (s === "open-low-pending") fx.phase = { airdrop: "confirming" };
+  if (s === "open-low-failed")
+    fx.errors = {
+      airdrop: { code: "RateLimited", message: "The devnet faucet is turning away requests from this connection for now (429 Too Many Requests). No SOL was sent." },
+    };
+  // the faucet's 0.5 SOL has landed: 0.0123 + 0.5
+  if (s === "open-low-done") {
+    fx.wallet = { address: ME, balance: sol(0.5123) };
+    fx.phase = { airdrop: "done" };
+    fx.lastSig = { airdrop: fxSig("airdrop") };
+  }
 
   if (s === "reveal" || s === "reveal-done") {
     // the wallet's 10-ticket entry, revealed on-chain; the still frame pauses mid-way (or at the end)

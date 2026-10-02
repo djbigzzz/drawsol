@@ -1,14 +1,14 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
-import { maxEntries } from "@/lib/derive";
+import { maxEntries, phaseOf } from "@/lib/derive";
 import { oneIn, sol, utcLabel } from "@/lib/format";
 import { toHex } from "@/lib/fairness";
-import { GAMBLE_AWARE_URL, ORAO_PROGRAM_ID, PROGRAM_ID, SOURCE_URL } from "@/lib/config";
+import { GAMBLE_AWARE_URL, ORAO_PROGRAM_ID, PROGRAM_ID, QUESTION_REMOVED_AT, SOURCE_URL } from "@/lib/config";
 import { vaultPda } from "@/lib/chain";
 import { ProofLink } from "./bits";
+import { useBuy } from "./BuyContext";
 import { Microtext } from "./print/Mark";
 
 /**
@@ -16,9 +16,9 @@ import { Microtext } from "./print/Mark";
  * perforation. The six promises are a ledger on the body; the house rules sit on the stub.
  */
 export function Rules() {
-  const { current: d, draws, myEntries, wallet } = useDrawSol();
-  const { lastSig, claimFree } = useActions();
-  const { setVisible } = useWalletModal();
+  const { current: d, draws, myEntries, now } = useDrawSol();
+  const { lastSig } = useActions();
+  const { showFree } = useBuy();
   const [fullHash, setFullHash] = useState(false);
   if (!d) return null;
 
@@ -29,6 +29,7 @@ export function Rules() {
   const hash = toHex(d.termsHash);
   const freeLeft = Math.max(0, d.freeCap - d.freeTickets);
   const claimed = myEntries.some((e) => e.isFree);
+  const selling = phaseOf(d, now) === "selling";
 
   const rows: { p: string; h: ReactNode; c: ReactNode }[] = [
     {
@@ -142,14 +143,15 @@ export function Rules() {
             <span className="dbl" aria-hidden="true" />
             <ul className="house-list t-small">
               <li>18+ only. You confirm it once on each device.</li>
-              <li>One general-knowledge question before each purchase. It’s asked here in the app, not checked on-chain.</li>
+              <li>A prize draw: every result is decided by chance, and you can enter free instead of buying.</li>
               <li>
                 Up to {d.maxPerTx} tickets per purchase and {d.maxPerWallet} per wallet per draw, enforced on-chain.
               </li>
               <li>
-                One free entry per wallet, grand draw only ({freeLeft} of {d.freeCap} left).{" "}
-                {!claimed && freeLeft > 0 && d.status === "open" && (
-                  <button type="button" className="tbtn" onClick={wallet ? claimFree : () => setVisible(true)}>
+                One free entry per wallet, with the same chance of the grand prize as one paid ticket; free entries don’t get an instant-win roll yet (
+                {freeLeft} of {d.freeCap} left).{" "}
+                {!claimed && freeLeft > 0 && selling && (
+                  <button type="button" className="tbtn" onClick={showFree}>
                     Claim free entry
                   </button>
                 )}
@@ -173,8 +175,14 @@ export function Rules() {
                 If it stops being fun, <ProofLink href={GAMBLE_AWARE_URL}>BeGambleAware</ProofLink> can help.
               </li>
             </ul>
+            {d.createdAt < QUESTION_REMOVED_AT && (
+              <p className="terms t-fine">
+                Draw Nº {d.id}’s published terms (committed in <code>terms_hash</code>) mention an in-app question. It was removed on 2 Oct 2026, and it was
+                never checked on-chain.
+              </p>
+            )}
             <p className="terms t-fine">
-              The question and these terms are committed on-chain as{" "}
+              These terms are committed on-chain as{" "}
               <code className="nw">{fullHash ? hash : `${hash.slice(0, 8)}…${hash.slice(-8)}`}</code>.{" "}
               <button type="button" className="tbtn" onClick={() => setFullHash((v) => !v)} aria-expanded={fullHash}>
                 {fullHash ? "Show short hash" : "Show full hash"}

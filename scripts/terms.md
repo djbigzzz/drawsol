@@ -1,4 +1,4 @@
-# DrawSol — Draw Terms (v2)
+# DrawSol — Prize Draw Terms (v3)
 
 These terms are hashed (SHA-256) into each draw's on-chain `terms_hash` at creation. The rendered text for a
 draw — this template followed by the "Parameters of this draw" section generated from the exact on-chain
@@ -38,16 +38,16 @@ Free entries take part in the grand draw only and have no instant result.
 
 - Maximum tickets per transaction and per wallet are set per draw (see below); the free entry counts toward
   the per-wallet limit.
-- One free grand-draw entry per wallet, up to the draw's free-entry cap, while sales are open.
+- One free grand-draw entry per wallet, up to the draw's free-entry cap, while sales are open. No purchase is
+  needed. The claimant's wallet pays only the Solana rent for the entry record and the network fee.
+- A free entry is one ticket in the grand draw, numbered like any other, with the same chance of the grand
+  prize as one paid ticket. Free entries do not get an instant-win result (see section 3).
 - Ticket prices are flat: every ticket buys the same odds.
 
-## 5. Skill question
+## 5. How this draw works
 
-Before buying, the app asks the following question. It is asked in the app only and is **not** checked
-on-chain.
-
-> A split-flap board reads 097. Three more tickets sell. What does it read now?
-> Options: 097 · 100 · 103 — correct answer: 100.
+This is a prize draw: every result is decided by chance (section 2), and there is a free entry route
+(section 4) alongside paid tickets. There is no entry question, in the app or on-chain.
 
 ## 6. Responsible play
 

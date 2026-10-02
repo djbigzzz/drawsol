@@ -37,7 +37,7 @@
 /* ---------- base ---------- */
 html { -webkit-text-size-adjust: 100%; scroll-padding-top: calc(var(--strip-h) + 16px); }
 /* below 1024px the buy bar is fixed to the bottom: focused elements scroll clear of it (WCAG 2.4.11) */
-@media (max-width: 1023px) { html { scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom)); } }
+@media (max-width: 1023px) { html { scroll-padding-bottom: calc(144px + env(safe-area-inset-bottom)); } }
 body {
   margin: 0; min-height: 100vh;
   background: var(--paper) var(--grain-paper); background-size: 220px 220px;
@@ -387,6 +387,19 @@ p { margin: 0; }
 /* ≥ 1024: 144px, its ink ≥ 16px from the paper's top and right edges and from the heading, still
    striking the head rule */
 @media (min-width: 1024px) { .stub .stamp-closed { right: 16px; top: 28px; width: 144px; } }
+/* "Buy tickets" / "Free entry": two tabs of equal weight in the stub head (same face, size and weight).
+   The open one is ink with a 3px ink tab rule standing on the head's double rule; the other is ink-2. */
+.stub-head.has-tabs, .ticket .stub-head.has-tabs { padding-bottom: 0; align-items: flex-end; }
+.tabs { display: flex; gap: 24px; min-width: 0; }
+.tab {
+  position: relative; display: inline-flex; align-items: flex-end; min-height: 44px; padding: 0 0 12px; margin: 0; border: 0; background: none; cursor: pointer;
+  font-family: var(--grot); font-weight: 800; font-stretch: 112%; font-size: 17px; line-height: 1.2; color: var(--ink-2); white-space: nowrap;
+}
+@media (min-width: 761px) { .tab { font-size: 18px; } }
+.tab:hover { color: var(--ink); }
+.tab[aria-selected="true"] { color: var(--ink); }
+.tab[aria-selected="true"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--ink); }
+.tab:focus-visible { outline-offset: 2px; }
 .stub-in { animation: fadein .16s ease-out; }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 .stub-pick { display: block; }
@@ -416,6 +429,7 @@ p { margin: 0; }
 .picks button:hover { color: var(--ink); }
 .picks button[aria-pressed="true"] { color: var(--ink); font-weight: 800; }
 .picks button:disabled { color: var(--ink-3); opacity: .5; cursor: not-allowed; }
+.picks button.max { white-space: nowrap; }
 .pen { position: absolute; left: -6px; top: -6px; width: calc(100% + 12px); height: calc(100% + 12px); overflow: visible; pointer-events: none; }
 .pen path { fill: none; stroke: var(--blue); stroke-linecap: round; }
 .pen .p1 { stroke-width: 1.5; }
@@ -434,6 +448,32 @@ p { margin: 0; }
 .fee p { font-family: var(--serif); font-size: 15px; line-height: 1.4; margin-top: 16px; color: var(--ink-2); }
 .fee-plain { font-family: var(--grot); font-stretch: 88%; font-weight: 500; font-size: 14px; color: var(--ink-2); margin-top: 8px; }
 .buy-btn { margin-top: 24px; }
+/* the fee sits on a dashed rule between the picks and the button (the total is in the button) */
+.fee-row { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--rule-2); }
+.fee-row .fee, .fee-row .fee-plain { margin-top: 0; }
+.fee-row + .buy-btn { margin-top: 16px; }
+/* the guarantee: one line of fact under the Buy button, scoped to the grand prize */
+.guarantee { margin-top: 8px; color: var(--ink-2); text-wrap: pretty; }
+.guarantee.g-top { margin-top: 16px; }
+.confirm .guarantee { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--rule-2); }
+/* Get devnet SOL: a line, a text button, its fine print; on failure the error and the two web faucets */
+.drip { margin-top: 16px; }
+.buy-btn + .drip { margin-top: 8px; }
+.drip + .guarantee { margin-top: 16px; }
+.drip-line { color: var(--ink-2); text-wrap: pretty; }
+.drip-fine { margin-top: 4px; color: var(--ink-3); text-wrap: pretty; }
+.drip-err { margin-top: 16px; }
+.drip-alt { margin-top: 8px; color: var(--ink-2); text-wrap: pretty; }
+/* the free-entry tab */
+.free-lead { margin-top: 24px; color: var(--ink); text-wrap: pretty; }
+.free .ledger { margin-top: 16px; }
+.free-rules { list-style: none; margin: 8px 0 0; padding: 0; color: var(--ink-2); }
+.free-rules li { padding: 8px 0; border-bottom: 1px solid var(--rule); text-wrap: pretty; }
+.free-rules li:last-child { border-bottom: 0; }
+.free-done { margin-top: 8px; color: var(--ink); text-wrap: pretty; }
+.free .age, .free .age-ok { margin-top: 8px; }
+.claim { margin-top: 8px; }
+.sheet .free-lead { margin-top: 16px; }
 .cap-line { margin-top: 24px; color: var(--ink); text-wrap: pretty; }
 /* a primary button that leaves the site: the same 0.62em arrow as proof links */
 .btn-out::after { content: ""; display: inline-block; width: .62em; height: .62em; margin-left: .1em; background: currentColor;
@@ -524,20 +564,29 @@ p { margin: 0; }
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); box-shadow: var(--shadow-bar);
   }
   .bar-spacer { display: block; height: calc(96px + env(safe-area-inset-bottom)); }
+  .bar-spacer.tall { height: calc(144px + env(safe-area-inset-bottom)); }
+  /* while selling: the two entry tabs on top, then the row (stepper or note, and the button) */
+  .buybar.has-tabs { grid-template-columns: minmax(0, 1fr); row-gap: 8px; padding-top: 4px; }
+  .bar-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: center; }
+  .bar-tabs { border-bottom: 1px solid var(--rule); }
+  .bar-tabs .tab { font-size: 16px; padding-bottom: 10px; }
 }
 .buybar .mini { display: flex; align-items: center; gap: 4px; }
 .buybar .mini output { min-width: 40px; text-align: center; }
 .buybar .t-qty { font-size: 36px; line-height: 1; }
 .buybar .bar-note { color: var(--ink-2); max-width: 150px; line-height: 1.3; }
+.buybar .bar-note.c-red { color: var(--red-ink); }
 
 /* md (761–1023): the stepper (or the note) and the button sit together at the bar's right end, on the
    ticket's right edge, instead of 400px apart */
-@media (min-width: 761px) { .buybar { padding-left: var(--gutter); padding-right: var(--gutter); grid-template-columns: auto minmax(0, 360px); justify-content: end; column-gap: 24px; } .buybar .bar-note { max-width: none; } }
+@media (min-width: 761px) { .buybar { padding-left: var(--gutter); padding-right: var(--gutter); grid-template-columns: auto minmax(0, 360px); justify-content: end; column-gap: 24px; } .buybar .bar-note { max-width: none; }
+  .buybar.has-tabs { grid-template-columns: auto; }
+  .bar-row { grid-template-columns: auto minmax(0, 360px); column-gap: 24px; } }
 .buybar .btn { min-height: 48px; padding: 0 16px; width: 100%; }
 .buybar .tbtn { margin: 0 -10px; justify-self: start; }
 .buybar .cw-more { display: none; }
 @media (min-width: 385px) { .buybar .cw-more { display: inline; } }
-@media (max-width: 359px) { .buybar { gap: 8px; } .buybar .btn { font-size: 15px; padding: 0 8px; } .buybar .mini output { min-width: 32px; } .specimen .sp-more { display: none; } }
+@media (max-width: 359px) { .buybar, .bar-row { gap: 8px; } .buybar .btn { font-size: 15px; padding: 0 8px; } .buybar .mini output { min-width: 32px; } .specimen .sp-more { display: none; } }
 .scrim { position: fixed; inset: 0; z-index: 80; background: rgba(27,24,20,.35); animation: fadein .2s ease-out; }
 .sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 90; border-radius: 10px 10px 0 0;
@@ -785,6 +834,7 @@ a.erow:hover { background: var(--stock-2); box-shadow: -8px 0 0 var(--stock-2), 
 .house-list li:last-child { border-bottom: 0; }
 .house-list .tbtn { margin-left: -8px; }
 .terms { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--rule-2); color: var(--ink-3); overflow-wrap: anywhere; }
+.terms + .terms { margin-top: 8px; padding-top: 0; border-top: 0; }
 /* phones: "DRAWSOL" / "CONDITIONS OF ISSUE" in two lines, the serial on the second line's baseline */
 @media (max-width: 760px) {
   .back .tk-head { align-items: last baseline; }

@@ -39,6 +39,7 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<RevealSession | null>(fx.session);
   useEffect(() => setSession(fx.session), [fx]);
   const [errors, setErrors] = useState<Actions["errors"]>({});
+  useEffect(() => setErrors(fx.errors ?? {}), [fx]);
 
   const data: DrawSolData = {
     load:
@@ -72,11 +73,12 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
 
   const fail = (k: ActionKey) => () => setErrors((e) => ({ ...e, [k]: NOTE }));
   const actions: Actions = {
-    phase: {},
+    phase: fx.phase ?? {},
     errors,
-    lastSig: {},
+    lastSig: fx.lastSig ?? {},
     buy: fail("buy"),
     claimFree: fail("free"),
+    airdrop: fail("airdrop"),
     runDraw: fail("run"),
     settle: fail("settle"),
     cancel: fail("cancel"),

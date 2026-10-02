@@ -1,22 +1,23 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { canCancel, phaseOf, remaining, walletAllowance } from "@/lib/derive";
 import { oneIn, sol, ticketNo, ticketRange, utcLabel } from "@/lib/format";
-import { CANCEL_GRACE_SECS, FAUCET_URL } from "@/lib/config";
+import { AIRDROP_LAMPORTS, CANCEL_GRACE_SECS, FAUCET_URL, LOW_BALANCE_LAMPORTS, SOLFAUCET_URL } from "@/lib/config";
 import { inkAt } from "@/lib/print";
 import type { DrawView } from "@/lib/types";
 import { Busy, Check, ErrorNote, inFlight, Minus, Plus, ProofLink } from "./bits";
-import { useBuy } from "./BuyContext";
-import { ConfirmStep } from "./ConfirmStep";
+import { useBuy, type BuyMode } from "./BuyContext";
+import { AdultRow, ConfirmStep, Guarantee } from "./ConfirmStep";
 import { FeeLine, useFees } from "./Fee";
 import { plural, solRound, stampDay } from "./fmt";
 import { Stamp } from "./print/Stamp";
 import { CarbonSlip } from "./print/CarbonSlip";
 
 const PICKS = [1, 5, 10, 25];
+const AIRDROP_SOL = sol(BigInt(AIRDROP_LAMPORTS), 0, 2);
 
 /** Which buy button the stub and the bar show, in priority order (DESIGN.md §5.5). */
 export function useBuyButton() {
@@ -36,13 +37,26 @@ export function useBuyButton() {
   return { kind: "buy" as const, subtotal };
 }
 
+/**
+ * A connected wallet whose devnet balance is below one ticket plus fees, or below 0.05 SOL: the stub
+ * offers "Get devnet SOL". null when not connected or the balance hasn't been read (never guessed).
+ */
+export function useLowBalance() {
+  const { current: d, wallet } = useDrawSol();
+  const fees = useFees();
+  if (!d || !wallet || wallet.balance === null) return null;
+  const one = d.ticketPrice + (fees ?? BigInt(0));
+  const floor = one > LOW_BALANCE_LAMPORTS ? one : LOW_BALANCE_LAMPORTS;
+  return wallet.balance < floor ? { balance: wallet.balance } : null;
+}
+
 /** The stub of the draw ticket: where you buy, or run, settle and refund. */
 export function BuyPanel() {
   const { current: d, now } = useDrawSol();
   if (!d) return null;
   const ph = phaseOf(d, now);
   return (
-    <div className="stub" id="buy" aria-label={ph === "selling" ? "Buy tickets" : "The draw"}>
+    <div className="stub" id="buy" aria-label={ph === "selling" ? "Enter the draw" : "The draw"}>
       {ph === "selling" && <Selling d={d} />}
       {ph === "due" && <Due d={d} />}
       {ph === "drawing" && <Drawing d={d} now={now} />}
@@ -52,14 +66,54 @@ export function BuyPanel() {
   );
 }
 
+const TABS: [BuyMode, string][] = [
+  ["buy", "Buy tickets"],
+  ["free", "Free entry"],
+];
+
+/**
+ * "Buy tickets" / "Free entry": two tabs of equal weight (same face, size and weight; the open one is
+ * ink with a 3px ink tab rule, the other ink-2). The stub and the mobile bar share one state.
+ */
+function EntryTabs({ prefix, panel, className = "" }: { prefix: string; panel: string; className?: string }) {
+  const { mode, setMode } = useBuy();
+  const onKey = (e: ReactKeyboardEvent) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight" && e.key !== "Home" && e.key !== "End") return;
+    e.preventDefault();
+    const next: BuyMode = e.key === "Home" ? "buy" : e.key === "End" ? "free" : mode === "buy" ? "free" : "buy";
+    setMode(next);
+    document.getElementById(`${prefix}-${next}`)?.focus();
+  };
+  return (
+    <div className={`tabs ${className}`} role="tablist" aria-label="How to enter">
+      {TABS.map(([k, label]) => (
+        <button
+          key={k}
+          type="button"
+          role="tab"
+          id={`${prefix}-${k}`}
+          className="tab"
+          aria-selected={mode === k}
+          aria-controls={panel}
+          tabIndex={mode === k ? 0 : -1}
+          onClick={() => setMode(k)}
+          onKeyDown={onKey}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Selling({ d }: { d: DrawView }) {
-  const { step, barMode, closeConfirm } = useBuy();
+  const { step, barMode, closeConfirm, mode } = useBuy();
   const { phase } = useActions();
-  const confirm = step === "confirm" && !barMode;
+  const confirm = step === "confirm" && !barMode && mode === "buy";
   return (
     <>
-      {/* one head slot: "Buy tickets" swaps to "Check and pay" in place (160ms crossfade) */}
-      <div className="stub-head" key={confirm ? "confirm" : "pick"}>
+      {/* one head slot: the tabs swap to "Check and pay" in place (160ms crossfade) */}
+      <div className={`stub-head ${confirm ? "" : "has-tabs"}`} key={confirm ? "confirm" : "pick"}>
         {confirm ? (
           <>
             <h2 className="t-stub-head stub-in" id="confirm-h" tabIndex={-1}>
@@ -71,43 +125,47 @@ function Selling({ d }: { d: DrawView }) {
           </>
         ) : (
           <>
-            <h2 className="t-stub-head">{barMode ? "Tickets" : "Buy tickets"}</h2>
-            <span className="price">
-              <b>{sol(d.ticketPrice, 2, 4)} SOL</b> each, flat
-            </span>
+            <h2 className="sr-only">Enter Draw Nº {d.id}</h2>
+            <EntryTabs prefix="tab" panel="stub-panel" />
           </>
         )}
       </div>
       <span className="dbl" aria-hidden="true" />
-      {confirm ? <ConfirmStep headingId="confirm-h" inStub /> : <Pick d={d} controls={!barMode} />}
+      {confirm ? (
+        <ConfirmStep headingId="confirm-h" inStub />
+      ) : (
+        <div id="stub-panel" role="tabpanel" aria-labelledby={`tab-${mode}`} key={mode} className="stub-in">
+          {mode === "free" ? <FreeEntry d={d} controls={!barMode} /> : <Pick d={d} controls={!barMode} />}
+        </div>
+      )}
     </>
   );
 }
 
 function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
   const { wallet, player, myEntries, myState } = useDrawSol();
-  const { claimFree, phase, errors, clearError, disabledReason } = useActions();
+  const { airdrop, phase, lastSig } = useActions();
   // this wallet's counts are shown only once its accounts have been read
   const mineRead = myState === "ready";
   const spent = player?.spent ?? myEntries.reduce((n, e) => n + e.paidLamports, BigInt(0));
   const won = player?.won ?? myEntries.reduce((n, e) => n + e.instantPaid, BigInt(0));
-  const { setVisible } = useWalletModal();
   const { qty, setQty, maxQ, openConfirm, connectThenConfirm } = useBuy();
   const bb = useBuyButton();
+  const low = useLowBalance();
   const allowance = walletAllowance(d, player);
   const held = player?.tickets ?? myEntries.reduce((n, e) => n + e.count, 0);
   const subtotal = d.ticketPrice * BigInt(qty);
+  const total = `${sol(subtotal, 2, 4)} SOL`;
   // the pen only draws on when you choose; not on load
   const [inked, setInked] = useState(false);
   const choose = (n: number) => {
     setInked(true);
     setQty(n);
   };
-
-  const freeLeft = Math.max(0, d.freeCap - d.freeTickets);
-  const myFree = myEntries.find((e) => e.isFree);
-  const fp = phase.free;
-  const freeBusy = inFlight(fp);
+  // the fixed picks below the allowance, then "Max (N)": the most this wallet can buy in one go now
+  const picks = PICKS.filter((p) => p < maxQ);
+  const ap = phase.airdrop;
+  const airBusy = inFlight(ap);
 
   const capped = bb?.kind === "cap";
   const lowHelp =
@@ -132,18 +190,17 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
     case "cap":
       btn = { label: `Wallet limit reached (${bb.held} of ${d.maxPerWallet})`, disabled: true };
       break;
-    case "low":
-      btn = { label: "Not enough devnet SOL", disabled: true };
-      break;
     case "disabled":
-      btn = { label: `Buy ${qty} ${plural(qty, "ticket", "tickets")}`, disabled: true };
+      btn = { label: `Buy ${qty} ${plural(qty, "ticket", "tickets")} · ${total}`, disabled: true };
       break;
     default:
-      btn = { label: `Buy ${qty} ${plural(qty, "ticket", "tickets")}`, onClick: openConfirm, disabled: false };
+      btn = { label: `Buy ${qty} ${plural(qty, "ticket", "tickets")} · ${total}`, onClick: openConfirm, disabled: false };
   }
+  const airLabel = ap === "simulating" ? "Asking the devnet faucet…" : ap === "confirming" ? "Confirming on devnet…" : "Get devnet SOL";
+  const arrived = ap === "done" && lastSig.airdrop && !low;
 
   return (
-    <div className="stub-pick stub-in">
+    <div className="stub-pick">
       {bb?.kind === "cap" && (
         <p className="cap-line t-body">
           You hold {bb.held} of {d.maxPerWallet} tickets, the most one wallet can hold in Draw Nº {d.id}.{" "}
@@ -157,7 +214,9 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
           {btn.label}
         </button>
       )}
-      {!controls && lowHelp && <p className="helper t-small">{lowHelp}</p>}
+      {/* below 1024px the bar holds the buttons; the stub states the guarantee and explains */}
+      {!controls && !capped && <Guarantee d={d} className="g-top" />}
+      {!controls && low && <DevnetSol low={low.balance} help={lowHelp} action={bb?.kind !== "low"} />}
       {controls && !capped && (
         <div>
           <div className="qty">
@@ -173,43 +232,61 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
             </button>
           </div>
           <ul className="picks" aria-label="Quick picks">
-            {PICKS.map((p) => (
+            {picks.map((p) => (
               <li key={p}>
-                <button type="button" aria-pressed={qty === p} disabled={p > maxQ} onClick={() => choose(p)}>
+                <button type="button" aria-pressed={qty === p} onClick={() => choose(p)}>
                   {p}
                   {qty === p && <PenLoop key={`pen-${qty}`} pick={p} inked={inked} />}
                 </button>
               </li>
             ))}
+            {maxQ > 0 && (
+              <li>
+                <button type="button" className="max" aria-pressed={qty === maxQ} onClick={() => choose(maxQ)} aria-label={`Max, ${maxQ} ${plural(maxQ, "ticket", "tickets")}`}>
+                  Max ({maxQ})
+                  {qty === maxQ && <PenLoop key={`pen-max-${qty}`} pick={maxQ + 3} inked={inked} />}
+                </button>
+              </li>
+            )}
           </ul>
-          <div className="total">
-            <span className="k t-small">
-              <span className="tab">{qty}</span> × {sol(d.ticketPrice, 2, 4)} SOL
-            </span>
-            <b className="t-rowtotal">{sol(subtotal, 2, 4)} SOL</b>
+          <div className="fee-row">
+            <FeeLine />
           </div>
-          <FeeLine />
           {bb?.kind === "low" ? (
-            <a id="stub-buy" className="btn btn-block btn-56 buy-btn btn-out" href={FAUCET_URL} target="_blank" rel="noopener noreferrer">
-              Get devnet SOL
-              <span className="sr-only"> (opens the Solana faucet in a new tab)</span>
-            </a>
+            <button type="button" id="stub-buy" className="btn btn-block btn-56 buy-btn" onClick={airdrop} disabled={airBusy}>
+              {airBusy && <Busy />}
+              {airLabel}
+            </button>
           ) : (
             <button type="button" id="stub-buy" className="btn btn-block btn-56 buy-btn" onClick={btn.onClick} disabled={btn.disabled}>
               {btn.label}
             </button>
           )}
           {bb?.kind === "low" ? (
-            <p className="helper t-small">{lowHelp}</p>
-          ) : bb?.kind === "disabled" ? (
-            <p className="helper t-fine">{bb.reason}</p>
+            <>
+              <DevnetSol low={bb.balance} help={lowHelp} action={false} />
+              <Guarantee d={d} />
+            </>
           ) : (
-            <p className="after-buy t-small">Results land about <span className="nw">2 s</span> after you pay.</p>
+            <>
+              {bb?.kind === "disabled" && <p className="helper t-fine">{bb.reason}</p>}
+              <Guarantee d={d} />
+              {low && <DevnetSol low={low.balance} action />}
+            </>
+          )}
+          {arrived && (
+            <p className="helper t-small">
+              {AIRDROP_SOL} devnet SOL arrived from the faucet. <ProofLink tx={lastSig.airdrop}>Faucet transaction</ProofLink>
+            </p>
           )}
         </div>
       )}
       <div>
         <dl className="ledger">
+          <div>
+            <dt>Ticket price, flat</dt>
+            <dd>{sol(d.ticketPrice, 2, 4)} SOL</dd>
+          </div>
           <div>
             <dt>{d.nextTicket > 0 ? "Grand-prize odds, per ticket" : "Grand-prize odds"}</dt>
             <dd>{d.nextTicket > 0 ? `${oneIn(1, d.nextTicket)} now` : "No tickets yet"}</dd>
@@ -268,27 +345,209 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
         <p className="limits t-fine">
           {d.maxPerTx} per purchase, {d.maxPerWallet} per wallet.
         </p>
-        <p className="freeline t-fine">
-          {myFree ? (
-            <>Free entry claimed: {ticketNo(myFree.firstTicket)}.</>
-          ) : freeLeft > 0 ? (
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "Get devnet SOL": asks the public devnet faucet for 0.5 SOL from the visitor's own browser
+ * (`connection.requestAirdrop`), confirms it and re-reads the balance. On failure it says why, plainly,
+ * and points to the two web faucets. Devnet SOL is play money; nothing here implies otherwise.
+ */
+function DevnetSol({ low, help, action }: { low: bigint; help?: ReactNode; action: boolean }) {
+  const { airdrop, phase, errors, clearError } = useActions();
+  const ap = phase.airdrop;
+  const busy = inFlight(ap);
+  const err = errors.airdrop;
+  return (
+    <div className="drip">
+      <p className="t-small drip-line">
+        {help ?? (
+          <>
+            You have <span className="nw">{sol(low, 2, 4)} devnet SOL</span>.
+          </>
+        )}{" "}
+        {action && (
+          <button type="button" className="tbtn" onClick={airdrop} disabled={busy}>
+            {busy && <Busy />}
+            {ap === "simulating" ? "Asking the devnet faucet…" : ap === "confirming" ? "Confirming on devnet…" : `Get ${AIRDROP_SOL} devnet SOL`}
+          </button>
+        )}
+      </p>
+      <p className="t-fine drip-fine">
+        Asks the public devnet faucet for {AIRDROP_SOL} SOL, from your browser. Devnet SOL is play money: it has no value and can’t be cashed out.
+      </p>
+      {err && (
+        <div className="drip-err">
+          <ErrorNote onDismiss={() => clearError("airdrop")}>{err.message}</ErrorNote>
+          <p className="t-small drip-alt">
+            Other ways to get it: <ProofLink href={FAUCET_URL}>faucet.solana.com</ProofLink> (sign in with GitHub there and its airdrop button works for you), or{" "}
+            <ProofLink href={SOLFAUCET_URL}>solfaucet.com</ProofLink>. Paste your wallet address there, then come back here.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The "Free entry" tab: plain rules, this draw's free entries left, whether this wallet has claimed,
+ * then the claim (≥ 1024px here; below that in the sheet, opened from the bar). The chance line is the
+ * interim copy for today's program: a free entry is one ticket in the grand draw and has no instant roll.
+ */
+function FreeEntry({ d, controls, sheet = false, headingId }: { d: DrawView; controls: boolean; sheet?: boolean; headingId?: string }) {
+  const { wallet, player, myEntries, myState, costs } = useDrawSol();
+  const { claimFree, phase, errors, clearError, disabledReason } = useActions();
+  const { adultRemembered, rememberAdult, forgetAdult, closeConfirm } = useBuy();
+  const { setVisible } = useWalletModal();
+  const low = useLowBalance();
+  const [adult, setAdult] = useState(false);
+
+  useEffect(() => {
+    if (!sheet || !headingId) return;
+    const t = setTimeout(() => document.getElementById(headingId)?.focus({ preventScroll: true }), 60);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeConfirm();
+    window.addEventListener("keydown", onKey);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [sheet, headingId, closeConfirm]);
+
+  const freeLeft = Math.max(0, d.freeCap - d.freeTickets);
+  const read = myState === "ready";
+  const mine = myEntries.find((e) => e.isFree);
+  const claimed = read && (!!mine || !!player?.freeClaimed);
+  const atCap = read && (player?.tickets ?? 0) >= d.maxPerWallet;
+  const fp = phase.free;
+  const busy = inFlight(fp);
+  const ageOk = adultRemembered || adult;
+  // what the claimant's wallet pays: rent for the entry record (+ the player record the first time), from chain
+  const rent = costs.entryRent !== null && read && (player || costs.playerRent !== null) ? costs.entryRent + (player ? BigInt(0) : costs.playerRent ?? BigInt(0)) : null;
+
+  const claim = () => {
+    if (!ageOk || busy) return;
+    if (adult) rememberAdult();
+    claimFree();
+  };
+
+  const status = !wallet ? (
+    <span className="c-ink-3">connect to check</span>
+  ) : !read ? (
+    <span className="c-ink-3">{myState === "error" ? "can’t read" : "…"}</span>
+  ) : claimed ? (
+    <>Claimed{mine ? <>: {ticketNo(mine.firstTicket)}</> : null}</>
+  ) : (
+    "Not claimed"
+  );
+
+  let action: ReactNode = null;
+  if (claimed) {
+    action = (
+      <p className="free-done t-body">
+        {mine ? (
+          <>
+            Your free entry is ticket <span className="nw">{ticketNo(mine.firstTicket)}</span>, in the grand draw for{" "}
+            <span className="nw">{sol(d.prizeLamports, 0, 4)} SOL</span>.
+          </>
+        ) : (
+          <>This wallet has claimed its free entry for Draw Nº {d.id}.</>
+        )}
+      </p>
+    );
+  } else if (freeLeft === 0) {
+    action = (
+      <p className="free-done t-body">
+        {d.freeCap === 1 ? "The one free entry" : `All ${d.freeCap} free entries`} in Draw Nº {d.id} {d.freeCap === 1 ? "is" : "are"} claimed. The cap is set in the draw
+        account; paid tickets are still on sale.
+      </p>
+    );
+  } else if (controls) {
+    if (!wallet) {
+      action = (
+        <button type="button" id={sheet ? undefined : "stub-buy"} className="btn btn-block btn-56 buy-btn" onClick={() => setVisible(true)}>
+          Connect wallet to claim
+        </button>
+      );
+    } else {
+      const reason = atCap
+        ? `This wallet holds ${d.maxPerWallet} of ${d.maxPerWallet} tickets, the most one wallet can hold, so there’s no room for a free entry.`
+        : !read
+          ? myState === "error"
+            ? "Can’t read this wallet’s tickets right now, so it can’t claim yet."
+            : null
+          : null;
+      action = (
+        <>
+          <AdultRow remembered={adultRemembered} checked={adult} onChange={setAdult} onUndo={forgetAdult} disabled={busy} />
+          <button
+            type="button"
+            id={sheet ? undefined : "stub-buy"}
+            className="btn btn-block btn-56 claim"
+            onClick={claim}
+            disabled={!ageOk || busy || atCap || !read || !!disabledReason}
+          >
+            {busy && <Busy />}
+            {fp === "simulating" ? "Checking with the program…" : fp === "signing" ? "Approve in your wallet…" : fp === "confirming" ? "Confirming on devnet…" : "Claim free entry"}
+          </button>
+          {!ageOk && !busy && !reason && <p className="c-hint t-fine">Confirm you’re 18 or older to claim.</p>}
+          {reason && <p className="c-hint t-fine">{reason}</p>}
+          {disabledReason && <p className="c-hint t-fine">{disabledReason}</p>}
+          <p className="c-fine t-fine">One signature. The entry goes straight into the grand draw; there is nothing to reveal.</p>
+        </>
+      );
+    }
+  }
+
+  return (
+    <div className={`free ${sheet ? "confirm" : ""}`}>
+      {sheet && (
+        <div className="c-head">
+          <h2 className="t-stub-head" id={headingId} tabIndex={-1}>
+            Free entry
+          </h2>
+          <button type="button" className="tbtn" onClick={closeConfirm} disabled={busy}>
+            Close
+          </button>
+        </div>
+      )}
+      <p className="free-lead t-body">A free entry has the same chance of the grand prize as one paid ticket. Free entries don’t get an instant-win roll yet.</p>
+      <dl className="ledger">
+        <div>
+          <dt>Free entries left in Draw Nº {d.id}</dt>
+          <dd>
+            {freeLeft} of {d.freeCap}
+          </dd>
+        </div>
+        <div>
+          <dt>This wallet</dt>
+          <dd>{status}</dd>
+        </div>
+      </dl>
+      <ul className="free-rules t-small">
+        <li>One per wallet while sales are open. No purchase needed.</li>
+        <li>
+          It’s one ticket in the grand draw, numbered like any other, and counts toward the <span className="nw">{d.maxPerWallet}-ticket</span> wallet limit.
+        </li>
+        <li>
+          {rent !== null ? (
             <>
-              Free entry: one per wallet, grand draw only. {freeLeft} of {d.freeCap} left.{" "}
-              <button type="button" className="tbtn" onClick={wallet ? claimFree : () => setVisible(true)} disabled={freeBusy || !!disabledReason}>
-                {freeBusy && <Busy />}
-                {fp === "signing" ? "Approve in your wallet…" : fp === "confirming" ? "Confirming…" : "Claim free entry"}
-              </button>
+              There’s no ticket price. Your wallet pays only Solana rent for the entry record, <span className="nw">≈{solRound(rent, 4, 1)} SOL</span>, plus the network
+              fee.
             </>
           ) : (
-            <>All {d.freeCap} free entries are claimed.</>
+            <>There’s no ticket price. Your wallet pays only Solana rent for the entry record and the network fee, shown before you sign.</>
           )}
-        </p>
-        {errors.free && (
-          <div style={{ marginTop: 16 }}>
-            <ErrorNote onDismiss={() => clearError("free")}>{errors.free.message}</ErrorNote>
-          </div>
-        )}
-      </div>
+        </li>
+      </ul>
+      {action}
+      {low && !claimed && freeLeft > 0 && <DevnetSol low={low.balance} action />}
+      {errors.free && (
+        <div className="c-err">
+          <ErrorNote onDismiss={() => clearError("free")}>{errors.free.message}</ErrorNote>
+        </div>
+      )}
     </div>
   );
 }
@@ -612,9 +871,9 @@ export function MobileBuyBar() {
  * button come straight after the vault link in tab and reading order; it is fixed, so nothing moves.
  * The room it needs at the end of the page is kept by <BarSpacer/>, rendered after the footer.
  */
-function BarShell({ children, label, hidden }: { children: ReactNode; label: string; hidden?: boolean }) {
+function BarShell({ children, label, hidden, tabs = false }: { children: ReactNode; label: string; hidden?: boolean; tabs?: boolean }) {
   return (
-    <div className="buybar" role="region" aria-label={label} aria-hidden={hidden ? true : undefined}>
+    <div className={`buybar ${tabs ? "has-tabs" : ""}`} role="region" aria-label={label} aria-hidden={hidden ? true : undefined}>
       {children}
     </div>
   );
@@ -632,14 +891,19 @@ function useHasBar() {
 
 /** Room at the end of the page for the fixed bar (below 1024px only, via .bar-spacer). */
 export function BarSpacer() {
-  return useHasBar() ? <div className="bar-spacer" aria-hidden="true" /> : null;
+  const { current: d, now } = useDrawSol();
+  // while selling the bar carries the two entry tabs above its row, so it needs more room
+  const tall = !!d && phaseOf(d, now) === "selling";
+  return useHasBar() ? <div className={`bar-spacer ${tall ? "tall" : ""}`} aria-hidden="true" /> : null;
 }
 
 function SellBar({ d }: { d: DrawView }) {
-  const { qty, setQty, maxQ, openConfirm, connectThenConfirm, step } = useBuy();
+  const { qty, setQty, maxQ, openConfirm, connectThenConfirm, step, mode } = useBuy();
+  const { airdrop, phase, errors } = useActions();
   const bb = useBuyButton();
   if (!bb) return null;
   const total = `${sol(bb.subtotal, 2, 4)} SOL`;
+  const ap = phase.airdrop;
   const stepper = (
     <div className="mini">
       <button type="button" className="punch" aria-label="One fewer ticket" onClick={() => setQty(qty - 1)} disabled={qty <= 1}>
@@ -654,52 +918,122 @@ function SellBar({ d }: { d: DrawView }) {
     </div>
   );
   return (
-    <BarShell label="Buy tickets" hidden={step === "confirm"}>
-      {bb.kind === "cap" ? (
-        <span className="bar-note t-small">
-          {bb.held} of {d.maxPerWallet} held
-        </span>
-      ) : bb.kind === "low" ? (
-        <span className="bar-note t-small">
-          You have <span className="nw">{sol(bb.balance, 2, 4)} SOL</span>
-        </span>
+    <BarShell label="Enter the draw" hidden={step === "confirm"} tabs>
+      <EntryTabs prefix="bartab" panel="bar-panel" className="bar-tabs" />
+      <div className="bar-row" id="bar-panel" role="tabpanel" aria-labelledby={`bartab-${mode}`}>
+        {mode === "free" ? (
+          <FreeBarRow d={d} />
+        ) : (
+          <>
+            {bb.kind === "cap" ? (
+              <span className="bar-note t-small">
+                {bb.held} of {d.maxPerWallet} held
+              </span>
+            ) : bb.kind === "low" ? (
+              errors.airdrop ? (
+                <span className="bar-note t-small c-red">
+                  Faucet said no.{" "}
+                  <a className="tbtn" href="#buy">
+                    Details
+                  </a>
+                </span>
+              ) : (
+                <span className="bar-note t-small">
+                  You have <span className="nw">{sol(bb.balance, 2, 4)} SOL</span>
+                </span>
+              )
+            ) : (
+              stepper
+            )}
+            {bb.kind === "connect" ? (
+              <button
+                type="button"
+                id="bar-buy"
+                className="btn"
+                onClick={connectThenConfirm}
+                aria-label={`Connect wallet to buy ${qty} ${plural(qty, "ticket", "tickets")} for ${total}`}
+              >
+                <span>
+                  Connect wallet<span className="cw-more"> to buy</span>
+                </span>
+              </button>
+            ) : bb.kind === "cap" ? (
+              <button type="button" id="bar-buy" className="btn" disabled>
+                Limit reached
+              </button>
+            ) : bb.kind === "low" ? (
+              <button type="button" id="bar-buy" className="btn" onClick={airdrop} disabled={inFlight(ap)}>
+                {inFlight(ap) && <Busy />}
+                {ap === "simulating" ? "Asking the faucet…" : ap === "confirming" ? "Confirming…" : "Get devnet SOL"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                id="bar-buy"
+                className="btn"
+                onClick={openConfirm}
+                disabled={bb.kind === "disabled"}
+                aria-label={`Buy ${qty} ${plural(qty, "ticket", "tickets")} for ${total}`}
+              >
+                Buy {qty} · {total}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+    </BarShell>
+  );
+}
+
+/** The bar on the "Free entry" tab: what's left (or this wallet's claim) and the claim, which opens the sheet. */
+function FreeBarRow({ d }: { d: DrawView }) {
+  const { wallet, myEntries, myState, player } = useDrawSol();
+  const { phase } = useActions();
+  const { openConfirm, connectThenConfirm } = useBuy();
+  const freeLeft = Math.max(0, d.freeCap - d.freeTickets);
+  const read = myState === "ready";
+  const mine = myEntries.find((e) => e.isFree);
+  const claimed = read && (!!mine || !!player?.freeClaimed);
+  const fp = phase.free;
+  if (claimed)
+    return (
+      <>
+        <span className="bar-note t-small">In the grand draw</span>
+        <button type="button" id="bar-buy" className="btn" disabled>
+          Claimed{mine ? ` · ${ticketNo(mine.firstTicket)}` : ""}
+        </button>
+      </>
+    );
+  if (freeLeft === 0)
+    return (
+      <>
+        <span className="bar-note t-small">All {d.freeCap} claimed</span>
+        <button type="button" id="bar-buy" className="btn" disabled>
+          No free entries left
+        </button>
+      </>
+    );
+  return (
+    <>
+      <span className="bar-note t-small">
+        <span className="nw">
+          {freeLeft} of {d.freeCap}
+        </span>{" "}
+        left
+      </span>
+      {wallet ? (
+        <button type="button" id="bar-buy" className="btn" onClick={openConfirm} disabled={inFlight(fp)}>
+          {inFlight(fp) && <Busy />}
+          {fp === "signing" ? "Approve in your wallet…" : fp === "confirming" ? "Confirming…" : "Claim free entry"}
+        </button>
       ) : (
-        stepper
-      )}
-      {bb.kind === "connect" ? (
-        <button
-          type="button"
-          id="bar-buy"
-          className="btn"
-          onClick={connectThenConfirm}
-          aria-label={`Connect wallet to buy ${qty} ${plural(qty, "ticket", "tickets")} for ${total}`}
-        >
+        <button type="button" id="bar-buy" className="btn" onClick={connectThenConfirm}>
           <span>
-            Connect wallet<span className="cw-more"> to buy</span>
+            Connect wallet<span className="cw-more"> to claim</span>
           </span>
         </button>
-      ) : bb.kind === "cap" ? (
-        <button type="button" id="bar-buy" className="btn" disabled>
-          Limit reached
-        </button>
-      ) : bb.kind === "low" ? (
-        <a id="bar-buy" className="btn btn-out" href={FAUCET_URL} target="_blank" rel="noopener noreferrer">
-          Get devnet SOL
-          <span className="sr-only"> (opens the Solana faucet in a new tab)</span>
-        </a>
-      ) : (
-        <button
-          type="button"
-          id="bar-buy"
-          className="btn"
-          onClick={openConfirm}
-          disabled={bb.kind === "disabled"}
-          aria-label={`Buy ${qty} ${plural(qty, "ticket", "tickets")} for ${total}`}
-        >
-          Buy {qty} · {total}
-        </button>
       )}
-    </BarShell>
+    </>
   );
 }
 
@@ -784,7 +1118,7 @@ function ActionBar({ d, ph }: { d: DrawView; ph: "due" | "drawing" | "cancelled"
 /** The confirm step as a bottom sheet below 1024px. Focus is trapped; scrim and Esc close it. */
 export function ConfirmSheet() {
   const { current: d, now } = useDrawSol();
-  const { step, barMode, closeConfirm } = useBuy();
+  const { step, barMode, closeConfirm, mode } = useBuy();
   const ref = useRef<HTMLDivElement>(null);
   const open = !!d && barMode && step === "confirm" && phaseOf(d, now) === "selling";
 
@@ -819,7 +1153,7 @@ export function ConfirmSheet() {
     <>
       <div className="scrim" onClick={closeConfirm} aria-hidden="true" />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-h" ref={ref}>
-        <ConfirmStep headingId="sheet-h" />
+        {mode === "free" ? <FreeEntry d={d!} controls sheet headingId="sheet-h" /> : <ConfirmStep headingId="sheet-h" />}
       </div>
     </>
   );
