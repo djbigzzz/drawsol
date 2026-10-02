@@ -29,7 +29,12 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - name: Keeper pass
-        run: npx tsx keeper/index.ts --once
+        run: |
+          if [ -z "$KEEPER_SECRET" ]; then
+            echo "KEEPER_SECRET is not set; skipping (see setup notes at the top of this file)."
+            exit 0
+          fi
+          npx tsx keeper/index.ts --once
         env:
           KEEPER_SECRET: ${{ secrets.KEEPER_SECRET }}
           RPC_URL: ${{ vars.RPC_URL }}
