@@ -11,6 +11,7 @@ import { rollEntry, winningTicket } from "@/lib/fairness";
 import type { DrawStatus, DrawView, EntryView, PlayerView, RandomnessView } from "@/lib/types";
 import type { Actions, RevealSession } from "@/hooks/context";
 import { drawPda, entryPda, playerPda } from "@/lib/chain";
+import { QUESTION_TERMS_HASHES } from "@/lib/config";
 
 const enc = new TextEncoder();
 const LAMPORTS = BigInt(1_000_000_000);
@@ -78,7 +79,8 @@ function baseDraw(id: number, now: number, status: DrawStatus): DrawView {
     prizePaid: false,
     proceedsWithdrawn: false,
     reserveWithdrawn: false,
-    termsHash: sha256(enc.encode("fixture terms")),
+    // Draw 1's real published terms hash (they mention the since-removed question), so the note shows
+    termsHash: Uint8Array.from(Buffer.from(QUESTION_TERMS_HASHES[1], "hex")),
   };
 }
 

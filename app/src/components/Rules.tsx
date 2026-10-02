@@ -5,7 +5,7 @@ import { useActions, useDrawSol } from "@/hooks/context";
 import { maxEntries, phaseOf } from "@/lib/derive";
 import { oneIn, sol, utcLabel } from "@/lib/format";
 import { toHex } from "@/lib/fairness";
-import { GAMBLE_AWARE_URL, ORAO_PROGRAM_ID, PROGRAM_ID, QUESTION_REMOVED_AT, SOURCE_URL } from "@/lib/config";
+import { GAMBLE_AWARE_URL, ORAO_PROGRAM_ID, PROGRAM_ID, QUESTION_TERMS_HASHES, SOURCE_URL } from "@/lib/config";
 import { vaultPda } from "@/lib/chain";
 import { ProofLink } from "./bits";
 import { useBuy } from "./BuyContext";
@@ -175,7 +175,7 @@ export function Rules() {
                 If it stops being fun, <ProofLink href={GAMBLE_AWARE_URL}>BeGambleAware</ProofLink> can help.
               </li>
             </ul>
-            {d.createdAt < QUESTION_REMOVED_AT && (
+            {QUESTION_TERMS_HASHES.includes(hash) && (
               <p className="terms t-fine">
                 Draw Nº {d.id}’s published terms (committed in <code>terms_hash</code>) mention an in-app question. It was removed on 2 Oct 2026, and it was
                 never checked on-chain.
