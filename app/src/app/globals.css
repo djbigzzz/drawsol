@@ -530,20 +530,8 @@ p { margin: 0; }
 .c-sum .t-rowtotal { font-size: 30px; }
 /* 16px clears the fee summary's 44px hit area, which reaches 12px under its line */
 .c-num { margin-top: 16px; color: var(--ink-2); }
-.q { margin: 24px 0 0; padding: 0; border: 0; min-width: 0; }
-.q legend { padding: 0; font-family: var(--serif); font-size: 18px; line-height: 1.35; text-wrap: balance; }
-.q .sub { display: block; font-style: italic; font-size: 15px; color: var(--ink-2); margin: 2px 0 6px; }
-.radio { position: relative; display: flex; align-items: center; gap: 16px; min-height: 48px; padding: 0 8px; border-bottom: 1px solid var(--rule); cursor: pointer; font-family: var(--grot); font-stretch: 88%; font-size: 17px; font-weight: 500; }
-.radio:hover { background: rgba(27,24,20,.035); }
-.radio input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.radio .ring { width: 20px; height: 20px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--ink-2); flex: none; display: grid; place-items: center; }
-.radio input:checked + .ring { box-shadow: inset 0 0 0 1.5px var(--ink); }
-.radio input:checked + .ring::after { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--blue); }
-/* keyboard focus rings the whole row in ink, so focus can never be mistaken for the blue "chosen" dot */
-.radio:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; border-radius: 2px; }
 /* headings that take focus when a step or sheet opens (tabindex -1): announced, never ringed */
 .t-stub-head[tabindex="-1"]:focus { outline: none; }
-.q .msg { min-height: 22px; margin-top: 6px; font-size: 15px; }
 .age { display: flex; gap: 16px; align-items: flex-start; min-height: 44px; padding-top: 8px; cursor: pointer; font-size: 16px; line-height: 1.35; }
 .age input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--ink); flex: none; cursor: pointer; }
 .age .sub { color: var(--ink-2); font-style: italic; }

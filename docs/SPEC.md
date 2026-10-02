@@ -26,7 +26,7 @@ the winner still gets paid. Everything is priced and paid in SOL.
 | Bulk discounts up to 30% | Flat price | Every lamport buys the same odds |
 | Max 100 per tx | Max 25 per tx (hard cap), plus a per-wallet cap | Readable reveal; responsible play; bounded CU |
 | Unlimited free entries via new wallets | 1 per wallet, capped by `free_cap`, grand draw only | Bounded dilution |
-| Skill-answer hash on-chain (public, so it checked nothing) | Question in the UI; `terms_hash` commits to terms + question | Don't claim enforcement we don't have |
+| Skill-answer hash on-chain (public, so it checked nothing) | No question: a prize draw decided by chance, with a free entry route beside paid tickets. Draws 0 and 1 were created with terms that mention an in-app question; it was removed from the app on 2 Oct 2026 and was never checked on-chain (research P0-3) | Don't claim enforcement we don't have |
 
 ## 2. Program
 
@@ -90,7 +90,7 @@ settled_at: i64
 prize_paid: bool
 proceeds_withdrawn: bool
 reserve_withdrawn: bool
-terms_hash: [u8; 32]           // sha256 of the published terms + skill question + odds
+terms_hash: [u8; 32]           // sha256 of the published terms + odds (draws 0–1: also the since-removed in-app question)
 bump: u8
 vault_bump: u8
 ```
@@ -270,7 +270,7 @@ Static Next.js export on GitHub Pages (`basePath: /drawsol`). Talks to devnet vi
   `fairness.ts`, then confirmed by the reveal tx). Never decide a result in the client.
 - USD values only as "≈ $X" from a live price, hidden when unavailable. No hard-coded price.
 - Persistent "Devnet demo · play money" marker. Demo odds labelled as boosted.
-- Never claim "not a lottery", "legal", or on-chain enforcement of the skill question.
+- Never claim "not a lottery", "legal" or "compliant", and never call a draw a "competition" or a "skill" game.
 
 ### 4.2 Visual identity — "Night Draw" (broadcast studio)
 
@@ -301,8 +301,8 @@ physical ticket stubs. Motion only for real events (purchase confirmed, VRF land
    button (request_draw), then "Settle" when randomness is ready.
 3. **Buy panel** (sticky on desktop, beside the board) — quantity stepper + presets 1/5/10/25 (clamped to
    remaining, per-tx and per-wallet allowances), price × qty, network fee note (ORAO fee ≈ 0.0005 SOL + rent),
-   "your tickets after purchase / share of draw", skill question (3 options, UI only), 18+ confirmation,
-   Buy. States: disconnected, wrong balance, sold out, closed, wallet cap reached, tx pending/failed with
+   "your tickets after purchase / share of draw", 18+ confirmation (once per device), Buy. A "Free entry" tab
+   sits beside "Buy tickets" at equal weight. States: disconnected, wrong balance, sold out, closed, wallet cap reached, tx pending/failed with
    decoded Anchor error.
 4. **Reveal sheet** — (1) confirming purchase → (2) "Randomness requested from ORAO VRF" with request link,
    polls until fulfilled (~2 s) → (3) ticket stubs flip to their results, "Reveal all" → (4) total won,
@@ -315,7 +315,7 @@ physical ticket stubs. Motion only for real events (purchase confirmed, VRF land
    that runs `fairness.ts` in the browser and shows it matches.
 8. **The rules (how it works)** — four guarantees, each linked to its proof: prize in vault before sales;
    draw at sell-out or deadline; randomness from ORAO VRF (nobody chooses it); anyone can run and settle the
-   draw. Plus odds table, free entry (claim button), skill question note, responsible play (18+, caps,
+   draw. Plus odds table, free entry (claim button), a note on the removed question for draws whose terms mention it, responsible play (18+, caps,
    BeGambleAware link).
 9. **Footer** — program ID ↗, source ↗, terms, devnet notice.
 

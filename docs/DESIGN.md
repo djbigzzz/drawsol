@@ -361,7 +361,7 @@ The three-column hero needs about 1336px. Below that, the prize (212px) and the 
 | Facts: **2 d 5 h 31 min left**, **Sun 4 Oct, 04:13 UTC**, **100 of 150 sold** | 574–724 |
 | Barcode + key | 740–812 |
 | Ticket bottom | ≈ 838 |
-| Stub, same top (124): head 148–196; quantity 220–332; picks 340–384; total 432–466; fee line 472–492; **Buy button 516–572**; "Results land…" 580–602; ledger 626–734; limits and free entry to ≈ 810 | — |
+| Stub, same top (124): tabs 148–196; quantity 220–332; picks 340–384; fee line on its dashed rule 400–440; **Buy button 460–516**; guarantee 524–606; ledger 626–770; limits to ≈ 800 | — |
 
 **Short laptops** (`min-width: 1024px` and `max-height: 780px`: 1366×768 or 1280×720 after browser chrome, so about 1366×657 / 1280×650, and iPad landscape). The first screen above is sized for 1440×900, so here the masthead is 56px, the hero's top gaps are 16 (head rule gaps 8), the prize sets at 168px with a 168px LOCKED stamp, the facts at 48px with 16px around their double rule, the close note takes its one-line form ("Or at sell-out, whichever is first. That's 06:13 your time.") and the barcode sits 8px under the facts. The barcode bottom is at 652 (1366×657) and 655 (1280×720); the Buy button at 498–554.
 
@@ -376,7 +376,7 @@ The three-column hero needs about 1336px. Below that, the prize (212px) and the 
 | **2 d 5 h 31 min left** + **Sun 4 Oct, 04:13 UTC** + note | 308–430 |
 | Lock line + vault link | 446–541 |
 | **100 of 150 sold** + barcode | 565–697 |
-| Sticky bar: − 10 + · Buy 10 · 0.10 SOL | 768–844 |
+| Sticky bar: tabs "Buy tickets / Free entry", then − 1 + · Buy 1 · 0.01 SOL | 720–844 |
 
 ### 3.4 Z-index
 
@@ -625,9 +625,9 @@ This is a duplicate-book carbon copy, not an admonition box. It has no left bord
 |---|---|
 | Primary button | Ink fill, stock text, `.t-btn`, radius 3, min-height 56 (stub, confirm), 48 (mobile bar), 44 (inline), `--shadow-btn`. Hover `#000`. Active `translateY(1px)` with no shadow. Disabled: `--paper-2` fill, ink-2 text, no shadow, `cursor: not-allowed` |
 | Secondary button | Transparent, `box-shadow: inset 0 0 0 2px var(--ink)`, ink text, same sizes. Hover `rgba(27,24,20,.05)` |
-| Text button | `.t-link` in blue-ink, underline 1px with 3px offset. Used for "Change quantity", "Undo", "Replay", "Skip to total", "Show all…", "Claim free entry". Hit area ≥ 44px tall via padding |
+| Text button | `.t-link` in blue-ink, underline 1px with 3px offset. Used for "Change quantity", "Undo", "Replay", "Skip to total", "Show all…", "Claim free entry" (house rules), "Get 0.5 devnet SOL". Hit area ≥ 44px tall via padding |
 | Proof link (`<ProofLink>`) | Like a text button, plus a 0.62em ↗ arrow drawn with a CSS `mask` (not a glyph), `white-space: nowrap`, `target="_blank" rel="noopener noreferrer"`, and an sr-only " (opens Solscan)". **The label is always a phrase that names the thing** ("Check the vault on Solscan", "Payout transaction"), never "verify" |
-| Radio row (skill question) | Full-width row, min-height 48, 1px `--rule` under each. Custom 20px ring (1.5px ink-2). Checked: ink ring with a 10px blue dot. Label `.t-ui` 17/500. Keyboard focus: a 2px **ink** ring around the whole row (offset 2px), never a blue ring on the circle, so focus can't be mistaken for a choice. When the confirm step opens, focus goes to the "Check and pay" heading (`tabindex="-1"`), never to an option. The radio ring is used only here: step lists use numbered marks (§5.5, §5.6) |
+| Entry tabs | "Buy tickets" / "Free entry", `role="tablist"`, in the stub head and on top of the mobile bar. **Equal weight:** both Archivo 112% 800 at the stub-head size (bar: 16); the open tab is ink with a 3px ink rule standing on the head's double rule (bar: on a `--rule` hairline), the other ink-2. Arrow keys, Home and End move between them. No pills, no boxes |
 | Checkbox (18+) | Native 20px, `accent-color: var(--ink)`. The label is the whole row (min-height 44) |
 | Busy | 8px ink dot (blinking only while a real request is in flight) followed by the verb: "Confirming on devnet…" |
 | `ErrorNote` | No box. 1px red-ink rules above and below with 12px padding. Lead-in "Didn't go through." in Archivo 88% 800 red-ink, then the human message in Newsreader 16 ink. "Dismiss" text button (44px target). `role="alert"` |
@@ -742,7 +742,8 @@ It is replaced by `NumberWheel` (§4.5) for the countdown. The prize, sold count
 ### 5.5 `BuyPanel.tsx` + `MobileBuyBar` + **new** `ConfirmStep` + **new** `BuyProvider`
 
 **`BuyProvider`** (new, `components/BuyContext.tsx`). This is UI state only, not data:
-- `qty` (default 10, clamped to `maxQ`);
+- `qty` (default **1**, clamped to `maxQ`; research P0-7: never a high default);
+- `mode: "buy" | "free"`, the open entry tab, shared by the stub and the bar; `showFree()` opens the free tab and brings it into view (the house rules link to it);
 - `step: "pick" | "confirm"`;
 - `openConfirm()`, `closeConfirm()`;
 - `adultRemembered` (localStorage key `drawsol.adult` = `"yes"`, with every read and write in `try/catch`; it renders correctly when storage throws);
@@ -752,22 +753,35 @@ It is replaced by `NumberWheel` (§4.5) for the countdown. The prize, sold count
 
 **Stub, open state** (`BuyPanel`, ≥ 1024px). Top to bottom, inside the stub:
 
-1. **Head:** `.t-stub-head` "Buy tickets" on the left (sentence case, not expanded caps); `.t-ui` 15 "**0.01 SOL** each, flat" on the right; double rule under it.
+1. **Head:** the entry tabs "Buy tickets" / "Free entry" (§4.13) on the double rule. The free route sits beside the paid one at equal weight (research P0-1), never in fine print.
 2. **Quantity** (margin-top 24): grid `48px 1fr 48px` with punch −, the figure, punch +. The figure is `.t-qty` with `.t-label` "tickets"/"ticket" under it (centred; the one centred element). `<output aria-live="polite">`. There is no free-typing input; the punches and picks cover 1–25.
-3. **Quick picks** (margin-top 8): 1 / 5 / 10 / 25 (§4.6).
-4. **Total** (margin-top 24, padding-top 24, dashed rule): "10 × 0.01 SOL" in `.t-small` ink-2 on the left; `.t-rowtotal` "0.10 SOL" on the right.
-5. **Fee line** (margin-top 6): `<details>`. The summary is `.t-fine` "+ ≈0.003 SOL network & randomness fee" with a 10px chevron and a dotted underline.
+3. **Quick picks** (margin-top 8): the fixed picks 1 / 5 / 10 / 25 that are below the allowance, then **"Max (N)"**, where N = `maxQ` (the least of the per-purchase cap, this wallet's allowance and the tickets left) (§4.6).
+4. *(The separate total row is gone: the live total is inside the Buy button.)*
+5. **Fee line** (margin-top 16, padding-top 16, dashed rule): `<details>`. The summary is `.t-fine` "+ ≈0.003 SOL network & randomness fee" with a 10px chevron and a dotted underline.
    - The value is `costs.oraoFee + costs.entryRent + (player ? 0 : costs.playerRent)`, rounded to 3 decimals, with "≈" prefixed.
    - The expanded detail is one Newsreader 15 paragraph (§6).
    - If `costs` is unavailable: "+ network & randomness fee, shown in your wallet before you sign".
-6. **Buy button** (margin-top 24): primary, 56px, "Buy 10 tickets".
-7. "Results land about 2 s after you pay." in `.t-small` ink-2 (margin-top 8).
+6. **Buy button** (margin-top 16): primary, 56px, with the live total inside: "Buy 5 tickets · 0.05 SOL".
+7. **Guarantee** (`.t-small` ink-2, margin-top 8), scoped to the grand prize (research P0-4): "Drawn at Fri 16 Oct, 10:14 UTC or when all 150 tickets sell, whichever comes first. Grand prize already locked: [1 SOL ↗]. Never extended; the grand prize is never reduced." The link is the vault on Solscan. "Never reduced" is never extended to instant wins (they are paid up to what the reserve holds).
 8. **Ledger** (margin-top 24): rows of `.t-small` label and `.t-ui` 15/700 value, 1px rules, 36px rows:
+   - "Ticket price, flat": "0.01 SOL";
    - "Grand-prize odds, per ticket": "1 in 102 now";
    - "You hold": "16" plus a "see them" text link to `#my-tickets`;
    - "You can still buy": "34".
 9. "25 per purchase, 50 per wallet." in `.t-fine` ink-3.
-10. **Free entry line** (`.t-fine`): its state text plus a "Claim free entry" text button. It calls `claimFree()`, or opens the wallet modal when disconnected.
+10. When the wallet is low on devnet SOL (below one ticket plus fees, or below 0.05 SOL): the **Get devnet SOL** block (below).
+
+**Free entry tab** (same stub, `mode === "free"`):
+1. `.t-body` ink, exactly: "A free entry has the same chance of the grand prize as one paid ticket. Free entries don't get an instant-win roll yet." (interim copy until the program gives free entries an instant roll; research P0-1/P0-2).
+2. Ledger: "Free entries left in Draw Nº 3 — 13 of 15" (`freeCap − freeTickets`); "This wallet — Not claimed / Claimed: #0059 / connect to check / …".
+3. Plain rules, a hairline-ruled list: one per wallet while sales are open, no purchase needed · one ticket in the grand draw, numbered like any other, counting toward the wallet limit · no ticket price; the wallet pays only the Solana rent for the entry record (`costs.entryRent` (+ `playerRent` the first time), shown ≈) and the network fee.
+4. The 18+ row (§4.13, the same remembered acknowledgement as paying), then primary 56px "Claim free entry" (`claimFree()`; busy labels from `phase.free`), "One signature. The entry goes straight into the grand draw; there is nothing to reveal." Guest: "Connect wallet to claim". At the wallet limit the button is disabled with the reason. Claimed: "Your free entry is ticket #0059, in the grand draw for 1 SOL." and no button. Sold out: "All 15 free entries in Draw Nº 3 are claimed. The cap is set in the draw account; paid tickets are still on sale."
+
+**Get devnet SOL** (devnet only; a wallet is connected and its read balance is below one ticket plus fees, or below 0.05 SOL):
+- when the balance can't cover the chosen quantity, the Buy button itself becomes primary "Get devnet SOL"; otherwise a line "You have 0.031 devnet SOL. [Get 0.5 devnet SOL]" under the guarantee;
+- it calls `connection.requestAirdrop(wallet, 0.5 SOL)` from the visitor's browser, confirms it ("Asking the devnet faucet…" → "Confirming on devnet…") and re-reads the balance; then "0.5 devnet SOL arrived from the faucet. [Faucet transaction]";
+- fine print: "Asks the public devnet faucet for 0.5 SOL, from your browser. Devnet SOL is play money: it has no value and can't be cashed out.";
+- failure (`errors.airdrop`, e.g. 429 or a dry faucet): an `ErrorNote` saying which, plainly, then "Other ways to get it: [faucet.solana.com] (sign in with GitHub there and its airdrop button works for you), or [solfaucet.com]."
 
 Leftover height goes **below** item 10, never between blocks (must-fix: no 80px gap). **No `margin-top: auto`.**
 
@@ -779,9 +793,9 @@ At the wallet limit, the ledger's "You can still buy 0" row is replaced by this 
 |---|---|---|---|
 | No wallet | "Connect wallet to buy" (opens the wallet modal; afterwards continue to confirm) | "Connect wallet to buy" ("Connect wallet" below 385px), keeping the stepper and the quantity | — |
 | Wallet limit reached (`allowance.wallet === 0`) | disabled: "Wallet limit reached (50 of 50)" | disabled: "Limit reached" (stepper hidden) | — |
-| Balance < subtotal + fees | "Get devnet SOL" (link to `FAUCET_URL`) | "Get devnet SOL" (link to `FAUCET_URL`), note "You have 0.0123 SOL" (4 decimals, as the stub) | "You have 0.0123 SOL. 10 tickets need ≈0.103 SOL with fees." |
+| Balance < subtotal + fees | "Get devnet SOL" (airdrop, above) | "Get devnet SOL" (airdrop), note "You have 0.0123 SOL" (4 decimals, as the stub); after a failure "Faucet said no. [Details]" | "You have 0.0123 SOL. 1 ticket needs ≈0.013 SOL with fees." + the airdrop fine print |
 | `disabledReason` | disabled: as in normal | disabled | `disabledReason` in `.t-fine` |
-| Normal | "Buy 10 tickets" → `openConfirm()` | "Buy 10 · 0.10 SOL" → `openConfirm()` | — |
+| Normal | "Buy 1 ticket · 0.01 SOL" → `openConfirm()` | "Buy 1 · 0.01 SOL" → `openConfirm()` | the guarantee |
 
 **Confirm step** (`ConfirmStep.tsx`). It renders inside the stub at ≥ 1024px, replacing items 2–10 with a 160ms crossfade, and inside the sheet at ≤ 1023px. There is one component and one instance, selected by `matchMedia("(max-width: 1023px)")` (`BAR_QUERY` in `BuyContext.tsx`).
 
@@ -789,40 +803,35 @@ At the wallet limit, the ledger's "You can still buy 0" row is replaced by this 
 2. **Summary** (dashed rule above, 12px): "10 tickets × 0.01 SOL" on the left; `.t-rowtotal` 30px "0.10 SOL" on the right.
 3. **Fee line**, one line: "+ ≈0.003 SOL network & randomness fee". Details on demand, as above.
 4. **Numbering note** (`.t-fine` ink-2): "Numbered from #0102, unless someone buys first." (`ticketNo(d.nextTicket)`).
-5. **Skill question**, a `<fieldset>`:
-   - `<legend>` in `.t-body` 18/1.35: "Which planet is known as the Red Planet?";
-   - italic ink-2 sub-line: "One general-knowledge question, then you pay.";
-   - three radio rows (§4.13): **Mars / Venus / Jupiter**, shuffled once each time the step opens;
-   - feedback `<p aria-live="polite">`: correct gives "Correct." in blue-ink; wrong gives "Not quite. Have another go." in ink.
-
-   There is exactly one question, the one committed to by `d.termsHash`. It is not a riddle, and it is checked in the app only (the back of the ticket says so).
+5. *(No question. The in-app question was removed on 2 Oct 2026 (research P0-3): DrawSol is a prize draw decided by chance, with a free entry route. Nothing about the answer ships to the browser.)*
 6. **18+**, asked once:
    - If not remembered: a checkbox row "I'm 18 or older." with ink-2 "Asked once, remembered on this device." Checking it and paying stores `drawsol.adult = "yes"`.
    - If remembered: one `.t-small` line "**18+** confirmed on this device · Undo". Undo clears the key and shows the checkbox again.
 7. **Pay button** (primary 56px):
-   - "Pay 0.10 SOL", disabled until the answer is right and 18+ is satisfied, with `aria-describedby` → "Answer the question and confirm you're 18+ to pay.";
+   - "Pay 0.10 SOL", disabled until 18+ is satisfied, with `aria-describedby` → "Confirm you're 18 or older to pay.";
    - on click it calls `buy(qty)`;
    - busy labels come from `phase.buy`: "Checking with the program…" → "Approve in your wallet…" → "Confirming on devnet…".
 8. **Fine print** (`.t-fine` ink-3): "Then sign in your wallet. About 2 s later it asks once more, to reveal your results and pay any wins." This is honest: the live `revealFlow` sends a second, wallet-signed transaction.
 9. `errors.buy` renders an `ErrorNote` under the Pay button.
+10. The guarantee (dashed rule above), as in the pick view.
 
 Esc closes the step on desktop and the sheet on mobile.
 
 **Mobile buy bar** (`MobileBuyBar`, ≤ 1023px: phones and tablets. While `selling` it is the one quantity control; once sales are over it carries the next action: run, settle (or cancel), refunds):
 - Fixed to the bottom. Stock background with `grain-stock` and `--shadow-bar` (double-ruled top edge).
 - Padding `12px 16px calc(12px + env(safe-area-inset-bottom))`.
-- Grid `auto 1fr`, gap 12:
+- While selling, the entry tabs sit on top of the bar (44px targets, a `--rule` hairline under them), then the row. On "Free entry" the row is the note "13 of 15 left" and "Claim free entry", which opens the sheet in free mode (the free-entry tab's content with its own head "Free entry" and "Close"); "Claimed · #0059" (disabled) once claimed; "No free entries left" when the cap is reached. The bar spacer is 144px + safe area while selling.
+- Row grid `auto 1fr`, gap 12:
   - left: punch − (48), quantity in `.t-qty` mobile (36px) with min-width 40, punch + (48), gap 4;
-  - right: primary button, min-height 48, "Buy 10 · 0.10 SOL" (`aria-label` "Buy 10 tickets for 0.10 SOL").
+  - right: primary button, min-height 48, "Buy 1 · 0.01 SOL" (`aria-label` "Buy 1 ticket for 0.01 SOL").
 - The page ends with a 96px + safe-area spacer (`<BarSpacer/>`) so nothing is hidden under the bar, and focused elements scroll clear of it (`scroll-padding-bottom`).
 - md (761–1023): the bar takes the page gutter, and its two cells (stepper or note, then a button up to 360px) sit together at the right end, 24px apart, on the ticket's right edge, not 400px apart.
 - drawing: when `canCancel` and the randomness never arrived, the bar's button is "Cancel the draw" (note "Randomness never arrived"); when it is cancellable but the randomness has landed, "Cancel the draw" is a text button beside "Settle the draw".
 
 **Below 1024px the in-flow stub has no stepper, picks or Buy button** (must-fix: one quantity control), and in due, drawing and cancelled **no primary button either**: the bar owns the action and the stub explains it (head, stamp, steps, explanation, fee line, refund ledger, "Your entry", errors). While selling it shows only:
-- the head ("0.01 SOL each, flat");
-- the ledger;
-- the limits note;
-- the free-entry line.
+- the tabs;
+- on "Buy tickets": the guarantee, the Get devnet SOL block when low, the ledger and the limits note;
+- on "Free entry": the free-entry tab without its 18+ row and button.
 
 **Confirm sheet** (≤ 1023px):
 - `role="dialog" aria-modal="true" aria-labelledby` → "Check and pay";
@@ -1050,7 +1059,7 @@ Removed: SplitFlap serials, `Verify` chips and the "Proof / Hide proof" ghost bu
 
 **House rules** (under a double rule): `[248 head "House rules" | 1fr list]` at ≥ 1024px, with the list in 2 columns. Items are `.t-small` ink-2, each with a 6px ink dot bullet. The items are in §6; one item holds the text button "Claim free entry" and another the BeGambleAware link.
 
-**Terms hash line** (`.t-fine` ink-3): "The question and these terms are committed on-chain as {first 8…last 8 of `toHex(d.termsHash)`}." with the text button "Show full hash".
+**Terms lines** (`.t-fine` ink-3): for a draw created before 2 Oct 2026 (`QUESTION_REMOVED_AT`), first "Draw Nº 1's published terms (committed in `terms_hash`) mention an in-app question. It was removed on 2 Oct 2026, and it was never checked on-chain."; then "These terms are committed on-chain as {first 8…last 8 of `toHex(d.termsHash)`}." with the text button "Show full hash". The house rules' "Claim free entry" opens the stub's free tab (`showFree()`).
 
 Removed:
 - the 2×2 bordered guarantee grid with numbered mono indices;
@@ -1174,6 +1183,13 @@ Unchanged. Keep importing `@solana/wallet-adapter-react-ui/styles.css`, which is
    | `reveal-buying` / `reveal-wait` / `reveal-approve` | A fresh purchase of 10 (#0031–#0040) at stage `confirming` / `vrf` / `revealing`: covers on, no tiers |
    | `reveal-failed` | "Reveal 5 tickets" on the sealed #0097–#0101 entry, declined in the wallet ("You declined in your wallet. Nothing was sent."): stage `failed`, so "Try the reveal again" renders |
    | `reveal-nowin` | A purchase whose rolls (fairness.ts, from its fixture randomness) are all "no win": the first scripted no-win entry is made this wallet's, shown at the end |
+   | `open-max` | `open` with the Max preset chosen (`page.tsx` passes `init.qty = "max"`) |
+   | `open-free` / `open-free-guest` | The "Free entry" tab open, claimable: this wallet's scripted free entry (#0059) belongs to another wallet / no wallet |
+   | `open-free-claimed` | The "Free entry" tab, this wallet holds #0059 |
+   | `open-free-out` | The "Free entry" tab with every free entry taken by others (`freeCap = freeTickets`) |
+   | `confirm-free` | The free-entry sheet (below 1024px) |
+   | `open-low` / `open-low-pending` / `open-low-failed` / `open-low-done` | Balance 0.0123 SOL: "Get devnet SOL" idle / confirming / failed with a 429 / after 0.5 SOL landed |
+   | `open-lowish` | Balance 0.031 SOL: enough for one ticket, under 0.05 SOL, so the inline "Get 0.5 devnet SOL" line shows |
 
 5. **Timeline:** a scenario that moves `closesAt` into the past (due, drawing, settled, cancelled, and past Draw Nº 2) slides the whole purchase history, and the draw's `createdAt`, back so the newest entry lands a minute before the close (`fitBeforeClose`). No ticket is ever shown bought after the close or the payout.
 6. The fixture `buy`, `claimFree`, `runDraw`, `settle`, `cancel` and `refund` keep failing with "Fixture build — nothing is sent to devnet.", shown in an `ErrorNote`.
@@ -1271,14 +1287,17 @@ Rules for all copy:
 | Fee (summary) | + ≈0.003 SOL network & randomness fee |
 | Fee (detail) | ORAO randomness fee 0.0005 SOL, rent for your ticket record 0.0023 SOL{, and a one-time player record 0.0015 SOL on your first purchase}. The Solana network fee is a fraction of that. Your wallet shows the exact total before you sign. |
 | Fee (unknown) | + network & randomness fee, shown in your wallet before you sign |
-| Buy | Buy 10 tickets · Connect wallet to buy · Wallet limit reached (50 of 50) · Not enough devnet SOL |
-| Low balance help | You have 0.0123 SOL. Get free devnet SOL from the [Solana faucet]. |
-| After button | Results land about 2 s after you pay. |
-| Ledger | Grand-prize odds, per ticket — 1 in 102 now · You hold — 16 [see them] · You can still buy — 34 · zero tickets: Grand-prize odds — No tickets yet |
+| Tabs | Buy tickets · Free entry |
+| Buy | Buy 5 tickets · 0.05 SOL · Connect wallet to buy · Wallet limit reached (50 of 50) · Get devnet SOL |
+| Picks | 1 · 5 · 10 · Max (25) |
+| Guarantee | Drawn at Fri 16 Oct, 10:14 UTC or when all 150 tickets sell, whichever comes first. Grand prize already locked: [1 SOL ↗]. Never extended; the grand prize is never reduced. |
+| Low balance help | You have 0.0123 SOL. 1 ticket needs ≈0.013 SOL with fees. · You have 0.031 devnet SOL. [Get 0.5 devnet SOL] · Asks the public devnet faucet for 0.5 SOL, from your browser. Devnet SOL is play money: it has no value and can't be cashed out. · Asking the devnet faucet… · Confirming on devnet… · 0.5 devnet SOL arrived from the faucet. [Faucet transaction] |
+| Airdrop failed | **Didn't go through.** The devnet faucet is turning away requests from this connection for now (429 Too Many Requests). No SOL was sent. / The devnet faucet has run dry for now. No SOL was sent. · Other ways to get it: [faucet.solana.com] (sign in with GitHub there and its airdrop button works for you), or [solfaucet.com]. Paste your wallet address there, then come back here. |
+| Ledger | Ticket price, flat — 0.01 SOL · Grand-prize odds, per ticket — 1 in 102 now · You hold — 16 [see them] · You can still buy — 34 · zero tickets: Grand-prize odds — No tickets yet |
 | Guest ledger | Connect a wallet to see your tickets. |
 | Limits | 25 per purchase, 50 per wallet. |
-| Free entry | Free entry: one per wallet, grand draw only. 13 of 15 left. [Claim free entry] · Free entry claimed: #0059. · All 15 free entries are claimed. |
-| Mobile bar | − 10 + · Buy 10 · 0.10 SOL · Connect wallet · Limit reached · Get devnet SOL |
+| Free entry tab | A free entry has the same chance of the grand prize as one paid ticket. Free entries don't get an instant-win roll yet. · *Free entries left in Draw Nº 3* 13 of 15 · *This wallet* Not claimed / Claimed: #0059 · One per wallet while sales are open. No purchase needed. · It's one ticket in the grand draw, numbered like any other, and counts toward the 50-ticket wallet limit. · There's no ticket price. Your wallet pays only Solana rent for the entry record, ≈0.0023 SOL, plus the network fee. · [Claim free entry] · Connect wallet to claim · Confirm you're 18 or older to claim. · One signature. The entry goes straight into the grand draw; there is nothing to reveal. · Your free entry is ticket #0059, in the grand draw for 1 SOL. · All 15 free entries in Draw Nº 3 are claimed. The cap is set in the draw account; paid tickets are still on sale. |
+| Mobile bar | Buy tickets · Free entry / − 1 + · Buy 1 · 0.01 SOL · Connect wallet · Limit reached · Get devnet SOL · Faucet said no. [Details] / 13 of 15 left · Claim free entry · In the grand draw · Claimed · #0059 · No free entries left |
 
 ### Confirm
 
@@ -1288,15 +1307,13 @@ Rules for all copy:
 | Summary | 10 tickets × 0.01 SOL — **0.10 SOL** |
 | Fee | + ≈0.003 SOL network & randomness fee |
 | Numbering | Numbered from #0102, unless someone buys first. |
-| Question | Which planet is known as the Red Planet? |
-| Question sub | *One general-knowledge question, then you pay.* |
-| Options | Mars · Venus · Jupiter (shuffled) |
 | Feedback | Correct. / Not quite. Have another go. |
 | 18+ (first time) | I'm 18 or older. *Asked once, remembered on this device.* |
 | 18+ (remembered) | **18+** confirmed on this device · [Undo] |
 | Pay | Pay 0.10 SOL · Checking with the program… · Approve in your wallet… · Confirming on devnet… |
-| Disabled hint | Answer the question and confirm you're 18+ to pay. |
+| Disabled hint | Confirm you're 18 or older to pay. |
 | Fine print | Then sign in your wallet. About 2 s later it asks once more, to reveal your results and pay any wins. |
+| Guarantee | as in Stub and buy |
 
 ### Stub in other states
 
@@ -1365,9 +1382,9 @@ Rules for all copy:
 | House rules (list) |
 |---|
 | 18+ only. You confirm it once on each device. |
-| One general-knowledge question before each purchase. It's asked here in the app, not checked on-chain. |
+| A prize draw: every result is decided by chance, and you can enter free instead of buying. |
 | Up to 25 tickets per purchase and 50 per wallet per draw, enforced on-chain. |
-| One free entry per wallet, grand draw only (13 of 15 left). [Claim free entry] |
+| One free entry per wallet, with the same chance of the grand prize as one paid ticket; free entries don't get an instant-win roll yet (13 of 15 left). [Claim free entry] |
 | Instant-win odds are boosted for this demo. Grand-prize odds are 1 in 102 per ticket right now, and never worse than 1 in 165. |
 | Priced and paid in SOL. Nothing is converted. |
 | Devnet only: play money with no cash value. |
@@ -1424,7 +1441,7 @@ The bottom of the bounding rect of each of these is ≤ 900, without scrolling:
 - [ ] Exactly **one** proof link on the ticket face, "Check the vault on Solscan", with `href` containing `solscan.io/account/EiPverAxDWsGF6jzcEwA8r97NSMqhU6mSuQnPN1SFPPD?cluster=devnet` (the real vault PDA of fixture Draw 3).
 - [ ] The countdown "2 d 5 h 31 min left" and the absolute "Sun 4 Oct, 04:13 UTC".
 - [ ] "100 of 150 sold" and the barcode (152 slots, 16 raised blue bars, 2 punched free entries).
-- [ ] The quantity control (−, 10, +), the quick picks, the total "0.10 SOL", the one-line fee "+ ≈0.003 SOL network & randomness fee", and an **enabled** "Buy 10 tickets" button.
+- [ ] The entry tabs "Buy tickets / Free entry" at equal weight, the quantity control (−, 1, +), the quick picks with "Max (25)", the one-line fee "+ ≈0.003 SOL network & randomness fee", an **enabled** "Buy 1 ticket · 0.01 SOL" button and the guarantee line under it.
 - [ ] The devnet strip is visible.
 - [ ] No horizontal scroll at 1440, 1280, 1024, 768, 390 and 320.
 
@@ -1432,7 +1449,7 @@ The bottom of the bounding rect of each of these is ≤ 900, without scrolling:
 
 - [ ] Vertical order of the top edges: prize < time left < close time < lock line < sold. The prize and time are the first two facts after the masthead.
 - [ ] The LOCKED stamp's box intersects neither the prize figure nor the countdown, with ≥ 16px clearance to the countdown.
-- [ ] The sticky bar is visible with − and + at **≥ 48×48** and "Buy 10 · 0.10 SOL" at ≥ 48px tall.
+- [ ] The sticky bar is visible with the two entry tabs (≥ 44px), − and + at **≥ 48×48** and "Buy 1 · 0.01 SOL" at ≥ 48px tall.
 - [ ] Exactly **one** quantity control on the page: the in-flow stub has no stepper, picks or Buy button.
 - [ ] In due, drawing and cancelled the action appears once, in the bar (the stub has no primary button), at 390 and at 768.
 - [ ] At 320 the LOCKED stamp (104px below 360) keeps ≥ 8px of clear stock to the paper edge.
@@ -1442,10 +1459,11 @@ The bottom of the bounding rect of each of these is ≤ 900, without scrolling:
 ### 8.3 Purchase flow
 
 - [ ] Choose a quantity, press Buy, and the confirm step appears in place (desktop) or as a sheet (mobile). There are no other steps before Pay.
-- [ ] Exactly one plain question with three options (Mars, Venus, Jupiter, shuffled). It is not a riddle.
+- [ ] No question anywhere in the flow, and no answer in the bundle (grep the build for the old options). "Skill" and "competition" appear in no copy.
+- [ ] The free entry tab is one click (desktop) or one tap (bar) from the buy tab, states the interim chance line exactly, shows free entries left and this wallet's claim, and claims with the same 18+ acknowledgement.
 - [ ] First time: the 18+ checkbox with "Asked once, remembered on this device.". After paying once, or with `localStorage['drawsol.adult']="yes"`: "18+ confirmed on this device · Undo" and no checkbox. Undo restores the checkbox.
 - [ ] Storage throwing (private mode) still renders and works; it just asks every time.
-- [ ] The fee is one line, with detail behind a disclosure. Pay is disabled until the answer is right and 18+ is satisfied.
+- [ ] The fee is one line, with detail behind a disclosure. Pay is disabled until 18+ is satisfied.
 - [ ] All hit targets are ≥ 44×44 (picks, punches, text buttons, wallet, radio rows, checkbox row).
 - [ ] Guest, low-balance and wallet-cap states show the copy in §6 in both the stub and the bar.
 
@@ -1492,7 +1510,7 @@ The bottom of the bounding rect of each of these is ≤ 900, without scrolling:
 - [ ] `grep -r "FIXTURE" app/out` and `grep -rE "fixture-rand|fxRand" app/out` return nothing.
 - [ ] Extend the existing `shoot.cjs` (a copy) with:
   - scenarios `confirm`, `reveal-done` and `reveal-5`;
-  - interaction shots: desktop confirm (click "Buy 10 tickets", choose Mars, tick 18+); `confirm-remembered` (`addInitScript` sets `drawsol.adult`); mobile sheet (tap the bar's Buy); reveal mid (`?fx=reveal`).
+  - interaction shots: desktop confirm (click "Buy 1 ticket · 0.01 SOL", tick 18+); `confirm-remembered` (`addInitScript` sets `drawsol.adult`); mobile sheet (tap the bar's Buy); reveal mid (`?fx=reveal`).
   - Every shot waits for `document.fonts.ready` plus the check, logs horizontal overflow, and is viewed before sign-off.
 
 ---
