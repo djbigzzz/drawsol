@@ -1,129 +1,184 @@
 "use client";
 
-import { useDrawSol } from "@/hooks/context";
-import { SectionHead, Verify } from "./bits";
-import { activeTiers, instantNumer, maxEntries } from "@/lib/derive";
+import { useState, type ReactNode } from "react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { useActions, useDrawSol } from "@/hooks/context";
+import { maxEntries } from "@/lib/derive";
 import { oneIn, sol, utcLabel } from "@/lib/format";
 import { toHex } from "@/lib/fairness";
 import { GAMBLE_AWARE_URL, ORAO_PROGRAM_ID, PROGRAM_ID, SOURCE_URL } from "@/lib/config";
 import { vaultPda } from "@/lib/chain";
+import { ProofLink } from "./bits";
+import { Microtext } from "./print/Mark";
 
+/**
+ * The back of the ticket: the reverse of the hero ticket, at the same width and x, with the same
+ * perforation. The six promises are a ledger on the body; the house rules sit on the stub.
+ */
 export function Rules() {
-  const { current: d } = useDrawSol();
+  const { current: d, draws, myEntries, wallet } = useDrawSol();
+  const { lastSig, claimFree } = useActions();
+  const { setVisible } = useWalletModal();
+  const [fullHash, setFullHash] = useState(false);
   if (!d) return null;
 
-  const guarantees = [
+  const settledPast = draws.filter((x) => x.status === "settled").sort((a, b) => b.id - a.id)[0];
+  const lastRevealTx = Object.entries(lastSig).find(([k]) => k.startsWith("reveal:"))?.[1];
+  // the newest revealed paid entry of this wallet: its account holds the revealed results
+  const lastRevealed = myEntries.filter((e) => !e.isFree && e.revealed).sort((a, b) => b.seq - a.seq)[0];
+  const hash = toHex(d.termsHash);
+  const freeLeft = Math.max(0, d.freeCap - d.freeTickets);
+  const claimed = myEntries.some((e) => e.isFree);
+
+  const rows: { p: string; h: ReactNode; c: ReactNode }[] = [
     {
-      t: "The prize is in the vault before sales open",
-      b: `create_draw moves the ${sol(d.prizeLamports, 2, 4)} SOL prize and the ${sol(d.iwReserveLamports, 2, 4)} SOL instant-win reserve into a program vault in the same instruction that opens the draw.`,
-      proof: <Verify account={vaultPda(d.address)} label="vault" />,
+      p: "The prize is locked before the first ticket sells.",
+      h: (
+        <>
+          <code>create_draw</code> moves the <span className="nw">{sol(d.prizeLamports, 0, 4)} SOL</span> prize and the{" "}
+          <span className="nw">{sol(d.iwReserveLamports, 0, 4)} SOL</span> instant-win reserve into the program’s vault in the same instruction that opens the
+          draw. Only the winning ticket can collect the prize; if the draw is cancelled, every paid ticket can claim a full refund.
+        </>
+      ),
+      c: <ProofLink account={vaultPda(d.address)}>Vault account</ProofLink>,
     },
     {
-      t: "The draw happens at sell-out or the deadline",
-      b: `Whichever comes first: ${d.ticketCap} paid tickets, or ${utcLabel(d.closesAt)}. The close time is written into the draw account at creation and can't be changed.`,
-      proof: <Verify account={d.address} label="draw account" />,
+      p: "Fixed tickets, fixed close.",
+      h: (
+        <>
+          {d.ticketCap} tickets, closing <span className="nw">{utcLabel(d.closesAt)}</span>. Both are written into the draw account and can’t change. The draw
+          happens at sell-out or the deadline, whichever comes first.
+        </>
+      ),
+      c: <ProofLink account={d.address}>Draw account</ProofLink>,
     },
     {
-      t: "Nobody chooses the randomness",
-      b: "Every result comes from ORAO VRF. The request seed is fixed by program state, so the buyer, the operator and whoever runs the draw get no say in the outcome.",
-      proof: <Verify account={ORAO_PROGRAM_ID} label="ORAO VRF" />,
+      p: "Nobody chooses the randomness.",
+      h: <>Every result comes from ORAO VRF. The request seed is fixed by program state, so the buyer, the operator and whoever runs the draw get no say, us included.</>,
+      c: <ProofLink account={ORAO_PROGRAM_ID}>ORAO VRF program</ProofLink>,
     },
     {
-      t: "Anyone can run and settle the draw",
-      b: "Requesting the draw, settling it and revealing tickets are permissionless. If the operator disappears, any wallet can finish the job and the winner still gets paid. If randomness never comes, refunds open after 48 h.",
-      proof: (
-        <span className="flex gap-2">
-          <Verify account={PROGRAM_ID} label="program" />
-          <a className="verify" href={SOURCE_URL} target="_blank" rel="noopener noreferrer">
-            source ↗
-          </a>
-        </span>
+      p: "An instant result on every ticket.",
+      h: <>About <span className="nw">2 s</span> after you buy, the reveal transaction works out each ticket’s result and pays any win from the reserve in that same transaction.</>,
+      c: lastRevealTx ? (
+        <ProofLink tx={lastRevealTx}>Your last reveal</ProofLink>
+      ) : lastRevealed ? (
+        <ProofLink account={lastRevealed.address}>Your last revealed entry</ProofLink>
+      ) : (
+        <ProofLink account={ORAO_PROGRAM_ID}>ORAO VRF program</ProofLink>
+      ),
+    },
+    {
+      p: "Anyone can run and settle the draw.",
+      h: (
+        <>
+          Running, settling, revealing and refunding are open to any wallet. If we disappear, anyone can finish the job and the winner still gets paid. If the
+          randomness never arrives within 48 h, refunds open.
+        </>
+      ),
+      c: (
+        <>
+          <ProofLink account={PROGRAM_ID}>Program</ProofLink>
+          <span className="sep" aria-hidden="true">
+            ·
+          </span>
+          <ProofLink href={SOURCE_URL}>Source</ProofLink>
+        </>
+      ),
+    },
+    {
+      p: "Every result can be recomputed.",
+      h: <>Instant results and the winning ticket follow from the randomness by plain arithmetic, so this page can redo it in your browser.</>,
+      c: settledPast ? (
+        <a className="tbtn" href={d.status === "settled" ? "#slip-current" : `#recompute-${settledPast.id}`}>
+          Recompute Draw Nº {settledPast.id}
+        </a>
+      ) : (
+        <span className="c-ink-3">once a draw settles</span>
       ),
     },
   ];
 
-  const tiers = activeTiers(d);
-  const numer = instantNumer(d);
-
   return (
-    <section aria-labelledby="rules-h">
-      <SectionHead idx="05" title="The rules" id="rules" />
-      <ol className="grid border-l border-t border-line md:grid-cols-2">
-        {guarantees.map((g, i) => (
-          <li key={g.t} className="flex flex-col gap-3 border-b border-r border-line px-6 py-6">
-            <span className="mono text-[12px] text-brass">0{i + 1}</span>
-            <h3 className="display text-[26px] leading-[28px]">{g.t}</h3>
-            <p className="max-w-[48ch] flex-1 text-[14px] leading-[22px] text-dim">{g.b}</p>
-            <div>{g.proof}</div>
-          </li>
-        ))}
-      </ol>
-
-      <div className="mt-12 grid gap-12 lg:grid-cols-[1.2fr_1fr]">
-        <div>
-          <h3 className="eyebrow mb-4">Instant-win odds, per ticket · demo odds (boosted for devnet)</h3>
-          <table className="mono w-full text-[13px]">
-            <thead>
-              <tr className="border-b border-brass/50 text-left text-[11px] uppercase tracking-[0.14em] text-brass">
-                <th className="py-2 font-normal">Tier</th>
-                <th className="py-2 font-normal">Pays</th>
-                <th className="py-2 text-right font-normal">Odds</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tiers.map((t) => (
-                <tr key={t.index} className="border-b border-line">
-                  <td className="py-3">{t.index + 1}</td>
-                  <td className="py-3 text-brass">{sol(t.amount, 2, 4)} SOL</td>
-                  <td className="py-3 text-right">{oneIn(t.odds, d.iwDenominator)}</td>
-                </tr>
+    <section className="sec" id="rules" aria-labelledby="rules-h">
+      <div className="back-grid">
+        <div className="back-intro">
+          <h2 className="t-sec" id="rules-h">
+            The back of the ticket
+          </h2>
+          <p className="t-small sec-sub">Six promises, and where to check each one.</p>
+        </div>
+        <article className="ticket back" aria-labelledby="rules-h">
+          <div className="tk-body">
+            <div className="tk-head">
+              <span className="t-ticket-head">
+                <span className="th-brand">DrawSol · </span>conditions of issue
+              </span>
+              <span className="t-serial tk-serial">Nº {String(d.id).padStart(4, "0")}</span>
+            </div>
+            <span className="tk-headrule" aria-hidden="true">
+              <span className="top" />
+              <Microtext />
+            </span>
+            <ol className="promises">
+              {rows.map((r) => (
+                <li key={r.p}>
+                  <div>
+                    <p className="p">{r.p}</p>
+                    <p className="h t-small">{r.h}</p>
+                  </div>
+                  <p className="c t-small">{r.c}</p>
+                </li>
               ))}
-              <tr className="border-b border-line text-dim">
-                <td className="py-3">Any</td>
-                <td className="py-3">—</td>
-                <td className="py-3 text-right">{oneIn(numer, d.iwDenominator)}</td>
-              </tr>
-              <tr className="text-dim">
-                <td className="py-3">Grand</td>
-                <td className="py-3 text-brass">{sol(d.prizeLamports, 2, 4)} SOL</td>
-                <td className="py-3 text-right">1 in {d.nextTicket || "—"} now · ≥ {oneIn(1, maxEntries(d))}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p className="mt-3 text-[12px] leading-[18px] text-dim">
-            Instant wins are paid from the escrowed reserve in the same transaction that reveals them. Free entries
-            don&apos;t roll for instant wins.
-          </p>
-        </div>
-
-        <div className="space-y-8 text-[14px] leading-[22px]">
-          <div>
-            <h3 className="eyebrow mb-2">Free entry</h3>
-            <p className="text-dim">
-              One free ticket per wallet, grand draw only, up to {d.freeCap} for this draw ({d.freeCap - d.freeTickets} left). Claim it
-              in the ticket panel. It counts toward the {d.maxPerWallet}-ticket wallet limit.
+            </ol>
+          </div>
+          <div className="stub back-stub">
+            <div className="stub-head">
+              <h3 className="t-stub-head">House rules</h3>
+            </div>
+            <span className="dbl" aria-hidden="true" />
+            <ul className="house-list t-small">
+              <li>18+ only. You confirm it once on each device.</li>
+              <li>One general-knowledge question before each purchase. It’s asked here in the app, not checked on-chain.</li>
+              <li>
+                Up to {d.maxPerTx} tickets per purchase and {d.maxPerWallet} per wallet per draw, enforced on-chain.
+              </li>
+              <li>
+                One free entry per wallet, grand draw only ({freeLeft} of {d.freeCap} left).{" "}
+                {!claimed && freeLeft > 0 && d.status === "open" && (
+                  <button type="button" className="tbtn" onClick={wallet ? claimFree : () => setVisible(true)}>
+                    Claim free entry
+                  </button>
+                )}
+              </li>
+              <li>
+                Instant-win odds are boosted for this demo.{" "}
+                {d.nextTicket > 0 ? (
+                  <>
+                    Grand-prize odds are <span className="nw">{oneIn(1, d.nextTicket)}</span> per ticket right now, and never worse than{" "}
+                    <span className="nw">{oneIn(1, maxEntries(d))}</span>.
+                  </>
+                ) : (
+                  <>
+                    Grand-prize odds are never worse than <span className="nw">{oneIn(1, maxEntries(d))}</span> per ticket.
+                  </>
+                )}
+              </li>
+              <li>Priced and paid in SOL. Nothing is converted.</li>
+              <li>Devnet only: play money with no cash value.</li>
+              <li>
+                If it stops being fun, <ProofLink href={GAMBLE_AWARE_URL}>BeGambleAware</ProofLink> can help.
+              </li>
+            </ul>
+            <p className="terms t-fine">
+              The question and these terms are committed on-chain as{" "}
+              <code className="nw">{fullHash ? hash : `${hash.slice(0, 8)}…${hash.slice(-8)}`}</code>.{" "}
+              <button type="button" className="tbtn" onClick={() => setFullHash((v) => !v)} aria-expanded={fullHash}>
+                {fullHash ? "Show short hash" : "Show full hash"}
+              </button>
             </p>
           </div>
-          <div>
-            <h3 className="eyebrow mb-2">Skill question</h3>
-            <p className="text-dim">
-              The question is asked here in the app. It is not checked on-chain. The draw&apos;s terms hash commits to the published
-              terms, the question and the odds:
-            </p>
-            <code className="mono mt-2 block break-all text-[12px] leading-[18px] text-cream">{toHex(d.termsHash)}</code>
-          </div>
-          <div>
-            <h3 className="eyebrow mb-2">Play responsibly</h3>
-            <p className="text-dim">
-              18+ only. Limits are enforced on-chain: {d.maxPerTx} tickets per purchase and {d.maxPerWallet} per wallet per draw.
-              This is a devnet demo — the SOL has no value. If gambling stops being fun,{" "}
-              <a className="link" href={GAMBLE_AWARE_URL} target="_blank" rel="noopener noreferrer">
-                BeGambleAware ↗
-              </a>{" "}
-              can help.
-            </p>
-          </div>
-        </div>
+        </article>
       </div>
     </section>
   );

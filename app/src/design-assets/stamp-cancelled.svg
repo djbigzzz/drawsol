@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 132" width="240" height="132" role="img" aria-label="Stamped: cancelled, refunds open">
+  <!-- CANCELLED: replaces LOCKED on the prize when the draw is cancelled.
+       App size: 200px wide desktop, 120px mobile, rotate(-6deg). -->
+  <defs>
+    <filter id="ink-cancelled" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="88" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -6 4.3" result="speck"/>
+      <feComposite in="SourceGraphic" in2="speck" operator="in" result="s"/>
+      <feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="2" result="w"/>
+      <feDisplacementMap in="s" in2="w" scale="1.7" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+  <g filter="url(#ink-cancelled)" fill="none" stroke="#DE3F2B" opacity=".9" font-family="'Archivo Variable','Archivo V',Archivo,sans-serif">
+    <rect x="5" y="5" width="230" height="122" rx="10" stroke-width="6"/>
+    <path d="M16 50h208M16 96h208" stroke-width="1.6"/>
+    <g fill="#DE3F2B" stroke="none" text-anchor="middle">
+      <text x="120" y="38" font-size="12" font-weight="800" style="font-stretch:118%;letter-spacing:2.6px">DRAW Nº 3</text>
+      <text x="120" y="87" font-size="34" font-weight="900" style="font-stretch:84%;letter-spacing:2.5px">CANCELLED</text>
+      <text x="120" y="116" font-size="11" font-weight="800" style="font-stretch:118%;letter-spacing:2.6px">REFUNDS OPEN</text>
+    </g>
+  </g>
+</svg>

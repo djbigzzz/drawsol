@@ -8,7 +8,7 @@ import { PhantomWalletAdapter } from "@solana/wallet-adapter-phantom";
 import { SolflareWalletAdapter } from "@solana/wallet-adapter-solflare";
 import { RPC_URL } from "@/lib/config";
 
-import "@solana/wallet-adapter-react-ui/styles.css";
+import "./wallet-adapter.css";
 
 /** Devnet, Phantom + Solflare. RPC from NEXT_PUBLIC_RPC_URL. */
 export function WalletContextProvider({ children }: { children: React.ReactNode }) {

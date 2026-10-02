@@ -107,14 +107,14 @@ export interface FxWorld {
   entryRandomness: Map<string, Uint8Array>;
 }
 
-export function buildWorld(id: number, now: number, status: DrawStatus, sell = 1): FxWorld {
+export function buildWorld(id: number, now: number, status: DrawStatus, sell = 1, alsoMine: string[] = []): FxWorld {
   const d = baseDraw(id, now, status);
   const entries: EntryView[] = [];
   const entryRandomness = new Map<string, Uint8Array>();
   let next = 0;
   const script = SCRIPT.slice(0, Math.max(0, Math.round(SCRIPT.length * sell)));
   script.forEach(([who, count, free, revealed, minsAgo], seq) => {
-    const owner = who === "me" ? ME : fxKey(`player-${who}`);
+    const owner = who === "me" || alsoMine.includes(who) ? ME : fxKey(`player-${who}`);
     const address = entryPda(d.address, seq);
     const rand = fxRand(`entry-${id}-${seq}`);
     entryRandomness.set(address.toBase58(), rand);
@@ -162,6 +162,22 @@ export function buildWorld(id: number, now: number, status: DrawStatus, sell = 1
   return { draw: d, entries: entries.sort((a, b) => b.seq - a.seq), mine: mine.sort((a, b) => b.seq - a.seq), player, entryRandomness };
 }
 
+/**
+ * The program never sells a ticket after the close: once a scenario has moved closesAt into the
+ * past, slide the whole purchase history (and the draw's opening) back so the newest entry lands
+ * a minute before the close. `mine` holds the same objects as `entries`, so both move together.
+ */
+export function fitBeforeClose(w: FxWorld) {
+  if (!w.entries.length) return w;
+  const latest = Math.max(...w.entries.map((e) => e.createdAt));
+  const shift = latest - (w.draw.closesAt - 60);
+  if (shift > 0) {
+    for (const e of w.entries) e.createdAt -= shift;
+    w.draw.createdAt -= shift;
+  }
+  return w;
+}
+
 export function settle(w: FxWorld, now: number, label: string) {
   const d = w.draw;
   const r = fxRand(label);
@@ -200,7 +216,35 @@ export type Scenario =
   | "nodraw"
   | "loading"
   | "error"
-  | "reveal";
+  | "confirm"
+  | "reveal"
+  | "reveal-done"
+  | "reveal-5";
+
+/** Every scenario the fixture build understands (anything else falls back to "open"). */
+export const SCENARIOS: Scenario[] = [
+  "open", "open-guest", "open-low", "open-cap", "empty", "due", "drawing", "drawing-wait", "settled",
+  "cancelled", "nodraw", "loading", "error", "confirm", "reveal", "reveal-done", "reveal-5",
+];
+
+/** A revealed session for one entry, with tiers recomputed by fairness.ts from its randomness. */
+export function revealSessionFor(e: EntryView, d: DrawView, rand: Uint8Array, label: string): RevealSession {
+  const tiers = rollEntry(rand, e.firstTicket, e.count, d.iwDenominator, d.iwTiers);
+  const instantPaid = tiers.reduce((n, t) => n + (t > 0 ? d.iwTiers[t - 1].amount : BigInt(0)), BigInt(0));
+  return {
+    entry: e.address,
+    firstTicket: e.firstTicket,
+    count: e.count,
+    stage: "revealed",
+    vrfRequest: e.vrfRequest,
+    vrfMs: 1800,
+    revealTx: fxSig(`reveal-${label}`),
+    tiers,
+    instantPaid,
+    tierAmounts: d.iwTiers.map((t) => t.amount),
+    randomness: rand,
+  };
+}
 
 export interface FxState {
   load: "ready" | "loading" | "error" | "nodraw";
@@ -214,10 +258,11 @@ export interface FxState {
   drawRandomness: RandomnessView | null;
   session: RevealSession | null;
   settleTx: Map<string, string>;
+  entryRandomness: Map<string, Uint8Array>;
 }
 
 export function scenario(s: Scenario, now: number): FxState {
-  const past2 = settle(buildWorld(2, now - 9 * 86400, "open"), now - 9 * 86400, "draw-2");
+  const past2 = fitBeforeClose(settle(buildWorld(2, now - 9 * 86400, "open"), now - 9 * 86400, "draw-2"));
   const past1 = buildWorld(1, now - 20 * 86400, "cancelled", 0);
   past1.draw.closesAt = now - 18 * 86400;
   const settleTx = new Map([[past2.draw.address.toBase58(), fxSig("settle-2")]]);
@@ -237,11 +282,14 @@ export function scenario(s: Scenario, now: number): FxState {
     drawRandomness: null,
     session: null,
     settleTx,
+    entryRandomness: new Map(),
   };
   if (s === "loading" || s === "error" || s === "nodraw") return { ...fx, load: s, wallet: null };
 
   let w: FxWorld;
   if (s === "empty") w = buildWorld(3, now, "open", 0);
+  // wallet at its limit: three more of the scripted purchases are this wallet's, so it really holds 50
+  else if (s === "open-cap") w = buildWorld(3, now, "open", 1, ["b", "c", "h"]);
   else w = buildWorld(3, now, "open");
 
   if (s === "due") {
@@ -277,6 +325,9 @@ export function scenario(s: Scenario, now: number): FxState {
     }
   }
 
+  // no purchase after the close (due, drawing, settled, cancelled)
+  fitBeforeClose(w);
+
   // keep the Player account consistent with entries revealed during settlement
   w.player.won = w.mine.reduce((n, e) => n + e.instantPaid, BigInt(0));
   fx.current = w.draw;
@@ -285,6 +336,7 @@ export function scenario(s: Scenario, now: number): FxState {
   fx.player = w.player;
   fx.vault = vaultOf(w.draw);
   fx.draws = [w.draw, past2.draw, past1.draw];
+  fx.entryRandomness = w.entryRandomness;
 
   if (s === "open-guest") {
     fx.wallet = null;
@@ -292,11 +344,11 @@ export function scenario(s: Scenario, now: number): FxState {
     fx.player = null;
   }
   if (s === "open-low") fx.wallet = { address: ME, balance: sol(0.0123) };
-  if (s === "open-cap") fx.player = { ...w.player, tickets: 50 };
 
-  if (s === "reveal") {
-    // the wallet's newest paid entry, revealed on-chain, mid-way through turning the stubs
+  if (s === "reveal" || s === "reveal-done") {
+    // the wallet's 10-ticket entry, revealed on-chain; the still frame pauses mid-way (or at the end)
     const e = w.mine.find((m) => !m.isFree && m.count === 10)!;
+    const rand = w.entryRandomness.get(e.address.toBase58())!;
     fx.session = {
       entry: e.address,
       firstTicket: e.firstTicket,
@@ -309,8 +361,14 @@ export function scenario(s: Scenario, now: number): FxState {
       tiers: e.tiers,
       instantPaid: e.instantPaid,
       tierAmounts: w.draw.iwTiers.map((t) => t.amount),
-      initialShown: 5,
+      randomness: rand,
+      initialShown: s === "reveal" ? 6 : 10,
     };
+  }
+  if (s === "reveal-5") {
+    // the sealed entry (#0097–#0101), opened with "Reveal 5 tickets"
+    const e = w.mine.find((m) => !m.isFree && !m.revealed)!;
+    fx.session = revealSessionFor(e, w.draw, w.entryRandomness.get(e.address.toBase58())!, String(e.seq));
   }
   return fx;
 }

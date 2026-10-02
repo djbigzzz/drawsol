@@ -74,6 +74,8 @@ export interface RevealSession {
   error?: HumanError;
   /** tier amounts in lamports from the draw account */
   tierAmounts: bigint[];
+  /** the entry's fulfilled ORAO randomness (64 bytes), for per-ticket rolls and stamp ink */
+  randomness?: Uint8Array;
   /** fixtures only: how many stubs are already turned */
   initialShown?: number;
 }

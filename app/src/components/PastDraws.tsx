@@ -2,76 +2,70 @@
 
 import { useState } from "react";
 import { useDrawSol } from "@/hooks/context";
-import { Addr, SectionHead, Verify } from "./bits";
-import { SplitFlap } from "./SplitFlap";
-import { WinnerCard } from "./WinnerCard";
 import { shortDate, sol, ticketNo } from "@/lib/format";
+import type { DrawView } from "@/lib/types";
+import { Addr, Busy, ProofLink, SectionGrid } from "./bits";
+import { CarbonSlip } from "./print/CarbonSlip";
+import { SettledTicket, useSettleTx } from "./SettledTicket";
 
 export function PastDraws() {
   const { draws, current } = useDrawSol();
-  const past = draws.filter(
-    (d) => (d.status === "settled" || d.status === "cancelled") && !(current && d.address.equals(current.address))
-  );
+  const past = draws
+    .filter((d) => (d.status === "settled" || d.status === "cancelled") && !(current && d.address.equals(current.address)))
+    .sort((a, b) => b.id - a.id);
+  const lead = past.find((d) => d.status === "settled") ?? null;
+  const older = past.filter((d) => d !== lead);
   const [open, setOpen] = useState<string | null>(null);
 
+  if (past.length === 0)
+    return (
+      <SectionGrid id="past" title="Past draws">
+        <p className="t-body c-ink-2">No finished draws yet. When one settles, its ticket, winner and randomness stay here, with the arithmetic to check it.</p>
+      </SectionGrid>
+    );
+
   return (
-    <section aria-labelledby="past-h">
-      <SectionHead idx="04" title="Past draws" id="past" />
-      {past.length === 0 ? (
-        <div className="border border-dashed border-line px-6 py-8 text-[15px] text-dim">
-          No finished draws yet. When one settles, its winning ticket, winner and randomness stay here — with a button to
-          recompute the result yourself.
-        </div>
-      ) : (
-        <div className="border-t border-line">
-          {past.map((d) => {
+    <SectionGrid
+      id="past"
+      title="Past draws"
+      sub={lead ? <>Draw Nº {lead.id} is settled. Here is its ticket, and the arithmetic to check it.</> : <>No past draw has been settled yet.</>}
+      aside={lead ? <LeadLedger d={lead} /> : undefined}
+    >
+      {lead && <Pair d={lead} />}
+      {older.length > 0 && (
+        <div className="older">
+          {older.map((d) => {
             const k = d.address.toBase58();
             const isOpen = open === k;
             return (
-              <div key={k} className="border-b border-line">
-                <div className="grid grid-cols-[1fr_auto] items-center gap-4 py-4 md:grid-cols-[140px_auto_1fr_auto]">
-                  <div>
-                    <div className="display text-[22px] leading-[24px] tracking-[0.04em]">Draw Nº {d.id.toString().padStart(4, "0")}</div>
-                    <div className="eyebrow mt-1">{d.status === "settled" ? `settled ${shortDate(d.settledAt)}` : "cancelled"}</div>
-                  </div>
-                  <div className="hidden md:block">
-                    {d.status === "settled" ? (
-                      <SplitFlap value={ticketNo(d.winningTicket)} size={24} color="var(--brass)" label={`Winning ticket ${ticketNo(d.winningTicket)}`} gap={2} />
-                    ) : (
-                      <span className="mono text-[13px] text-dim">no winner</span>
-                    )}
-                  </div>
-                  <div className="col-span-2 row-start-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] md:col-span-1 md:row-start-auto">
+              <div key={k}>
+                <div className="older-row">
+                  <b>Draw Nº {d.id}</b>
+                  <span className="d nw">
+                    {d.status === "settled" ? `settled ${shortDate(d.settledAt)}` : `closed ${shortDate(d.closesAt)}`}
+                  </span>
+                  <span className="d">
                     {d.status === "settled" ? (
                       <>
-                        <span className="md:hidden">
-                          <span className="mono text-brass">{ticketNo(d.winningTicket)}</span>
-                        </span>
-                        <span>
-                          <span className="text-dim">Winner </span>
-                          <Addr k={d.winner} />
-                        </span>
-                        <span>
-                          <span className="text-dim">Prize </span>
-                          <span className="mono text-brass">{sol(d.prizeLamports, 2, 4)} SOL</span>
-                        </span>
+                        Ticket <span className="c-red nw">{ticketNo(d.winningTicket)}</span> won {sol(d.prizeLamports, 0, 4)} SOL.
                       </>
+                    ) : d.nextTicket === 0 ? (
+                      "No tickets sold; the prize went back to the operator."
                     ) : (
-                      <span className="text-dim">
-                        {d.nextTicket === 0 ? "No tickets sold; prize returned." : `Refunded ${sol(d.refundedLamports, 2, 4)} of ${sol(d.proceedsLamports, 2, 4)} SOL`}
-                      </span>
+                      `Refunded ${sol(d.refundedLamports, 2, 4)} of ${sol(d.proceedsLamports, 2, 4)} SOL.`
                     )}
-                    <Verify account={d.address} />
-                  </div>
-                  {d.status === "settled" && (
-                    <button className="btn small ghost col-start-2 row-start-1 justify-self-end md:col-start-auto md:row-start-auto" onClick={() => setOpen(isOpen ? null : k)} aria-expanded={isOpen}>
-                      {isOpen ? "Hide proof" : "Proof"}
+                  </span>
+                  {d.status === "settled" ? (
+                    <button type="button" className="tbtn" onClick={() => setOpen(isOpen ? null : k)} aria-expanded={isOpen}>
+                      {isOpen ? "Hide its ticket" : "Show its ticket"}
                     </button>
+                  ) : (
+                    <ProofLink account={d.address}>Draw account</ProofLink>
                   )}
                 </div>
                 {isOpen && (
-                  <div className="pb-6">
-                    <WinnerCard d={d} compact />
+                  <div className="older-open">
+                    <Pair d={d} />
                   </div>
                 )}
               </div>
@@ -79,6 +73,54 @@ export function PastDraws() {
           })}
         </div>
       )}
-    </section>
+    </SectionGrid>
+  );
+}
+
+function Pair({ d }: { d: DrawView }) {
+  return (
+    <div className="past">
+      <SettledTicket d={d} />
+      <CarbonSlip d={d} tilt id={`recompute-${d.id}`} />
+    </div>
+  );
+}
+
+function LeadLedger({ d }: { d: DrawView }) {
+  const tx = useSettleTx(d);
+  return (
+    <>
+      <dl className="ledger big">
+        <div>
+          <dt>Settled</dt>
+          <dd>{shortDate(d.settledAt)}</dd>
+        </div>
+        <div>
+          <dt>Winning ticket</dt>
+          <dd className="c-red">{ticketNo(d.winningTicket)}</dd>
+        </div>
+        <div>
+          <dt>Winner</dt>
+          <dd style={{ fontSize: 20 }}>
+            <Addr k={d.winner} link />
+          </dd>
+        </div>
+        <div>
+          <dt>Prize</dt>
+          <dd>{sol(d.prizeLamports, 0, 4)} SOL, paid</dd>
+        </div>
+      </dl>
+      <p className="ledger-link t-small">
+        {tx ? (
+          <ProofLink tx={tx}>Settlement transaction</ProofLink>
+        ) : tx === null ? (
+          <span className="c-ink-3">Settlement transaction not indexed.</span>
+        ) : (
+          <>
+            <Busy /> <span className="c-ink-3">Finding the settlement transaction…</span>
+          </>
+        )}
+      </p>
+    </>
   );
 }

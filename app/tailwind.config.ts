@@ -1,31 +1,37 @@
 import type { Config } from "tailwindcss";
 
-/** "Night Draw" palette — SPEC §4.2. Nothing outside this list. */
+/**
+ * "Ticket Office" palette — DESIGN.md §2.9. Closed palette: nothing outside this list.
+ * Tailwind is used for layout utilities only; component styling lives in globals.css,
+ * in classes named after the printed objects (.ticket, .stub, .stamp, .barcode, .slip…).
+ */
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
   theme: {
     colors: {
       transparent: "transparent",
       current: "currentColor",
-      black: "#0B0A09",
-      board: "#151311",
-      panel: "#1C1A17",
-      line: "#2A2622",
-      cream: "#F3EAD6",
-      dim: "#8A8174",
-      brass: "#D4A24C",
-      red: "#FF3B2F",
-      green: "#4FB286",
+      paper: "#EFE8D9",
+      "paper-2": "#E6DDCA",
+      stock: "#FBF8F0",
+      "stock-2": "#F3EEE2",
+      ink: "#1B1814",
+      "ink-2": "#4F473C",
+      "ink-3": "#625949",
+      rule: "rgba(27,24,20,.16)",
+      "rule-2": "rgba(27,24,20,.32)",
+      red: "#DE3F2B",
+      "red-ink": "#A92A1A",
+      "red-fill": "#C4321F",
+      blue: "#2448B0",
+      "blue-ink": "#1F3F9E",
     },
     fontFamily: {
-      display: ['"Big Shoulders Display"', "Impact", "sans-serif"],
-      sans: ['"IBM Plex Sans"', "system-ui", "sans-serif"],
-      mono: ['"IBM Plex Mono"', "ui-monospace", "monospace"],
+      grot: ['"Archivo Variable"', "Archivo", '"Arial Narrow"', "sans-serif"],
+      serif: ['"Newsreader Variable"', "Georgia", "serif"],
     },
-    extend: {
-      screens: { xs: "420px" },
-      maxWidth: { page: "1240px" },
-    },
+    screens: { md: "761px", lg: "1024px", xl: "1336px" },
+    extend: { maxWidth: { page: "1440px" } },
   },
   plugins: [],
 };

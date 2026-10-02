@@ -1,131 +1,229 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
-import { SectionHead, Spinner, Verify, ErrorNote, Check } from "./bits";
-import { TicketStub } from "./TicketStub";
 import { tierAmount } from "@/lib/derive";
-import { shortDate, clock, sol, ticketNo, ticketRange } from "@/lib/format";
+import { clock, shortDate, sol, ticketNo, ticketRange } from "@/lib/format";
+import { inkAt, ticketInk } from "@/lib/print";
 import type { DrawView, EntryView } from "@/lib/types";
+import { Addr, Busy, ErrorNote, inFlight, ProofLink, SectionGrid } from "./bits";
+import { plural } from "./fmt";
+import { Stamp } from "./print/Stamp";
+import { Stub, type StubState } from "./TicketStub";
 
 export function MyTickets() {
   const { wallet, myEntries, player, current: d } = useDrawSol();
   const { setVisible } = useWalletModal();
   if (!d) return null;
 
-  return (
-    <section aria-labelledby="my-tickets-h">
-      <SectionHead idx="02" title="My tickets" id="my-tickets" />
-      {!wallet ? (
-        <div className="flex flex-col items-start gap-4 border border-dashed border-line px-6 py-8 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[15px] text-dim">Connect a wallet to see your tickets, instant results and refunds.</p>
-          <button className="btn small ghost" onClick={() => setVisible(true)}>
-            Connect wallet
-          </button>
-        </div>
-      ) : myEntries.length === 0 ? (
-        <div className="border border-dashed border-line px-6 py-8 text-[15px] text-dim">
-          No tickets in this draw for <span className="mono text-cream">{wallet.address.toBase58().slice(0, 4)}…{wallet.address.toBase58().slice(-4)}</span> yet.
-        </div>
+  if (!wallet)
+    return (
+      <SectionGrid id="my-tickets" title="Your tickets">
+        <p className="t-body c-ink-2">Connect a wallet to see your tickets, instant results and refunds.</p>
+        <button type="button" className="btn btn-sec" style={{ marginTop: 16 }} onClick={() => setVisible(true)}>
+          Connect wallet
+        </button>
+      </SectionGrid>
+    );
+
+  if (myEntries.length === 0)
+    return (
+      <SectionGrid id="my-tickets" title="Your tickets">
+        <p className="t-body c-ink-2">
+          No tickets in this draw for <Addr k={wallet.address} /> yet. The next ticket is {ticketNo(d.nextTicket)}.
+        </p>
+      </SectionGrid>
+    );
+
+  const tickets = player?.tickets ?? myEntries.reduce((n, e) => n + e.count, 0);
+  const spent = player?.spent ?? myEntries.reduce((n, e) => n + e.paidLamports, BigInt(0));
+  const won = player?.won ?? myEntries.reduce((n, e) => n + e.instantPaid, BigInt(0));
+  // long rolls (more than 5) get a row each; the short ones, sealed or not, and the free entry share
+  // one row side by side, so the same data keeps the same layout before and after a reveal
+  const long = myEntries.filter((e) => !e.isFree && e.count > 5);
+  const short = myEntries.filter((e) => e.isFree || e.count <= 5);
+  const n = tickets;
+  const win = <span className="nw">{ticketNo(d.winningTicket)}</span>;
+  const holdsWinner = d.status === "settled" && myEntries.some((e) => d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count);
+  const paidCount = myEntries.filter((e) => !e.isFree).reduce((k, e) => k + e.count, 0);
+  const allRefunded = myEntries.filter((e) => !e.isFree).every((e) => e.refunded);
+  // what holds for these tickets depends on where the draw is
+  const lead: ReactNode =
+    d.status === "settled" ? (
+      holdsWinner ? (
+        <>
+          All {n} were in the grand draw, and you hold the winner, {win}.
+        </>
       ) : (
         <>
-          <dl className="mb-6 grid grid-cols-3 border-y border-line">
-            {[
-              ["Tickets", String(player?.tickets ?? myEntries.reduce((n, e) => n + e.count, 0))],
-              ["Spent", `${sol(player?.spent ?? BigInt(0), 2, 4)} SOL`],
-              ["Instant wins", `${sol(player?.won ?? BigInt(0), 2, 4)} SOL`],
-            ].map(([k, v], i) => (
-              <div key={k} className={`px-4 py-4 ${i > 0 ? "border-l border-line" : ""}`}>
-                <dt className="eyebrow mb-1">{k}</dt>
-                <dd className={`display text-[22px] leading-[24px] sm:text-[28px] sm:leading-[28px] ${k === "Instant wins" ? "text-brass" : ""}`}>{v}</dd>
-              </div>
-            ))}
-          </dl>
-          <div className="space-y-4">
-            {myEntries.map((e) => (
-              <EntryStub key={e.address.toBase58()} e={e} d={d} />
+          None of your {n} was drawn; {win} won.
+        </>
+      )
+    ) : d.status === "cancelled" ? (
+      paidCount === 0 ? (
+        <>Draw Nº {d.id} was cancelled. A free entry has nothing to refund.</>
+      ) : allRefunded ? (
+        <>
+          Draw Nº {d.id} was cancelled. Your {paidCount} paid {plural(paidCount, "ticket was", "tickets were")} refunded.
+        </>
+      ) : (
+        <>
+          Draw Nº {d.id} was cancelled. Your {paidCount} paid {plural(paidCount, "ticket", "tickets")} can be refunded in full.
+        </>
+      )
+    ) : (
+      <>
+        All {n} {plural(n, "is", "are")} in the grand draw.
+      </>
+    );
+
+  return (
+    <SectionGrid
+      id="my-tickets"
+      title="Your tickets"
+      sub={
+        <>
+          {lead} Wallet <Addr k={wallet.address} />.
+        </>
+      }
+      aside={
+        <dl className="ledger big">
+          <div>
+            <dt>Tickets</dt>
+            <dd>{tickets}</dd>
+          </div>
+          <div>
+            <dt>Spent</dt>
+            <dd>{sol(spent, 2, 4)} SOL</dd>
+          </div>
+          <div className={won > BigInt(0) ? "won" : ""}>
+            <dt>Won so far</dt>
+            <dd>{sol(won, 2, 4)} SOL</dd>
+          </div>
+        </dl>
+      }
+    >
+      <div className="rolls">
+        {long.map((e) => (
+          <Roll key={e.address.toBase58()} e={e} d={d} />
+        ))}
+        {short.length > 0 && (
+          <div className="rolls-row">
+            {short.map((e) => (
+              <Roll key={e.address.toBase58()} e={e} d={d} />
             ))}
           </div>
-        </>
-      )}
-    </section>
+        )}
+      </div>
+    </SectionGrid>
   );
 }
 
-function EntryStub({ e, d }: { e: EntryView; d: DrawView }) {
-  const { reveal, refund, phase, errors, clearError, disabledReason } = useActions();
-  const won = e.tiers.reduce((n, t) => n + (t > 0 ? 1 : 0), 0);
-  const holdsWinner = d.status === "settled" && d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count;
+function Roll({ e, d }: { e: EntryView; d: DrawView }) {
+  const { reveal, refund, phase, errors, clearError, lastSig, disabledReason } = useActions();
+  const holds = d.status === "settled" && d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count;
   const rk = `refund:${e.address.toBase58()}` as const;
+  const vk = `reveal:${e.address.toBase58()}` as const;
   const rp = phase[rk];
-  const refundBusy = rp === "simulating" || rp === "signing" || rp === "confirming";
-  const canReveal = !e.isFree && !e.revealed && !d.reserveWithdrawn;
+  const refundBusy = inFlight(rp);
+  const sealed = !e.isFree && !e.revealed;
+  const canReveal = sealed && !d.reserveWithdrawn && d.status !== "cancelled";
+  const payoutTx = lastSig[vk];
+  const winsAmt = e.instantPaid;
+  const prize = sol(d.prizeLamports, 0, 4);
 
-  let status: React.ReactNode;
-  if (holdsWinner) status = <span className="font-semibold text-brass">Won the grand prize with {ticketNo(d.winningTicket)}</span>;
-  else if (d.status === "settled") status = <span className="text-dim">Not drawn this time</span>;
-  else if (d.status === "cancelled") status = e.isFree ? <span className="text-dim">Free entry — nothing to refund</span> : e.refunded ? <span className="inline-flex items-center gap-1 text-green"><Check /> Refunded {sol(e.paidLamports, 2, 4)} SOL</span> : <span>Refund due: {sol(e.paidLamports, 2, 4)} SOL</span>;
-  else status = <span className="text-dim">In the grand draw</span>;
+  const stateOf = (i: number): StubState => {
+    const t = e.firstTicket + i;
+    if (holds && t === d.winningTicket) return "drawn";
+    if (e.refunded) return "refunded";
+    if (e.isFree) return "free";
+    if (!e.revealed) return "sealed";
+    return e.tiers[i] > 0 ? "won" : "nowin";
+  };
 
   return (
-    <div>
-      <TicketStub
-        tone="dark"
-        notch="var(--black)"
-        stubWidth={120}
-        className="entry-stub"
-        tag={e.isFree ? "Free entry" : `Entry ${e.seq}`}
-        serial={<span className="text-[15px]">{ticketRange(e.firstTicket, e.count)}</span>}
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 space-y-2">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
-              <span className="mono text-dim">
-                {shortDate(e.createdAt)} {clock(e.createdAt)} UTC
-              </span>
-              <span>
-                {e.count} {e.count === 1 ? "ticket" : "tickets"}
-                {!e.isFree && <span className="text-dim"> · {sol(e.paidLamports, 2, 4)} SOL</span>}
-              </span>
-              <Verify account={e.address} />
-            </div>
-            {!e.isFree && (
-              <div className="flex flex-wrap items-center gap-[3px]" aria-label={e.revealed ? `${won} instant wins` : "Not revealed"}>
-                {Array.from({ length: e.count }, (_, i) => {
-                  const t = e.tiers[i];
-                  return (
-                    <span
-                      key={i}
-                      title={`${ticketNo(e.firstTicket + i)}: ${!e.revealed ? "sealed" : t > 0 ? `+${sol(tierAmount(d, t), 2, 3)} SOL` : "no win"}`}
-                      className={`h-3 w-3 ${!e.revealed ? "border border-line" : t > 0 ? "bg-brass" : "bg-line"}`}
-                    />
-                  );
-                })}
-                <span className="ml-2 text-[12px] text-dim">
-                  {!e.revealed ? "sealed" : won > 0 ? <span className="text-brass">{won} instant {won === 1 ? "win" : "wins"} · +{sol(e.instantPaid, 2, 4)} SOL</span> : "no instant wins"}
-                </span>
-              </div>
-            )}
-            <div className="text-[13px]">{status}</div>
+    <div className="roll">
+      <p className="roll-cap">
+        <b>{e.isFree ? "Free entry" : `Bought ${e.count}`}</b>
+        <span className="nw tab">{ticketRange(e.firstTicket, e.count)}</span>
+        {e.isFree ? (
+          <span>grand draw only</span>
+        ) : sealed ? (
+          <span>sealed</span>
+        ) : (
+          <>
+            <span className="nw">
+              {shortDate(e.createdAt)}, {clock(e.createdAt)} UTC
+            </span>
+            {winsAmt > BigInt(0) ? <span className="won nw">won {sol(winsAmt, 2, 4)} SOL</span> : <span>no instant wins</span>}
+            {payoutTx && <ProofLink tx={payoutTx}>Payout tx</ProofLink>}
+          </>
+        )}
+      </p>
+      <div className={`strip-of ${e.count > 5 ? "rows" : "n-few"}`} role="list" aria-label={`Tickets ${ticketRange(e.firstTicket, e.count)}`}>
+        {Array.from({ length: e.count }, (_, i) => {
+          const t = e.firstTicket + i;
+          const st = stateOf(i);
+          return (
+            <Stub
+              key={i}
+              serial={t}
+              state={st}
+              amount={st === "won" ? tierAmount(d, e.tiers[i]) : undefined}
+              ink={st === "drawn" ? inkAt(d.randomness, 32) : ticketInk(e.address.toBytes(), t)}
+              prize={prize}
+            />
+          );
+        })}
+        {e.refunded && (
+          <Stamp kind="refunded" className="refund-stamp" seed={inkAt(e.address.toBytes(), 0)} label="Stamped: refunded" />
+        )}
+      </div>
+
+      {holds && (
+        <p className="roll-say">
+          Ticket <span className="nw">{ticketNo(d.winningTicket)}</span> won the grand prize. <span className="nw">{prize} SOL</span> was paid to you.
+        </p>
+      )}
+
+      {canReveal && (
+        <>
+          <p className="roll-note t-small">
+            The reveal transaction wasn’t sent after this purchase, so these results are still sealed. Anyone can send it; any wins are paid to you.
+          </p>
+          <div className="roll-act">
+            <button type="button" className="btn" onClick={() => reveal(e)} disabled={!!disabledReason}>
+              Reveal {e.count} {plural(e.count, "ticket", "tickets")}
+            </button>
           </div>
-          <div className="flex flex-none flex-wrap gap-2">
-            {canReveal && (
-              <button className={`btn small ${d.status === "cancelled" ? "ghost" : ""}`} onClick={() => reveal(e)} disabled={!!disabledReason}>
-                Reveal
-              </button>
-            )}
-            {d.status === "cancelled" && !e.isFree && !e.refunded && (
-              <button className="btn small" onClick={() => refund(e)} disabled={refundBusy || !!disabledReason}>
-                {refundBusy && <Spinner />}
-                {rp === "signing" ? "Approve…" : rp === "confirming" ? "Confirming…" : `Refund ${sol(e.paidLamports, 2, 4)} SOL`}
-              </button>
-            )}
+        </>
+      )}
+
+      {d.status === "cancelled" &&
+        (e.isFree ? (
+          <p className="roll-note t-small">Free entry: nothing to refund.</p>
+        ) : e.refunded ? (
+          <p className="roll-note t-small">
+            Refunded <span className="nw">{sol(e.paidLamports, 2, 4)} SOL</span>.
+          </p>
+        ) : (
+          <div className="roll-act">
+            <button type="button" className="btn btn-sec" onClick={() => refund(e)} disabled={refundBusy || !!disabledReason}>
+              {refundBusy && <Busy />}
+              {rp === "simulating" ? "Checking with the program…" : rp === "signing" ? "Approve in your wallet…" : rp === "confirming" ? "Confirming…" : `Refund ${sol(e.paidLamports, 2, 4)} SOL`}
+            </button>
           </div>
-        </div>
-      </TicketStub>
+        ))}
+
       {errors[rk] && (
-        <div className="mt-2">
+        <div style={{ marginTop: 12 }}>
           <ErrorNote onDismiss={() => clearError(rk)}>{errors[rk]!.message}</ErrorNote>
+        </div>
+      )}
+      {errors[vk] && (
+        <div style={{ marginTop: 12 }}>
+          <ErrorNote onDismiss={() => clearError(vk)}>{errors[vk]!.message}</ErrorNote>
         </div>
       )}
     </div>

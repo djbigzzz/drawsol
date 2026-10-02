@@ -274,6 +274,10 @@ Static Next.js export on GitHub Pages (`basePath: /drawsol`). Talks to devnet vi
 
 ### 4.2 Visual identity — "Night Draw" (broadcast studio)
 
+> **Superseded by [`docs/DESIGN.md`](DESIGN.md) ("Ticket Office").** It replaces this section and the visual
+> details of §4.3 (split-flaps, ON AIR lamp, "verify ↗" chips, mono labels). The §4.3 information architecture
+> still holds; §4.1 and §4.4 are unchanged. The text below is kept for history only.
+
 A lottery-draw TV studio rendered as an interface: split-flap boards, an ON AIR lamp, brass rules, and
 physical ticket stubs. Motion only for real events (purchase confirmed, VRF landed, draw settled).
 

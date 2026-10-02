@@ -1,11 +1,12 @@
 "use client";
 
-import type { ComponentType, ReactNode } from "react";
+import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { LiveProvider } from "@/hooks/LiveProvider";
 import { useDrawSol } from "@/hooks/context";
-import { Header } from "@/components/Header";
-import { Board } from "@/components/Board";
-import { BuyPanel, MobileBuyBar } from "@/components/BuyPanel";
+import { DevnetStrip, Header } from "@/components/Header";
+import { Hero } from "@/components/DrawTicket";
+import { ConfirmSheet, MobileBuyBar } from "@/components/BuyPanel";
+import { BuyProvider } from "@/components/BuyContext";
 import { MyTickets } from "@/components/MyTickets";
 import { EntriesBoard } from "@/components/EntriesBoard";
 import { PastDraws } from "@/components/PastDraws";
@@ -19,52 +20,59 @@ import { BoardSkeleton, NoDraw, RpcError } from "@/components/StatePanels";
 // (The env var must be written out literally here so DefinePlugin can fold it.)
 const DataRoot: ComponentType<{ children: ReactNode }> =
   process.env.NEXT_PUBLIC_FIXTURES === "1"
-  ? // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require("@/fixtures/FixtureProvider").FixtureProvider
-  : LiveProvider;
+    ? // eslint-disable-next-line @typescript-eslint/no-require-imports
+      require("@/fixtures/FixtureProvider").FixtureProvider
+    : LiveProvider;
+
+/** Fixture builds only: `?fx=confirm` opens the confirm step. Folds to a no-op in production. */
+const useFxStep: () => "confirm" | undefined =
+  process.env.NEXT_PUBLIC_FIXTURES === "1"
+    ? () => {
+        const [s, set] = useState<"confirm" | undefined>(undefined);
+        useEffect(() => {
+          if (new URLSearchParams(window.location.search).get("fx") === "confirm") set("confirm");
+        }, []);
+        return s;
+      }
+    : () => undefined;
 
 export default function Home() {
   return (
     <DataRoot>
-      <Header />
-      <Studio />
-      <Footer />
-      <MobileBuyBar />
-      <RevealSheet />
+      <Shell />
     </DataRoot>
   );
 }
 
-function Studio() {
-  const { load, current } = useDrawSol();
-
+function Shell() {
+  const initialStep = useFxStep();
   return (
-    <main id="top" className="page pb-16 pt-6 md:pt-10">
+    <BuyProvider initialStep={initialStep}>
+      <DevnetStrip />
+      <Header />
+      <Office />
+      <Footer />
+      <MobileBuyBar />
+      <ConfirmSheet />
+      <RevealSheet />
+    </BuyProvider>
+  );
+}
+
+function Office() {
+  const { load, current } = useDrawSol();
+  return (
+    <main id="top" className="page main">
       {load.kind === "loading" && <BoardSkeleton />}
       {load.kind === "error" && <RpcError />}
       {load.kind === "nodraw" && <NoDraw reason={load.reason} />}
       {load.kind === "ready" && current && (
         <>
-          <div className="grid gap-x-8 gap-y-12 lg:grid-cols-[minmax(0,1fr)_380px]">
-            <div className="min-w-0 lg:col-start-1">
-              <Board />
-            </div>
-            <div className="lg:col-start-2 lg:row-span-3 lg:row-start-1">
-              <div className="lg:sticky lg:top-[calc(var(--header-h)+24px)] lg:max-h-[calc(100vh-var(--header-h)-48px)] lg:overflow-y-auto">
-                <BuyPanel />
-              </div>
-            </div>
-            <div className="min-w-0 lg:col-start-1">
-              <MyTickets />
-            </div>
-            <div className="min-w-0 lg:col-start-1">
-              <EntriesBoard />
-            </div>
-          </div>
-          <div className="mt-16 space-y-16 md:mt-24 md:space-y-24">
-            <PastDraws />
-            <Rules />
-          </div>
+          <Hero />
+          <MyTickets />
+          <EntriesBoard />
+          <PastDraws />
+          <Rules />
         </>
       )}
     </main>

@@ -2,88 +2,109 @@
 
 import { useState } from "react";
 import { useDrawSol } from "@/hooks/context";
-import { SectionHead } from "./bits";
-import { clock, shortDate, short, sol, ticketNo, ticketRange } from "@/lib/format";
-import { solscanAccount } from "@/lib/config";
 import { entryWins } from "@/lib/derive";
+import { clock, short, shortDate, sol, ticketNo, ticketRange } from "@/lib/format";
+import { solscanAccount } from "@/lib/config";
+import { SectionGrid } from "./bits";
+import { plural } from "./fmt";
 
 const PAGE = 12;
 
-/** Departures-board list of real Entry accounts. */
+/** Every Entry account of this draw, as a ruled ledger. Each row links to its account. */
 export function EntriesBoard() {
-  const { entries, entriesState, current: d, now } = useDrawSol();
+  const { entries, entriesState, current: d, now, wallet, refresh } = useDrawSol();
   const [all, setAll] = useState(false);
   if (!d) return null;
   const rows = all ? entries : entries.slice(0, PAGE);
   const sameDay = (t: number) => now - t < 86400;
+  const me = wallet?.address;
 
   return (
-    <section aria-labelledby="entries-h">
-      <SectionHead idx="03" title="Entries" id="entries" aside={entriesState === "ready" ? `${d.entryCount} entries · ${d.nextTicket} tickets` : undefined} />
-      <div className="border border-line bg-board">
-        <div className="dep-row dep-head grid-cols-[56px_1fr_auto] sm:grid-cols-[88px_1fr_1.2fr_1fr]">
-          <span>Time</span>
-          <span>Wallet</span>
-          <span className="hidden sm:block">Tickets</span>
-          <span className="text-right">Instant</span>
-        </div>
+    <SectionGrid
+      id="entries"
+      title="Every entry"
+      sub={
+        <>
+          Each row is an Entry account on devnet.
+          {entriesState === "ready" && entries.length > 0 && (
+            <>
+              {" "}
+              {d.entryCount} {plural(d.entryCount, "entry", "entries")}, {d.nextTicket} {plural(d.nextTicket, "ticket", "tickets")}.
+            </>
+          )}
+        </>
+      }
+    >
+      <div className="eledger">
+        {!(entriesState === "ready" && entries.length === 0) && (
+          <div className="erow head" aria-hidden="true">
+            <span>Time (UTC)</span>
+            <span>Wallet</span>
+            <span className="tix">Tickets</span>
+            <span className="r">Instant result</span>
+          </div>
+        )}
         {entriesState === "loading" && entries.length === 0 ? (
           Array.from({ length: 4 }, (_, i) => (
-            <div key={i} className="dep-row grid-cols-[56px_1fr_auto] sm:grid-cols-[88px_1fr_1.2fr_1fr]" aria-hidden>
-              <span className="skel h-3 w-10" />
-              <span className="skel h-3 w-24" />
-              <span className="skel hidden h-3 w-28 sm:block" />
-              <span className="skel ml-auto h-3 w-12" />
+            <div key={i} className="erow c-ink-3" aria-hidden="true">
+              <span>…</span>
+              <span>…</span>
+              <span className="tix">…</span>
+              <span className="r">…</span>
             </div>
           ))
         ) : entriesState === "error" ? (
-          <div className="px-4 py-8 text-[14px] text-dim">Can&apos;t load entries from devnet right now.</div>
+          <p className="t-body" style={{ padding: "16px 0" }}>
+            Can’t load entries from devnet right now.{" "}
+            <button type="button" className="tbtn" onClick={refresh}>
+              Try again
+            </button>
+          </p>
         ) : entries.length === 0 ? (
-          <div className="px-4 py-10 text-center">
-            <div className="display text-[28px] leading-[28px]">No tickets yet</div>
-            <div className="mt-2 text-[14px] text-dim">The first entry gets ticket {ticketNo(0)}.</div>
-          </div>
+          <p className="t-body c-ink-2" style={{ padding: "16px 0" }}>
+            No tickets yet. The first entry gets ticket {ticketNo(0)}.
+          </p>
         ) : (
-          rows.map((e) => {
-            const wins = entryWins(e);
-            return (
-              <a
-                key={e.address.toBase58()}
-                href={solscanAccount(e.address.toBase58())}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="dep-row grid-cols-[56px_1fr_auto] hover:bg-panel sm:grid-cols-[88px_1fr_1.2fr_1fr]"
-              >
-                <span className="text-dim">{sameDay(e.createdAt) ? clock(e.createdAt) : shortDate(e.createdAt)}</span>
-                <span className="min-w-0 truncate">
-                  {short(e.owner.toBase58())}
-                  <span className="ml-2 text-dim sm:hidden">×{e.count}</span>
-                </span>
-                <span className="hidden sm:block">
-                  {ticketRange(e.firstTicket, e.count)} <span className="text-dim">×{e.count}</span>
-                </span>
-                <span className="text-right">
-                  {e.isFree ? (
-                    <span className="text-dim">free</span>
-                  ) : !e.revealed ? (
-                    <span className="text-dim">sealed</span>
-                  ) : wins > 0 ? (
-                    <span className="text-brass">+{sol(e.instantPaid, 2, 3)}</span>
-                  ) : (
-                    <span className="text-dim">—</span>
-                  )}
-                </span>
-              </a>
-            );
-          })
-        )}
-        {entries.length > PAGE && (
-          <button className="w-full px-4 py-3 text-left text-[13px] text-dim hover:text-cream" onClick={() => setAll((a) => !a)}>
-            {all ? "Show latest only" : `Show all ${entries.length} entries`}
-          </button>
+          <div role="list">
+            {rows.map((e) => {
+              const wins = entryWins(e);
+              const mine = !!me && e.owner.equals(me);
+              const result = e.isFree ? "free entry" : !e.revealed ? "sealed" : wins > 0 ? `+${sol(e.instantPaid, 2, 3)} SOL` : "no win";
+              return (
+                <a
+                  role="listitem"
+                  key={e.address.toBase58()}
+                  href={solscanAccount(e.address.toBase58())}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="erow"
+                  aria-label={`${short(e.owner.toBase58())}${mine ? " (you)" : ""}, ${ticketRange(e.firstTicket, e.count)}, ${result}. Entry account on Solscan.`}
+                >
+                  <span className="t">{sameDay(e.createdAt) ? clock(e.createdAt) : shortDate(e.createdAt)}</span>
+                  <span className="nw" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {short(e.owner.toBase58())}
+                    {mine && <span className="you">you</span>}
+                    <span className="x x-m">×{e.count}</span>
+                  </span>
+                  <span className="tix nw">
+                    {ticketRange(e.firstTicket, e.count)} <span className="x">×{e.count}</span>
+                  </span>
+                  <span className="r">
+                    {e.isFree ? <i className="free">free entry</i> : !e.revealed ? <i>sealed</i> : wins > 0 ? <span className="w">+{sol(e.instantPaid, 2, 3)} SOL</span> : <i>no win</i>}
+                  </span>
+                </a>
+              );
+            })}
+          </div>
         )}
       </div>
-      <p className="mt-3 text-[12px] leading-[18px] text-dim">Times in UTC. Every row is an Entry account read from devnet — click one to inspect it.</p>
-    </section>
+      {entries.length > PAGE && (
+        <p className="emore">
+          <button type="button" className="tbtn" onClick={() => setAll((a) => !a)} aria-expanded={all}>
+            {all ? `Show the latest ${PAGE}` : `Show all ${entries.length} entries`}
+          </button>
+        </p>
+      )}
+    </SectionGrid>
   );
 }

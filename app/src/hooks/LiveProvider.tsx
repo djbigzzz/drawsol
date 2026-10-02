@@ -177,12 +177,12 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       patchSession(entry.address, { stage: "vrf", vrfRequest: entry.vrfRequest, vrfStartedAt: Date.now(), error: undefined });
       try {
         const t0 = Date.now();
-        await waitForRandomness(connection, entry.vrfRequest);
-        patchSession(entry.address, { vrfMs: Date.now() - t0 });
+        const randomness = await waitForRandomness(connection, entry.vrfRequest);
+        patchSession(entry.address, { vrfMs: Date.now() - t0, randomness });
       } catch {
         patchSession(entry.address, {
           stage: "failed",
-          error: { message: "ORAO hasn't delivered randomness yet. Your tickets are safe — reveal them later from My tickets." },
+          error: { message: "ORAO hasn't delivered randomness yet. Your tickets are safe; reveal them later from Your tickets." },
         });
         return;
       }
@@ -245,7 +245,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }
       const entry = await fetchEntry(program, entryKey).catch(() => null);
       if (!entry) {
-        patchSession(entryKey, { stage: "failed", buyTx: sig, error: { message: "Purchase confirmed, but the entry couldn't be read yet. It will appear in My tickets." } });
+        patchSession(entryKey, { stage: "failed", buyTx: sig, error: { message: "Purchase confirmed, but the entry couldn't be read yet. It will appear in Your tickets." } });
         return;
       }
       patchSession(entryKey, { buyTx: sig, firstTicket: entry.firstTicket, count: entry.count });

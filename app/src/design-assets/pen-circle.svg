@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 40" width="60" height="40" preserveAspectRatio="none" aria-hidden="true">
+  <!-- Ballpoint loop around the chosen quick pick (and nothing else). Stretched to the button with
+       preserveAspectRatio="none"; strokes stay in px via vector-effect. Open: it starts inside the
+       top right, sweeps round and overshoots, crossing itself, ~12px from where it began. The second
+       path is the pressed part of the stroke (1.5 → 2.2px). In the app it is turned −8…+8° per pick.
+       Draw-on: stroke-dashoffset to 0 in 180ms when chosen (not on load, not under reduced motion). -->
+  <g fill="none" stroke="#2448B0" stroke-linecap="round" vector-effect="non-scaling-stroke">
+    <path d="M50 11C40 3 14 4 6 15C0 25 12 37 30 37C47 37 58 29 56 18C55 11 49 5 38 3" stroke-width="1.5"/>
+    <path d="M6 15C0 25 12 37 30 37C47 37 58 29 56 18" stroke-width="2.2"/>
+  </g>
+</svg>

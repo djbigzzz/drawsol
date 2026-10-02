@@ -1,36 +1,38 @@
 "use client";
 
 import { PROGRAM_ID, SOURCE_URL, solscanAccount } from "@/lib/config";
+import { short } from "@/lib/format";
+import { Mark } from "./print/Mark";
 
+/** A colophon, not a billboard. */
 export function Footer() {
   const id = PROGRAM_ID.toBase58();
   return (
-    <footer className="border-t border-line pb-24 pt-12 lg:pb-12">
-      <div className="page grid gap-8 text-[13px] leading-[20px] md:grid-cols-[1fr_auto]">
-        <div className="space-y-2">
-          <div className="display text-[22px] tracking-[0.04em]">
-            Draw<span className="text-brass">Sol</span>
-          </div>
-          <p className="max-w-[60ch] text-dim">
-            Devnet demo · play money. Nothing on this page has cash value. Every number above is read from Solana devnet;
-            when it can&apos;t be read, it isn&apos;t shown.
-          </p>
+    <footer className="page">
+      <div className="foot">
+        <div className="foot-brand">
+          <Mark />
+          <b>DrawSol</b>
         </div>
-        <ul className="space-y-2 md:text-right">
+        <p className="t-small">
+          A prize draw on Solana, built for the Colosseum hackathon. Devnet demo · play money. Every number on this page is read from Solana devnet; when it
+          can’t be read, it isn’t shown.
+        </p>
+        <ul>
           <li>
-            <span className="text-dim">Program </span>
-            <a className="mono link break-all" href={solscanAccount(id)} target="_blank" rel="noopener noreferrer">
-              {id} ↗
+            <a className="nav-link" href={solscanAccount(id)} target="_blank" rel="noopener noreferrer" title={id}>
+              Program {short(id)}
+              <span className="sr-only"> (opens Solscan)</span>
             </a>
           </li>
           <li>
-            <a className="link" href={SOURCE_URL} target="_blank" rel="noopener noreferrer">
-              Source on GitHub ↗
+            <a className="nav-link" href={SOURCE_URL} target="_blank" rel="noopener noreferrer">
+              Source on GitHub
             </a>
           </li>
           <li>
-            <a className="link" href="#rules">
-              Rules &amp; terms
+            <a className="nav-link" href="#rules">
+              How it works
             </a>
           </li>
         </ul>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" width="80" height="80" role="img" aria-label="Stamped: won">
+  <!-- WON: small round stamp slammed onto a winning stub. One print per ticket:
+       seed, pressure and rotation come from that ticket's roll hash (DESIGN.md "Stamp").
+       App size: 74px (reveal stub), 86px (0.05+ wins), 48px (Your tickets), 36px mobile. -->
+  <defs>
+    <filter id="ink-won" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" seed="73" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -5 3.6" result="speck"/>
+      <feComposite in="SourceGraphic" in2="speck" operator="in" result="s"/>
+      <feTurbulence type="fractalNoise" baseFrequency=".05" numOctaves="1" seed="41" result="w"/>
+      <feDisplacementMap in="s" in2="w" scale="1.2" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </defs>
+  <g filter="url(#ink-won)" fill="none" stroke="#DE3F2B" opacity=".95" font-family="'Archivo Variable','Archivo V',Archivo,sans-serif">
+    <circle cx="40" cy="40" r="35" stroke-width="4.5"/>
+    <circle cx="40" cy="40" r="28" stroke-width="1.4"/>
+    <text x="40" y="47.5" text-anchor="middle" fill="#DE3F2B" stroke="none" font-size="20" font-weight="900" style="font-stretch:92%;letter-spacing:1px">WON</text>
+  </g>
+</svg>

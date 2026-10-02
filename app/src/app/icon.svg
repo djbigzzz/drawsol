@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 -4 36 36" width="36" height="36">
+  <!-- favicon: design-assets/mark.svg on a square artboard -->
+  <path d="M1 7h34v6a4 4 0 0 0 0 8v6H1v-6a4 4 0 0 0 0-8z" fill="#1B1814"/>
+  <g fill="#FBF8F0">
+    <rect x="6" y="11" width="1" height="12"/>
+    <rect x="8" y="11" width="2" height="12"/>
+    <rect x="11" y="11" width="1" height="12"/>
+    <rect x="14" y="11" width="3" height="12"/>
+    <rect x="18" y="11" width="1" height="12"/>
+    <rect x="21" y="11" width="1" height="12"/>
+    <rect x="29" y="10" width="1" height="2"/>
+    <rect x="29" y="14" width="1" height="2"/>
+    <rect x="29" y="18" width="1" height="2"/>
+    <rect x="29" y="22" width="1" height="2"/>
+  </g>
+  <rect x="24" y="1" width="2" height="22" fill="#DE3F2B"/>
+</svg>

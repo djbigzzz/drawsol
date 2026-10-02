@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DrawSol Ticket Office</title>
+<meta name="description" content="Draw Nº 3 is open: 1 SOL grand prize, locked in the vault. Devnet demo, play money.">
+<link rel="stylesheet" href="fonts/fonts.css">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- shared ink: rubber-stamp texture (speckle + rough edge) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="ink" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="4" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -6 4.25" result="speck"/>
+      <feComposite in="SourceGraphic" in2="speck" operator="in" result="s"/>
+      <feTurbulence type="fractalNoise" baseFrequency=".035" numOctaves="2" seed="9" result="w"/>
+      <feDisplacementMap in="s" in2="w" scale="1.6" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+    <filter id="ink-light" x="-8%" y="-8%" width="116%" height="116%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="1.1" numOctaves="2" seed="11" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -5 3.6" result="speck"/>
+      <feComposite in="SourceGraphic" in2="speck" operator="in"/>
+    </filter>
+    <path id="arc-top" d="M 22 60 A 38 38 0 0 1 98 60"/>
+    <path id="arc-bot" d="M 12 60 A 48 48 0 0 0 108 60"/>
+  </defs>
+</svg>
+
+<div class="demo" role="note">
+  <div class="wrap"><b>Devnet demo · play money</b><span class="hide-m">Tickets and prizes have no cash value.</span></div>
+</div>
+
+<header class="wrap mast">
+  <a class="brand" href="#" aria-label="DrawSol, home">
+    <svg width="36" height="24" viewBox="0 0 36 24" aria-hidden="true">
+      <path d="M3 1.5h30a1.5 1.5 0 0 1 1.5 1.5v5.6a3.4 3.4 0 0 0 0 6.8V21a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 21v-5.6a3.4 3.4 0 0 0 0-6.8V3A1.5 1.5 0 0 1 3 1.5z" fill="#1B1814"/>
+      <path d="M24 3.5v17" stroke="#FBF8F0" stroke-width="1.3" stroke-dasharray="1.6 1.9"/>
+      <circle cx="13.6" cy="12.6" r="5.2" fill="#DE3F2B"/>
+    </svg>
+    <span class="word">DrawSol</span>
+    <span class="sub">Ticket office</span>
+  </a>
+  <nav class="nav" aria-label="Sections">
+    <a href="#mine">Your tickets</a>
+    <a href="#past">Past draws</a>
+    <a href="#rules">How it works</a>
+    <span class="wallet" title="Connected wallet"><i></i><span class="addr num">5zXY…4wAD</span><span class="bal">4.213 SOL</span></span>
+  </nav>
+</header>
+
+<main class="wrap">
+
+  <!-- ===================== HERO: the draw ticket ===================== -->
+  <div class="hero">
+    <aside class="lede">
+      <div>
+        <h1>Draw Nº 3 is open</h1>
+        <p class="big">One prize of 1&nbsp;SOL, locked away before the first ticket sold. 150&nbsp;tickets at 0.01&nbsp;SOL.</p>
+        <p class="small">Anyone can run the draw, so if we disappear the winner still gets paid.</p>
+      </div>
+      <div>
+        <p class="rulehead">Instant wins <em>demo odds, boosted</em></p>
+        <table class="odds-table">
+          <tbody>
+            <tr><td class="amt">0.20 SOL</td><td>1 in 100</td></tr>
+            <tr><td class="amt">0.05 SOL</td><td>1 in 25</td></tr>
+            <tr><td class="amt">0.01 SOL</td><td>1 in 6.7</td></tr>
+            <tr class="sum"><td>Any instant win</td><td>1 in 5</td></tr>
+          </tbody>
+        </table>
+        <p class="small" style="margin:8px 0 0">Every ticket gets its own result about 2&nbsp;s after you buy, from ORAO VRF randomness nobody can choose. Wins are paid in the same transaction.</p>
+      </div>
+    </aside>
+
+    <article class="ticket" aria-labelledby="draw-title">
+      <div class="t-body">
+        <div class="t-head">
+          <span class="kind" id="draw-title">DRAWSOL · GRAND DRAW</span>
+          <span class="serial">Nº 0003</span>
+        </div>
+
+        <div class="prize">
+          <p class="label">Grand prize</p>
+          <p class="fig num">1<small> SOL</small></p>
+          <svg class="stamp stamp--locked" viewBox="0 0 240 132" role="img" aria-label="Stamped: locked in the vault">
+            <g filter="url(#ink)" fill="none" stroke="#DE3F2B">
+              <rect x="5" y="5" width="230" height="122" rx="14" stroke-width="7"/>
+              <rect x="15" y="15" width="210" height="102" rx="7" stroke-width="2"/>
+              <g fill="#DE3F2B" stroke="none" text-anchor="middle">
+                <text x="120" y="40" font-size="11.5" font-weight="800" style="font-stretch:118%;letter-spacing:2.6px">PRIZE · DRAW Nº 3</text>
+                <text x="120" y="87" font-size="45" font-weight="900" style="font-stretch:84%;letter-spacing:2.5px">LOCKED</text>
+                <text x="120" y="106" font-size="11" font-weight="800" style="font-stretch:118%;letter-spacing:2.6px">IN THE VAULT</text>
+              </g>
+            </g>
+          </svg>
+        </div>
+
+        <p class="proofline"><strong>Locked in the program vault before the first ticket sold.</strong> The vault now holds <span class="num">3.61&nbsp;SOL</span>: the prize, the instant-win reserve and sales so far. <a class="proof" href="https://solscan.io/?cluster=devnet" target="_blank" rel="noopener">Check the vault on Solscan</a></p>
+
+        <div class="facts">
+          <div class="fact close">
+            <p class="k">Closes in</p>
+            <p class="v" id="countdown" aria-live="off"><span data-d>2</span><span class="u">d</span><span data-h>5</span><span class="u">h</span><span data-m>31</span><span class="u">min</span></p>
+            <p class="abs">Sun 4 Oct, 04:13 UTC</p>
+            <p class="note">or the moment the last ticket sells, whichever comes first. <span id="localtime"></span></p>
+          </div>
+          <div class="fact sold">
+            <p class="k">Sold</p>
+            <p class="v">100<span class="of">/150</span></p>
+            <p class="note">50 left, plus 2 free entries</p>
+          </div>
+          <div class="bar-row">
+            <div class="barcode" role="img" aria-label="100 of 150 tickets sold, 50 left, plus 2 free entries">
+              <span class="sold"></span><span class="left"></span><span class="free"></span>
+            </div>
+            <div class="barcode-key"><span>100 sold</span><span>50 left</span><span>+2 free</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- the stub: perforated, where you buy -->
+      <div class="stub" id="stub">
+        <div class="stub-head">
+          <h2>BUY TICKETS</h2>
+          <span class="price"><b>0.01 SOL</b> each, flat</span>
+        </div>
+
+        <div class="pick">
+          <div class="qty">
+            <button class="punch" type="button" data-step="-1" aria-label="One fewer ticket"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" stroke="#1B1814" stroke-width="2.2"/></svg></button>
+            <output id="qty-out" aria-live="polite"><b data-qty>10</b><span data-qty-word>tickets</span></output>
+            <button class="punch" type="button" data-step="1" aria-label="One more ticket"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10" stroke="#1B1814" stroke-width="2.2"/></svg></button>
+          </div>
+          <ul class="picks" aria-label="Quick picks">
+            <li><button type="button" data-pick="1" aria-pressed="false">1<svg class="circle" viewBox="0 0 60 40" preserveAspectRatio="none" aria-hidden="true"><path d="M33 4C18 3 5 9 4 20c-1 10 12 17 28 16 15-1 25-8 24-18C55 8 44 3 29 5"/></svg></button></li>
+            <li><button type="button" data-pick="5" aria-pressed="false">5<svg class="circle" viewBox="0 0 60 40" preserveAspectRatio="none" aria-hidden="true"><path d="M33 4C18 3 5 9 4 20c-1 10 12 17 28 16 15-1 25-8 24-18C55 8 44 3 29 5"/></svg></button></li>
+            <li><button type="button" data-pick="10" aria-pressed="true">10<svg class="circle" viewBox="0 0 60 40" preserveAspectRatio="none" aria-hidden="true"><path d="M33 4C18 3 5 9 4 20c-1 10 12 17 28 16 15-1 25-8 24-18C55 8 44 3 29 5"/></svg></button></li>
+            <li><button type="button" data-pick="25" aria-pressed="false">25<svg class="circle" viewBox="0 0 60 40" preserveAspectRatio="none" aria-hidden="true"><path d="M33 4C18 3 5 9 4 20c-1 10 12 17 28 16 15-1 25-8 24-18C55 8 44 3 29 5"/></svg></button></li>
+          </ul>
+
+          <div class="total">
+            <div class="row"><span class="k"><span class="num" data-qty>10</span> × <span class="num">0.01</span></span><span class="v" data-total>0.10 SOL</span></div>
+            <details class="fee">
+              <summary><span>+ ≈0.003 SOL network &amp; randomness fee</span><svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg><span class="vh">What is this fee?</span></summary>
+              <p>It covers the Solana transaction fee, the ORAO VRF randomness request and a little rent for your ticket record. Your wallet shows the exact amount before you sign.</p>
+            </details>
+          </div>
+
+          <button class="btn btn-buy" type="button" data-buy><span>Buy <span data-qty>10</span> <span data-qty-word>tickets</span></span></button>
+          <p class="after-buy">Instant results land about 2&nbsp;s after you pay.</p>
+          <dl class="stub-ledger">
+            <div><dt>Grand-prize odds, per ticket</dt><dd>1 in 102 now</dd></div>
+            <div><dt>You hold</dt><dd>16 <a href="#mine">see them</a></dd></div>
+            <div><dt>You can still buy</dt><dd>34</dd></div>
+          </dl>
+          <p class="stub-note">25 per purchase, 50 per wallet.</p>
+        </div>
+
+        <!-- confirm step: quantity chosen, one question, pay -->
+        <form class="confirm" id="confirm" novalidate>
+          <div class="c-head"><span class="c-title">Check and pay</span><button type="button" class="back" data-back>Change quantity</button></div>
+          <div class="c-sum"><span><span data-qty>10</span> <span data-qty-word>tickets</span> × 0.01</span><b data-total>0.10 SOL</b></div>
+          <p class="c-fee">+ ≈0.003 SOL network &amp; randomness fee</p>
+          <fieldset class="q">
+            <legend>Which planet is known as the Red Planet?<em>One general-knowledge question, then you pay.</em></legend>
+            <label><input type="radio" name="planet" value="mars"><span class="tick"></span>Mars</label>
+            <label><input type="radio" name="planet" value="venus"><span class="tick"></span>Venus</label>
+            <label><input type="radio" name="planet" value="jupiter"><span class="tick"></span>Jupiter</label>
+            <p class="msg" aria-live="polite"></p>
+          </fieldset>
+          <label class="age"><input type="checkbox" name="adult"> <span>I’m 18 or older. <span style="color:var(--ink-2)">We’ll remember this on this device.</span></span></label>
+          <p class="age-ok"><b>18+</b> confirmed on this device.</p>
+          <button class="btn" type="submit" data-pay disabled><span>Pay <span data-total>0.10 SOL</span></span></button>
+          <p class="fine">Then sign in your wallet. Your results land about 2&nbsp;s later.</p>
+        </form>
+      </div>
+    </article>
+  </div>
+
+  <!-- ===================== YOUR TICKETS ===================== -->
+  <section class="block" id="mine" aria-labelledby="mine-h">
+    <div class="sec-grid">
+      <div>
+        <h2 class="sec-title" id="mine-h">Your tickets</h2>
+        <p class="sec-sub">All 16 are in the grand draw. Wallet <span class="num">5zXY…4wAD</span>.</p>
+        <dl class="ledger">
+          <div><dt>Tickets</dt><dd class="num">16</dd></div>
+          <div><dt>Spent</dt><dd class="num">0.15 SOL</dd></div>
+          <div class="won"><dt>Won so far</dt><dd class="num">0.08 SOL</dd></div>
+        </dl>
+      </div>
+
+      <div>
+        <div class="roll">
+          <p class="roll-cap"><b>Bought 10</b><span class="num">#0031–#0040</span><span>randomness landed in 1.8&nbsp;s</span><span class="won">won 0.08 SOL</span><a class="proof" href="#">payout tx</a></p>
+          <div class="strip" role="list" aria-label="Tickets 31 to 40">
+            <div class="stubby" role="listitem"><span class="serial">#0031</span><span class="res">no win</span></div>
+            <div class="stubby" role="listitem"><span class="serial">#0032</span><span class="res">no win</span></div>
+            <div class="stubby" role="listitem"><span class="serial">#0033</span><span class="res">no win</span></div>
+            <div class="stubby win" role="listitem"><span class="serial">#0034</span><span class="res">+0.01<small>SOL, paid</small></span><svg class="mini-stamp" viewBox="0 0 60 60" aria-hidden="true"><g filter="url(#ink-light)" fill="none" stroke="#DE3F2B"><circle cx="30" cy="30" r="26" stroke-width="3.5"/><circle cx="30" cy="30" r="20.5" stroke-width="1.2"/><text x="30" y="35.5" text-anchor="middle" fill="#DE3F2B" stroke="none" font-size="15" font-weight="900" style="font-family:'Archivo V';font-stretch:90%">WON</text></g></svg></div>
+            <div class="stubby" role="listitem"><span class="serial">#0035</span><span class="res">no win</span></div>
+            <div class="stubby win" role="listitem"><span class="serial">#0036</span><span class="res">+0.05<small>SOL, paid</small></span><svg class="mini-stamp" viewBox="0 0 60 60" aria-hidden="true"><g filter="url(#ink-light)" fill="none" stroke="#DE3F2B"><circle cx="30" cy="30" r="26" stroke-width="3.5"/><circle cx="30" cy="30" r="20.5" stroke-width="1.2"/><text x="30" y="35.5" text-anchor="middle" fill="#DE3F2B" stroke="none" font-size="15" font-weight="900" style="font-family:'Archivo V';font-stretch:90%">WON</text></g></svg></div>
+            <div class="stubby win" role="listitem"><span class="serial">#0037</span><span class="res">+0.01<small>SOL, paid</small></span><svg class="mini-stamp" viewBox="0 0 60 60" aria-hidden="true"><g filter="url(#ink-light)" fill="none" stroke="#DE3F2B"><circle cx="30" cy="30" r="26" stroke-width="3.5"/><circle cx="30" cy="30" r="20.5" stroke-width="1.2"/><text x="30" y="35.5" text-anchor="middle" fill="#DE3F2B" stroke="none" font-size="15" font-weight="900" style="font-family:'Archivo V';font-stretch:90%">WON</text></g></svg></div>
+            <div class="stubby" role="listitem"><span class="serial">#0038</span><span class="res">no win</span></div>
+            <div class="stubby" role="listitem"><span class="serial">#0039</span><span class="res">no win</span></div>
+            <div class="stubby win" role="listitem"><span class="serial">#0040</span><span class="res">+0.01<small>SOL, paid</small></span><svg class="mini-stamp" viewBox="0 0 60 60" aria-hidden="true"><g filter="url(#ink-light)" fill="none" stroke="#DE3F2B"><circle cx="30" cy="30" r="26" stroke-width="3.5"/><circle cx="30" cy="30" r="20.5" stroke-width="1.2"/><text x="30" y="35.5" text-anchor="middle" fill="#DE3F2B" stroke="none" font-size="15" font-weight="900" style="font-family:'Archivo V';font-stretch:90%">WON</text></g></svg></div>
+          </div>
+        </div>
+
+        <div class="rolls-row roll">
+          <div>
+            <p class="roll-cap"><b>Free entry</b><span class="num">#0059</span><span>grand draw only</span></p>
+            <div class="strip"><div class="stubby"><span class="serial">#0059</span><span class="res" style="color:var(--blue-ink)">free entry</span></div></div>
+          </div>
+          <div>
+            <p class="roll-cap"><b>Bought 5</b><span class="num">#0097–#0101</span><span>instant result not revealed yet</span></p>
+            <div class="pend-row">
+              <div class="strip">
+                <div class="stubby pending"><span class="serial">#0097</span><span class="q-mark" aria-hidden="true">?</span><span class="res">waiting</span></div>
+                <div class="stubby pending"><span class="serial">#0098</span><span class="q-mark" aria-hidden="true">?</span><span class="res">waiting</span></div>
+                <div class="stubby pending"><span class="serial">#0099</span><span class="q-mark" aria-hidden="true">?</span><span class="res">waiting</span></div>
+                <div class="stubby pending"><span class="serial">#0100</span><span class="q-mark" aria-hidden="true">?</span><span class="res">waiting</span></div>
+                <div class="stubby pending"><span class="serial">#0101</span><span class="q-mark" aria-hidden="true">?</span><span class="res">waiting</span></div>
+              </div>
+              <a class="reveal-now" href="reveal.html">Reveal</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PAST DRAW ===================== -->
+  <section class="block" id="past" aria-labelledby="past-h">
+    <div class="sec-grid">
+      <div>
+        <h2 class="sec-title" id="past-h">Past draws</h2>
+        <p class="sec-sub">Draw Nº 2 is settled. Here is its ticket, and the arithmetic to check it.</p>
+        <dl class="ledger">
+          <div><dt>Settled</dt><dd>20 Sep</dd></div>
+          <div><dt>Winning ticket</dt><dd><span class="serial">#0006</span></dd></div>
+          <div><dt>Winner</dt><dd class="num">9goW…639n</dd></div>
+          <div><dt>Prize</dt><dd>1 SOL, paid</dd></div>
+        </dl>
+        <p class="ledger-link"><a class="proof" href="#">Settlement transaction</a></p>
+      </div>
+
+      <div class="past">
+        <div class="oldticket" aria-label="Draw Nº 2 ticket, stamped drawn and paid">
+          <div class="ob">
+            <div class="t-head"><span class="kind">DRAWSOL · GRAND DRAW</span><span class="serial">Nº 0002</span></div>
+            <p class="ofig num">1<small> SOL</small></p>
+            <p class="otext">Grand prize, paid to <span class="num">9goW…639n</span></p>
+            <svg class="stamp stamp--drawn" viewBox="0 0 220 112" aria-hidden="true">
+              <g filter="url(#ink)" fill="none" stroke="#DE3F2B">
+                <rect x="5" y="5" width="210" height="102" rx="6" stroke-width="5"/>
+                <path d="M14 66h192M14 38h192" stroke-width="1.6"/>
+                <g fill="#DE3F2B" stroke="none" text-anchor="middle">
+                  <text x="110" y="32" font-size="22" font-weight="900" style="font-stretch:125%;letter-spacing:6px">DRAWN</text>
+                  <text x="110" y="60" font-size="22" font-weight="800" style="font-stretch:100%;letter-spacing:4px">20 SEP</text>
+                  <text x="110" y="92" font-size="13" font-weight="800" style="font-stretch:125%;letter-spacing:3px">DRAW Nº 2</text>
+                </g>
+              </g>
+            </svg>
+          </div>
+          <div class="ostub">
+            <p class="k">Winning ticket</p>
+            <span class="serial">#0006</span>
+            <svg class="stamp stamp--paid" viewBox="0 0 120 120" aria-hidden="true">
+              <g filter="url(#ink)" fill="none" stroke="#DE3F2B">
+                <circle cx="60" cy="60" r="55" stroke-width="5"/>
+                <circle cx="60" cy="60" r="27" stroke-width="1.5"/>
+                <g fill="#DE3F2B" stroke="none" font-weight="800" style="font-stretch:125%" font-size="11.5" letter-spacing="2.4">
+                  <text><textPath href="#arc-top" startOffset="50%" text-anchor="middle">PRIZE 1 SOL</textPath></text>
+                  <text><textPath href="#arc-bot" startOffset="50%" text-anchor="middle">DRAWSOL</textPath></text>
+                </g>
+                <text x="60" y="66" text-anchor="middle" fill="#DE3F2B" stroke="none" font-size="17" font-weight="900" style="font-stretch:90%">PAID</text>
+              </g>
+            </svg>
+          </div>
+        </div>
+
+        <div class="recompute" id="recompute">
+            <h4>Recompute it in your browser</h4>
+            <ol>
+              <li>Take the draw’s ORAO randomness: <code title="c4f5d789e5c19c5944107af030accdf39216f9edd57e16552992c8fa7e9d12b1f0111f581a099764bf7175dfb47c3466cd015baf6648540d0706ae658aeadcfa">c4f5d789…8aeadcfa</code></li>
+              <li>Hash it with the word <code>draw</code>, read the first 8 bytes as a number.</li>
+              <li>Multiply by the 102 tickets, divide by 2<sup>64</sup>: that’s the winner.</li>
+            </ol>
+            <div class="go"><button type="button" data-recompute>Recompute</button><span class="out" aria-live="polite"></span></div>
+          </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== HOW IT WORKS (the back of the ticket) ===================== -->
+  <section class="block" id="rules" aria-labelledby="rules-h">
+    <div class="back-of-ticket">
+      <div class="t-head"><span class="kind" id="rules-h">THE BACK OF THE TICKET<span class="hide-m"> · SIX PROMISES AND WHERE TO CHECK THEM</span></span><span class="serial">Nº 0003</span></div>
+      <ol class="conds">
+        <li><h3>The prize is locked before the first ticket sells.</h3><p>The 1 SOL prize sits in the program’s vault from the moment the draw opens. No prize, no sales.</p><a class="proof check" href="#">Vault account</a></li>
+        <li><h3>Instant result on every ticket.</h3><p>About 2 seconds after you buy, ORAO VRF randomness decides it. Nobody can choose that number, us included. Any win is paid in the same transaction.</p><a class="proof check" href="#">ORAO request for your last purchase</a></li>
+        <li><h3>Fixed tickets, fixed close.</h3><p>150 tickets, closing Sun 4 Oct, 04:13 UTC. The draw happens at sell-out or at the deadline, whichever comes first. It is guaranteed.</p><a class="proof check" href="#">Draw account</a></li>
+        <li><h3>Anyone can run and settle the draw.</h3><p>Any wallet can trigger the draw and pay the winner. If we disappear, the winner still gets paid.</p><a class="proof check" href="#">Settle instruction in the source</a></li>
+        <li><h3>Every result can be recomputed.</h3><p>Instant results and the winning ticket follow from the randomness by plain arithmetic, so this page can redo it in your browser.</p><a class="proof check" href="#recompute">Recompute Draw Nº 2</a></li>
+        <li><h3>Priced in SOL.</h3><p>Tickets cost 0.01 SOL, flat. Prizes are paid in SOL. Nothing is converted.</p></li>
+      </ol>
+      <div class="house">
+        <h3>House rules</h3>
+        <ul>
+          <li>18+ only. You confirm it once on each device.</li>
+          <li>One general-knowledge question before each purchase.</li>
+          <li>Up to 25 tickets per purchase, 50 per wallet per draw.</li>
+          <li>Free entries play for the grand prize only.</li>
+          <li>Instant-win odds are boosted for this demo.</li>
+          <li>Devnet only: play money with no cash value.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p class="big" aria-hidden="true">DrawSol<span>.</span></p>
+    <div class="cols">
+      <span>A prize draw on Solana, built for the Colosseum hackathon.</span>
+      <span><a href="#">Program on Solscan</a><a href="#">Source</a><a href="#rules">Rules</a></span>
+      <span>Devnet demo · play money</span>
+    </div>
+  </footer>
+</main>
+
+<!-- mobile: one-tap buy bar + confirm sheet -->
+<div class="buybar" aria-label="Buy tickets">
+  <div class="mini">
+    <button class="punch" type="button" data-step="-1" aria-label="One fewer ticket"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10" stroke="#1B1814" stroke-width="2.2"/></svg></button>
+    <output><span data-qty>10</span></output>
+    <button class="punch" type="button" data-step="1" aria-label="One more ticket"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10M8 3v10" stroke="#1B1814" stroke-width="2.2"/></svg></button>
+  </div>
+  <button class="btn" type="button" data-buy><span>Buy <span data-qty>10</span> · <span data-total>0.10 SOL</span></span></button>
+</div>
+<div class="scrim" data-back></div>
+<div class="sheet" role="dialog" aria-modal="true" aria-label="Confirm purchase"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 28" width="36" height="28" role="img" aria-label="DrawSol">
+  <!-- The DrawSol mark: a notched paper ticket printed with a barcode of mixed bar widths (packed
+       asymmetrically, so it reads as a barcode, never as columns). One bar, off-centre at x=24, is
+       vermilion and breaks out 6px above the top edge: the drawn ticket. A dashed perforation at x=29
+       tears off the stub. Notches r=4. Integer coordinates; use at 28px (masthead), 20px (footer,
+       mobile) or 56px+. Bars are knocked out in stock, not transparent, so the mark keeps its
+       contrast on paper and on grain. -->
+  <path d="M1 7h34v6a4 4 0 0 0 0 8v6H1v-6a4 4 0 0 0 0-8z" fill="#1B1814"/>
+  <g fill="#FBF8F0">
+    <rect x="6" y="11" width="1" height="12"/>
+    <rect x="8" y="11" width="2" height="12"/>
+    <rect x="11" y="11" width="1" height="12"/>
+    <rect x="14" y="11" width="3" height="12"/>
+    <rect x="18" y="11" width="1" height="12"/>
+    <rect x="21" y="11" width="1" height="12"/>
+    <rect x="29" y="10" width="1" height="2"/>
+    <rect x="29" y="14" width="1" height="2"/>
+    <rect x="29" y="18" width="1" height="2"/>
+    <rect x="29" y="22" width="1" height="2"/>
+  </g>
+  <rect x="24" y="1" width="2" height="22" fill="#DE3F2B"/>
+</svg>

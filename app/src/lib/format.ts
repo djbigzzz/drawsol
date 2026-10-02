@@ -25,10 +25,10 @@ const WD = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MO = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const p2 = (n: number) => n.toString().padStart(2, "0");
 
-/** "Fri 18 Oct 20:00 UTC" */
+/** "Sun 4 Oct, 04:13 UTC" */
 export function utcLabel(unix: number) {
   const d = new Date(unix * 1000);
-  return `${WD[d.getUTCDay()]} ${d.getUTCDate()} ${MO[d.getUTCMonth()]} ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())} UTC`;
+  return `${WD[d.getUTCDay()]} ${d.getUTCDate()} ${MO[d.getUTCMonth()]}, ${p2(d.getUTCHours())}:${p2(d.getUTCMinutes())} UTC`;
 }
 
 /** "Fri 18 Oct 22:00" in the viewer's time zone */

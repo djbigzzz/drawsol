@@ -1,24 +1,21 @@
 import type { Metadata, Viewport } from "next";
-import "@fontsource/big-shoulders-display/latin-700";
-import "@fontsource/big-shoulders-display/latin-800";
-import "@fontsource/ibm-plex-sans/latin-400";
-import "@fontsource/ibm-plex-sans/latin-500";
-import "@fontsource/ibm-plex-sans/latin-600";
-import "@fontsource/ibm-plex-mono/latin-400";
-import "@fontsource/ibm-plex-mono/latin-500";
+import "@fontsource-variable/archivo/standard.css";
+import "@fontsource-variable/newsreader/opsz.css";
+import "@fontsource-variable/newsreader/opsz-italic.css";
 import "./globals.css";
 import { WalletContextProvider } from "@/components/WalletProvider";
 
 export const metadata: Metadata = {
-  title: "DrawSol — a prize draw you can check on-chain",
+  title: "DrawSol · a prize draw you can check on-chain",
   description:
-    "Prize locked in a vault before sales open. Draw at sell-out or the deadline. Randomness from ORAO VRF. Devnet demo with play money.",
+    "The prize is locked in a vault before the first ticket sells. Drawn at sell-out or the deadline. Every ticket gets an instant result from ORAO VRF randomness. Devnet demo with play money.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0B0A09",
+  themeColor: "#EFE8D9",
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

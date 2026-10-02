@@ -5,94 +5,111 @@ import type { PublicKey } from "@solana/web3.js";
 import { solscanAccount, solscanTx } from "@/lib/config";
 import { short } from "@/lib/format";
 
-/** "verify ↗" — every on-chain fact gets one, pointing at Solscan (devnet). */
-export function Verify({
-  account,
-  tx,
-  label = "verify",
-  ok,
-}: {
-  account?: PublicKey | string;
-  tx?: string;
-  label?: string;
-  ok?: boolean;
-}) {
-  const href = tx ? solscanTx(tx) : solscanAccount(typeof account === "string" ? account : account!.toBase58());
-  return (
-    <a className={`verify${ok ? " ok" : ""}`} href={href} target="_blank" rel="noopener noreferrer">
-      {label} <span aria-hidden>↗</span>
-      <span className="sr-only"> (opens Solscan)</span>
-    </a>
-  );
-}
+const b58 = (k: PublicKey | string) => (typeof k === "string" ? k : k.toBase58());
 
-export function Addr({ k, head = 4, tail = 4 }: { k: PublicKey | string; head?: number; tail?: number }) {
-  const s = typeof k === "string" ? k : k.toBase58();
+/**
+ * A proof link: blue pen, never a chip. The children are always a phrase naming the thing
+ * ("Check the vault on Solscan", "Payout transaction"), never a generic chip word.
+ */
+export function ProofLink({ account, tx, href, children, className = "" }: { account?: PublicKey | string; tx?: string; href?: string; children: ReactNode; className?: string }) {
+  const url = href ?? (tx ? solscanTx(tx) : solscanAccount(b58(account ?? "")));
+  const external = !href || href.startsWith("http");
   return (
-    <a className="mono link" href={solscanAccount(s)} target="_blank" rel="noopener noreferrer" title={s}>
-      {short(s, head, tail)}
-    </a>
-  );
-}
-
-export function OnAirLamp({ lit, children }: { lit: boolean; children: ReactNode }) {
-  return (
-    <span className={`lamp${lit ? " lit" : ""}`} role="status">
-      <span className="bulb" aria-hidden />
+    <a className={`proof ${className}`} href={url} {...(external ? { target: "_blank", rel: "noopener noreferrer" } : {})}>
       {children}
+      {external && <span className="sr-only"> (opens {href ? "in a new tab" : "Solscan"})</span>}
+    </a>
+  );
+}
+
+/** Address, short form, full value in the title. A link only where it is the proof. */
+export function Addr({ k, head = 4, tail = 4, link = false, className = "" }: { k: PublicKey | string; head?: number; tail?: number; link?: boolean; className?: string }) {
+  const s = b58(k);
+  if (link)
+    return (
+      <a className={`proof nw ${className}`} href={solscanAccount(s)} target="_blank" rel="noopener noreferrer" title={s}>
+        {short(s, head, tail)}
+        <span className="sr-only"> (opens Solscan)</span>
+      </a>
+    );
+  return (
+    <span className={`nw tab ${className}`} title={s}>
+      {short(s, head, tail)}
     </span>
   );
 }
 
-export function SectionHead({ idx, title, aside, id }: { idx: string; title: string; aside?: ReactNode; id?: string }) {
+/** Section grid: narrow voice on the left (248), wide paper on the right. */
+export function SectionGrid({ id, title, sub, aside, children }: { id: string; title: string; sub?: ReactNode; aside?: ReactNode; children: ReactNode }) {
   return (
-    <div className="sect-head" id={id}>
-      <span className="idx">{idx}</span>
-      <h2>{title}</h2>
-      <span className="rule" aria-hidden />
-      {aside && <span className="aside hidden sm:inline">{aside}</span>}
-    </div>
+    <section className="sec" id={id} aria-labelledby={`${id}-h`}>
+      <div className="sgrid">
+        <div>
+          <h2 className="t-sec" id={`${id}-h`}>
+            {title}
+          </h2>
+          {sub && <p className="t-small sec-sub">{sub}</p>}
+          {aside}
+        </div>
+        <div>{children}</div>
+      </div>
+    </section>
   );
 }
 
-/** Label/value pair used across the board. */
-export function Stat({ label, children, className = "" }: { label: string; children: ReactNode; className?: string }) {
+export function Check({ className = "", size = 12, stroke = 1.9 }: { className?: string; size?: number; stroke?: number }) {
   return (
-    <div className={className}>
-      <div className="eyebrow mb-2">{label}</div>
-      {children}
-    </div>
-  );
-}
-
-export function Check({ className = "" }: { className?: string }) {
-  return (
-    <svg className={className} width="12" height="12" viewBox="0 0 12 12" aria-hidden>
-      <path d="M2 6.5 4.8 9 10 3" stroke="currentColor" strokeWidth="1.6" fill="none" strokeLinecap="square" />
+    <svg className={className} width={size} height={size} viewBox="0 0 12 12" aria-hidden="true">
+      <path d="M2 6.4 4.8 9 10 3" stroke="currentColor" strokeWidth={stroke} fill="none" />
     </svg>
   );
 }
 
-export function Spinner() {
-  // a slow, small rotating tick — only rendered while a real request is in flight
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" className="animate-spin" aria-hidden>
-      <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeOpacity="0.25" strokeWidth="1.5" fill="none" />
-      <path d="M7 1.5A5.5 5.5 0 0 1 12.5 7" stroke="currentColor" strokeWidth="1.5" fill="none" />
-    </svg>
-  );
+/** The busy mark: an 8px ink dot, blinking only while a real request is in flight. */
+export function Busy() {
+  return <span className="busy" aria-hidden="true" />;
 }
 
+/** No box: red-ink rules above and below. Row 1 is the lead-in and Dismiss; row 2 the human message, full width. */
 export function ErrorNote({ children, onDismiss }: { children: ReactNode; onDismiss?: () => void }) {
   return (
-    <div className="flex items-start gap-3 border border-red/60 bg-black px-4 py-3 text-[14px] leading-[20px]" role="alert">
-      <span className="mt-[6px] h-2 w-2 flex-none rounded-full bg-red" aria-hidden />
-      <div className="flex-1">{children}</div>
-      {onDismiss && (
-        <button onClick={onDismiss} className="text-dim hover:text-cream" aria-label="Dismiss">
-          ×
-        </button>
-      )}
+    <div className="err" role="alert">
+      <p className="err-top">
+        <span className="err-lead">Didn’t go through.</span>
+        {onDismiss && (
+          <button type="button" className="tbtn" onClick={onDismiss}>
+            Dismiss
+          </button>
+        )}
+      </p>
+      <p className="err-msg">{children}</p>
     </div>
   );
 }
+
+export function Chevron() {
+  return (
+    <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+      <path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+export function Minus() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 8h10" stroke="#1B1814" strokeWidth="2.2" />
+    </svg>
+  );
+}
+
+export function Plus() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 8h10M8 3v10" stroke="#1B1814" strokeWidth="2.2" />
+    </svg>
+  );
+}
+
+/** A tx phase is "in flight" while the program checks it, the wallet signs it, or devnet confirms it. */
+export const inFlight = (p: string | undefined) => p === "simulating" || p === "signing" || p === "confirming";
