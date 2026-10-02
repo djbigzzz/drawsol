@@ -2,16 +2,14 @@
   <!-- favicon: design-assets/mark.svg on a square artboard -->
   <path d="M1 7h34v6a4 4 0 0 0 0 8v6H1v-6a4 4 0 0 0 0-8z" fill="#1B1814"/>
   <g fill="#FBF8F0">
-    <rect x="6" y="11" width="1" height="12"/>
-    <rect x="8" y="11" width="2" height="12"/>
-    <rect x="11" y="11" width="1" height="12"/>
-    <rect x="14" y="11" width="3" height="12"/>
-    <rect x="18" y="11" width="1" height="12"/>
-    <rect x="21" y="11" width="1" height="12"/>
+    <rect x="7" y="11" width="1" height="12"/>
+    <rect x="9" y="11" width="2" height="12"/>
+    <rect x="13" y="11" width="1" height="12"/>
+    <rect x="16" y="11" width="3" height="12"/>
     <rect x="29" y="10" width="1" height="2"/>
     <rect x="29" y="14" width="1" height="2"/>
     <rect x="29" y="18" width="1" height="2"/>
     <rect x="29" y="22" width="1" height="2"/>
   </g>
-  <rect x="24" y="1" width="2" height="22" fill="#DE3F2B"/>
+  <rect x="23" y="1" width="3" height="22" fill="#DE3F2B"/>
 </svg>

@@ -175,10 +175,16 @@ Contrast between levels is deliberate. Each step down changes at least two of si
 
 The base unit is 8px. Allowed steps: `8, 16, 24, 32, 40, 48, 64, 72, 80, 96, 128` (`--s1` … `--s16`).
 
-The only exceptions are physical printing details:
+The only exceptions are physical printing details and hit-area mechanics:
 - the 3px gap of a double rule;
 - 2–6px offsets inside stamps, the barcode and the perforation;
-- the 4px gap between a punch button and the quantity in the mobile bar.
+- the 4px gap between a punch button and the quantity in the mobile bar;
+- optical offsets of 1–6px between a glyph and what belongs to it: a label and its own figure, a figure and its unit, an icon and its text;
+- the interior padding of a stub in a strip (`.stubby`, `.rstub`, `.ostub`), which follows the 4px perforation pitch;
+- **hit-area mechanics:** a negative margin paired with equal padding that grows a text button, proof link or the fee summary to a 44px target without moving the layout (`.tbtn` −12/−10, `.proof` −16/−12, `.fee summary` ±12), and the minimum row heights that come from targets and ledgers (44, 36, 48);
+- the mobile bar's 12px padding and gap (§5.5) and the 56px clearance under the struck SALES CLOSED stamp.
+
+Everything else (gaps, margins, paddings between blocks) is a step from the list: 16 between blocks, 8 from a label to its value. Ledger rows are a 36px minimum with their content centred (no 7/6 paddings).
 
 | Use | Desktop | Mobile |
 |---|---|---|
@@ -255,8 +261,8 @@ Motion happens only on **real events**: a user choice, a chain state change, or 
 |---|---|---|---|---|
 | Countdown minute changes (and seconds, under 1 h) | changed digits only | Numbering-machine advance: the old digit moves up and out (`translateY(0 → -.35em)`, opacity 1 → 0) while the new one rises in from `+.35em` | 220ms (seconds: 160ms), `cubic-bezier(.3,.7,.2,1)` | text swap |
 | Quick pick chosen | pen circle | Ink draws on (`stroke-dashoffset` from path length to 0) | 180ms ease-out | appears |
-| Buy pressed (≥ 761px) | stub contents | pick view → confirm view crossfade | 160ms ease-out | instant |
-| Buy pressed (≤ 760px) | sheet | slides up from `translateY(105%)`; scrim fades to `rgba(27,24,20,.35)` | 240ms `cubic-bezier(.2,.8,.2,1)`; scrim 200ms | instant |
+| Buy pressed (≥ 1024px) | stub contents | pick view → confirm view crossfade | 160ms ease-out | instant |
+| Buy pressed (≤ 1023px) | sheet | slides up from `translateY(105%)`; scrim fades to `rgba(27,24,20,.35)` | 240ms `cubic-bezier(.2,.8,.2,1)`; scrim 200ms | instant |
 | Purchase lands | reveal overlay | fades in | 200ms ease-out | instant |
 | Real request in flight | busy dot (8px ink) | blink | `1s steps(2) infinite`, only while in flight | static dot |
 | A ticket is revealed | cover | Lifts off: `translate(18px,-64px) rotate(-14deg)`, opacity → 0 | 340ms `cubic-bezier(.5,0,.7,.4)` | no cover |
@@ -271,7 +277,7 @@ Motion happens only on **real events**: a user choice, a chain state change, or 
 
 Timing of a 10-ticket reveal after the randomness lands: 450ms, then 330ms per loser and 760ms per winner, then 250ms before the total. With 4 winners that is about 5.7s. The randomness wait itself is real (about 1.8s) and is never a timer. A "Skip to total" link is always available.
 
-Reduced motion shows the final state as soon as the tiers are read from chain. The receipt steps still progress, because they are information, not motion.
+Reduced motion shows the final state as soon as the tiers are read from chain. The reduced-motion block zeroes animation and transition **delays** as well as durations, so nothing with a delayed `fill-mode: both` entrance (sun, PAID, WON) waits at opacity 0. The receipt steps still progress, because they are information, not motion.
 
 ### 2.9 Implementation: CSS variables and Tailwind
 
@@ -325,7 +331,7 @@ The base styles are mobile; breakpoints are min-width.
 | Name | Range | Hero | Buy controls | Sections |
 |---|---|---|---|---|
 | `sm` (base) | ≤ 760 | Single column. Ticket first, then the stub (info only), then the lede | **Sticky bottom bar only** (§5.5) | Single column |
-| `md` | 761–1023 | Ticket body full width; the stub sits **below** the body behind a horizontal perforation, with full controls | In the stub. No sticky bar | Single column, title above content |
+| `md` | 761–1023 | Ticket body full width; the stub sits **below** the body behind a horizontal perforation, **info only** (as sm) | **Sticky bottom bar** (as sm, §5.5); its stepper or note and its button sit together at the bar's right end | Single column, title above content |
 | `lg` | 1024–1335 | Ticket full width: `[body 1fr | stub 368]`. Lede row underneath: `[lede 1fr | odds table 1fr]`, 40 gap | In the stub | `[248 | 40 | 1fr]` |
 | `xl` | ≥ 1336 | `[lede 248 | 40 | ticket: body 1fr | stub 368]` | In the stub | `[248 | 40 | 1fr]` |
 
@@ -356,6 +362,8 @@ The three-column hero needs about 1336px. Below that, the prize (212px) and the 
 | Barcode + key | 740–812 |
 | Ticket bottom | ≈ 838 |
 | Stub, same top (124): head 148–196; quantity 220–332; picks 340–384; total 432–466; fee line 472–492; **Buy button 516–572**; "Results land…" 580–602; ledger 626–734; limits and free entry to ≈ 810 | — |
+
+**Short laptops** (`min-width: 1024px` and `max-height: 780px`: 1366×768 or 1280×720 after browser chrome, so about 1366×657 / 1280×650, and iPad landscape). The first screen above is sized for 1440×900, so here the masthead is 56px, the hero's top gaps are 16 (head rule gaps 8), the prize sets at 168px with a 168px LOCKED stamp, the facts at 48px with 16px around their double rule, the close note takes its one-line form ("Or at sell-out, whichever is first. That's 06:13 your time.") and the barcode sits 8px under the facts. The barcode bottom is at 652 (1366×657) and 655 (1280×720); the Buy button at 498–554.
 
 **Mobile 390×844.** The sticky bar covers 768–844 plus the safe area.
 
@@ -501,7 +509,7 @@ The reveal states the source once: "Each stamp's ink is printed from that ticket
 - "{50} left" at the first hairline;
 - "sell-out" right-aligned at the end.
 
-A label is dropped if it would sit within 8px of another one; "yours" wins over "#0000".
+A label is dropped if it would sit within 8px of another one. Priority: "yours" > "{n} left" > "#0000" > "sell-out", so an empty draw keys "150 left … sell-out" (the fact line above already says "The first ticket is #0000.").
 
 **Accessibility:** `role="img"`, with `aria-label="100 of 150 tickets sold, plus 2 free entries. Yours: #0031 to #0040, #0059 and #0097 to #0101."`
 
@@ -549,7 +557,7 @@ Accessibility: `role="timer"`, `aria-live="off"`, and an `aria-label` updated on
 - **Specimen overprint:**
   - "DEVNET SPECIMEN · PLAY MONEY · NO CASH VALUE" in `.t-specimen` and blue-ink.
   - Desktop: `writing-mode: vertical-rl; transform: rotate(180deg)`, 14px left of the perforation centre, vertically centred.
-  - Mobile: one horizontal line centred 8px above the horizontal perforation.
+  - Mobile: one horizontal line centred 8px above the horizontal perforation. **Exception:** at ≤ 760px the line has about 326px, so it drops "PLAY MONEY" ("DEVNET SPECIMEN · NO CASH VALUE"; the strip right above says "play money"), and below 360px "NO CASH VALUE" too. From 761px the full legend is printed.
   - `aria-hidden` (the strip carries the accessible marker).
 
 ### 4.8 Money plate (the misregistration, fixed)
@@ -564,11 +572,11 @@ The prototype's `text-shadow` read as a retro drop shadow. It is replaced by a t
 
 The sun is a half disc of red halftone. It rises behind the reveal total and is cut flat by the horizon, a 1px ink rule on the figure's baseline. Reference render: `sun-440.svg` / `sun-280.svg`; algorithm: `sunDots()` in `generate.mjs`.
 
-- **No moiré.** Dot centres sit on an integer 45° lattice (4px grid, checkerboard) and the sun is rendered at 1:1 (`width` = viewBox width; never CSS-scaled). Desktop uses up to 360px (it must fit the 224px slot) and phones 224px, as separate renders. Every dot rasterises identically at 1x and 2x.
+- **No moiré.** Dot centres sit on an integer 45° lattice (4px grid, checkerboard) and the sun is rendered at 1:1 (`width` = viewBox width; never CSS-scaled). Desktop uses up to 360px (it must fit the 224px slot) and phones 224px, as separate renders; where the reveal's main column is under 900px the figure sets at 144px with a 264px sun (R ≈ .92 × figure size). Every dot rasterises identically at 1x and 2x.
 - **Clear of the glyphs.** The sun lives in the same SVG as the total text, under a `<mask>`: a white rect, minus the total text stroked with `stroke-width: 16; stroke-linejoin: round` in black. Dots never come within 8px of a glyph, so the numerals are the cleanest thing on screen. This was checked at 1x and 2x.
-- **Placement:** the centre sits on the horizon, horizontally under the midpoint of the rendered "0.08 SOL" text box (measured with `getBBox`), then clamped so the whole disc stays inside the main column: it never bleeds into the gutter or off a phone's edge. Opacity .85, multiply. It appears only when wins > 0.
+- **Placement:** the centre sits on the horizon, horizontally under the midpoint of the rendered "0.08 SOL" text box (measured with `getBBox`), then clamped so the whole disc stays inside the main column: it never bleeds into the gutter or off a phone's edge. Opacity 1, multiply. It appears only when wins > 0.
 - **"You won"** sits in its own strip above the sun's top edge, on clean paper. It is not part of the mask, so no halo is carved out of the dots around it.
-- **Density:** dot radius `0.45 + 1.25 × (1 − d²)` px, denser at the core and fading to the rim.
+- **Density:** dot radius `min(2.7, 1.7 + 1.05 × (1 − d⁸))` px on the phone sun (2.57 at d .8, 2.3 at .9, 1.7 at the rim); from 761px, where more of the rim shows above the figure, `min(2.7, 1.9 + .85 × (1 − d⁸))` (a heavier rim floor). It is nearly flat and softens only in the outer rim, because the part that shows is the rim: the core is hidden behind the figures by the 8px mask. Target, measured at 1x: at least 45% red coverage in the band between the sun's top and the figures' cap height, on desktop and on the 224px phone sun. (The earlier `1 − d²` falloff left a pale pink haze above the figures.)
 
 ### 4.10 Receipt bars (graft from Poster)
 
@@ -601,7 +609,7 @@ This is a duplicate-book carbon copy, not an admonition box. It has no left bord
 
 - **Mark** (`mark.svg`, 36×28):
   - a notched paper ticket in ink, printed with a knocked-out barcode (stock);
-  - **one bar is vermilion and breaks out through the top edge**: the drawn ticket;
+  - **one bar is vermilion and breaks out through the top edge**: the drawn ticket. It is 3 units wide (x 23–26, y 1–23) with solid ink on both sides (nothing knocked out next to it), so at 20px it is still a 2px bar, not a pink hairline. The knocked-out stock bars are uneven, 1 / 2 / 1 / 3 at x 7, 9, 13, 16, so they read as a barcode, not a fence;
   - it combines ticket, barcode and "drawn" in one object, from the same grammar as the hero meter;
   - sizes 28px (masthead), 20px (footer, mobile mast), 56px+ (favicon source); never below 20px.
   - Also copy it to `app/src/app/icon.svg` for the favicon.
@@ -644,22 +652,23 @@ Every file in `app/src/components/` is listed below with its new design. **Data-
   2. `<Header/>`
   3. `<main id="top">`
   4. Hero (`<Lede/>` + `<Board/>`, with `<BuyPanel/>` inside the ticket as its stub)
-  5. `<MyTickets/>`
-  6. `<EntriesBoard/>`
-  7. `<PastDraws/>`
-  8. `<Rules/>`
-  9. `</main>`
-  10. `<Footer/>`
-  11. `<MobileBuyBar/>`
-  12. `<ConfirmSheet/>` (mobile)
-  13. `<RevealSheet/>`
+  5. `<MobileBuyBar/>`: fixed below 1024px, so nothing moves, but it comes straight after the hero (and the vault link) in tab and reading order instead of 37 stops later, after the footer
+  6. `<MyTickets/>`
+  7. `<EntriesBoard/>`
+  8. `<PastDraws/>`
+  9. `<Rules/>`
+  10. `</main>`
+  11. `<Footer/>`
+  12. `<BarSpacer/>`: the bar's room at the end of the page (96px + safe area, below 1024px, whenever a bar shows)
+  13. `<ConfirmSheet/>` (mobile)
+  14. `<RevealSheet/>`
 
   Wrap everything in `<BuyProvider>` (§5.5). The `DataRoot` fixture gate stays exactly as it is.
 - **`globals.css`:**
   - Delete all Night Draw classes: `.eyebrow`, `.display`, `.mono`, `.frame`, `.brass-rule`, `.flap*`, `.lamp`, `.verify`, `.stub*` (old), `.dep-row`, `.stepper`, `.preset`, `.choice`, `.skel`, and the old wallet-modal overrides.
   - Add the tokens (§2.9), type classes (§2.3) and print-kit classes (§4).
   - Global reduced-motion block: `@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}}`.
-  - `html{scroll-padding-top:calc(var(--strip-h) + 16px)}`.
+  - `html{scroll-padding-top:calc(var(--strip-h) + 16px)}`, and below 1024px `scroll-padding-bottom: calc(96px + safe area)`, so keyboard focus scrolls clear of the fixed bar (WCAG 2.2 SC 2.4.11).
 
 ### 5.2 `Header.tsx` (+ new `DevnetStrip`)
 
@@ -741,7 +750,7 @@ It is replaced by `NumberWheel` (§4.5) for the countdown. The prize, sold count
 
 `maxQ` is computed exactly as today: `walletAllowance(d, player).max` when connected, else `min(d.maxPerTx, remaining(d))`. `BuyPanel` and `MobileBuyBar` share this state, so there is only ever one quantity.
 
-**Stub, open state** (`BuyPanel`, ≥ 761px). Top to bottom, inside the stub:
+**Stub, open state** (`BuyPanel`, ≥ 1024px). Top to bottom, inside the stub:
 
 1. **Head:** `.t-stub-head` "Buy tickets" on the left (sentence case, not expanded caps); `.t-ui` 15 "**0.01 SOL** each, flat" on the right; double rule under it.
 2. **Quantity** (margin-top 24): grid `48px 1fr 48px` with punch −, the figure, punch +. The figure is `.t-qty` with `.t-label` "tickets"/"ticket" under it (centred; the one centred element). `<output aria-live="polite">`. There is no free-typing input; the punches and picks cover 1–25.
@@ -762,7 +771,7 @@ It is replaced by `NumberWheel` (§4.5) for the countdown. The prize, sold count
 
 Leftover height goes **below** item 10, never between blocks (must-fix: no 80px gap). **No `margin-top: auto`.**
 
-At the wallet limit, the ledger's "You can still buy 0" row is replaced by this wallet's tally: "Your grand-prize odds 1 in 2.0 now", "Spent", "Won so far" (from `player`, as in Your tickets).
+At the wallet limit, the ledger's "You can still buy 0" row is replaced by this wallet's tally: "Your grand-prize odds 1 in 2.0 now", "Spent", "Won so far" (from `player`, as in Your tickets). The "You hold" row is dropped too: the sentence above the ledger already says "You hold 50 of 50 tickets, the most one wallet can hold in Draw Nº 3." and carries the **See them** link.
 
 **Buy button and bar states**, in priority order:
 
@@ -774,7 +783,7 @@ At the wallet limit, the ledger's "You can still buy 0" row is replaced by this 
 | `disabledReason` | disabled: as in normal | disabled | `disabledReason` in `.t-fine` |
 | Normal | "Buy 10 tickets" → `openConfirm()` | "Buy 10 · 0.10 SOL" → `openConfirm()` | — |
 
-**Confirm step** (`ConfirmStep.tsx`). It renders inside the stub at ≥ 761px, replacing items 2–10 with a 160ms crossfade, and inside the sheet at ≤ 760px. There is one component and one instance, selected by `matchMedia("(max-width: 760px)")`.
+**Confirm step** (`ConfirmStep.tsx`). It renders inside the stub at ≥ 1024px, replacing items 2–10 with a 160ms crossfade, and inside the sheet at ≤ 1023px. There is one component and one instance, selected by `matchMedia("(max-width: 1023px)")` (`BAR_QUERY` in `BuyContext.tsx`).
 
 1. **Head row:** `.t-stub-head` "Check and pay" on the left; text button "Change quantity" on the right (`closeConfirm()`, which returns focus to the Buy button).
 2. **Summary** (dashed rule above, 12px): "10 tickets × 0.01 SOL" on the left; `.t-rowtotal` 30px "0.10 SOL" on the right.
@@ -799,21 +808,23 @@ At the wallet limit, the ledger's "You can still buy 0" row is replaced by this 
 
 Esc closes the step on desktop and the sheet on mobile.
 
-**Mobile buy bar** (`MobileBuyBar`, ≤ 760px, only while `selling`):
+**Mobile buy bar** (`MobileBuyBar`, ≤ 1023px: phones and tablets. While `selling` it is the one quantity control; once sales are over it carries the next action: run, settle (or cancel), refunds):
 - Fixed to the bottom. Stock background with `grain-stock` and `--shadow-bar` (double-ruled top edge).
 - Padding `12px 16px calc(12px + env(safe-area-inset-bottom))`.
 - Grid `auto 1fr`, gap 12:
   - left: punch − (48), quantity in `.t-qty` mobile (36px) with min-width 40, punch + (48), gap 4;
   - right: primary button, min-height 48, "Buy 10 · 0.10 SOL" (`aria-label` "Buy 10 tickets for 0.10 SOL").
-- The page gets `padding-bottom: 96px + safe area` so nothing is hidden under the bar.
+- The page ends with a 96px + safe-area spacer (`<BarSpacer/>`) so nothing is hidden under the bar, and focused elements scroll clear of it (`scroll-padding-bottom`).
+- md (761–1023): the bar takes the page gutter, and its two cells (stepper or note, then a button up to 360px) sit together at the right end, 24px apart, on the ticket's right edge, not 400px apart.
+- drawing: when `canCancel` and the randomness never arrived, the bar's button is "Cancel the draw" (note "Randomness never arrived"); when it is cancellable but the randomness has landed, "Cancel the draw" is a text button beside "Settle the draw".
 
-**The in-flow stub on mobile has no stepper, picks or Buy button** (must-fix: one quantity control). It shows only:
+**Below 1024px the in-flow stub has no stepper, picks or Buy button** (must-fix: one quantity control), and in due, drawing and cancelled **no primary button either**: the bar owns the action and the stub explains it (head, stamp, steps, explanation, fee line, refund ledger, "Your entry", errors). While selling it shows only:
 - the head ("0.01 SOL each, flat");
 - the ledger;
 - the limits note;
 - the free-entry line.
 
-**Confirm sheet** (≤ 760px):
+**Confirm sheet** (≤ 1023px):
 - `role="dialog" aria-modal="true" aria-labelledby` → "Check and pay";
 - stock background, top radius 10, 40×4 grab handle in `--rule-2`;
 - padding `24px 16px calc(24px + safe area)`;
@@ -824,8 +835,8 @@ Esc closes the step on desktop and the sheet on mobile.
 
 | State | Stub contents |
 |---|---|
-| due | Head "Run the draw" at its open-state height (both halves share one head rule) with the SALES CLOSED stamp struck across the head rule at the right, out of the flow (never over text, the steps or a button) · three steps with **numbered** marks (1, 2, 3 in a dashed `--rule-2` circle; never a radio ring) · `.t-body` explanation · primary "Run the draw" (`runDraw`) · `.t-fine` "+ ≈0.0005 SOL randomness fee, paid by you" (`costs.oraoFee`) · busy labels from `phase.run` · `errors.run`. No tickets: head "Close the draw", button "Close the draw". Then a "Your entry" mini-ledger when the wallet holds tickets |
-| drawing | Head "Settle the draw" · three-step list: ✓ "Randomness requested from ORAO for 102 tickets" + **Request** link (`d.drawVrfRequest`); ✓ or busy "Randomness landed" / "Waiting for ORAO, usually a few seconds"; "Settle pays 1 SOL to the winning ticket. Anyone can press it." · primary "Settle the draw" (disabled until fulfilled) · `errors.settle` · safety-valve line (`.t-fine`) with "Cancel the draw" secondary button when `canCancel` |
+| due | Head "Run the draw" at its open-state height (both halves share one head rule) with the SALES CLOSED stamp struck across the head rule at the right, out of the flow (never over text, the steps or a button; at ≥ 1024px 144px wide, its ink ≥ 16px from the paper's top and right edges and ≥ 16px clear of the heading) · steps "You ask ORAO for randomness" / "Randomness lands, usually in a few seconds" / "Anyone settles; 1 SOL to the winning ticket" (the verb "Run the draw" is printed twice only: head and button) · three steps with **numbered** marks (1, 2, 3 in a dashed `--rule-2` circle; never a radio ring) · `.t-body` explanation · primary "Run the draw" (`runDraw`) · `.t-fine` "+ ≈0.0005 SOL randomness fee, paid by you" (`costs.oraoFee`) · busy labels from `phase.run` · `errors.run`. No tickets: head "Close the draw", button "Close the draw". Then a "Your entry" mini-ledger when the wallet holds tickets |
+| drawing | Head "Settle the draw" · three-step list: ✓ "Randomness requested from ORAO for 102 tickets" + **Request** link (`d.drawVrfRequest`); ✓ or busy "Randomness landed" / "Waiting for ORAO, usually a few seconds"; "Settle pays 1 SOL to the winning ticket. Anyone can press it." · primary "Settle the draw" (disabled until fulfilled) · `errors.settle` · safety-valve line (`.t-fine`), **only while the randomness hasn't landed** (once it has, the condition no longer applies and the line goes), with "Cancel the draw" secondary button when `canCancel`. In the rare case the randomness landed but nobody settled within 48 h, the program still allows a cancel, and the line says exactly that |
 | settled | Head "Draw finished" · your result in `.t-body`: "You hold the winning ticket #0067. 1 SOL was paid to your wallet." (red-ink amount) or "Ticket #0067 won. Not one of yours this time." · `.t-small` "A new draw will appear here when the operator opens one. There isn't one yet." · the carbon slip (§4.11) for this draw |
 | cancelled | Head "Refunds are open" · explanation · a refund receipt ledger: one row per paid purchase ("#0031–#0040 · 10 tickets 0.10 SOL", "refunded" once done), "Free entry #0059 · not refundable", then a ruled total "Refundable to you 0.15 SOL" · primary "Go to your refunds" (anchor `#my-tickets`) · `.t-small` "Each refund is its own transaction. Anyone can send it, and it always pays the ticket's owner." No tickets sold: "Closed with no tickets" + explanation; no button |
 
@@ -842,7 +853,8 @@ This is the emotional peak. It is a full-viewport overlay below the strip (`top:
   - `.t-small` "Draw Nº 3 · #0031–#0040";
   - receipt steps (2px ink rule on top). Each step is a 22px mark (ring, or an ink-filled circle with a stock check when done, or a busy dot), a bold Archivo 88% 16 title, a Newsreader 15 ink-2 detail and one proof link when it exists:
     Marks: a number in a dashed `--rule-2` circle (to do), an ink circle with a stock check (done), the bare 8px busy dot (in flight), a red-ink ring (failed). Never a radio ring.
-    1. "Bought": "10 tickets · 0.10 SOL", **Purchase tx**. For a later reveal: "Bought earlier", **Entry**.
+    Each step reads title / detail / link: the link takes its own line from 761px, so the three steps share one rhythm. At md (761–1023) the side column runs full width above the strip and the three steps sit side by side.
+    1. "Bought": "10 tickets · 0.10 SOL", **Purchase tx**. For a later reveal the title is "Bought earlier" and the detail is still what was bought ("5 tickets · 0.05 SOL"), **Entry**.
     2. "ORAO randomness": "waiting…" / "landed in 1.8 s", **Request**.
     3. "Revealed & paid": "in one transaction", **Reveal tx**.
 
@@ -850,25 +862,33 @@ This is the emotional peak. It is a full-viewport overlay below the strip (`top:
 - **Main column:**
   1. **Status row:** `.t-voice` 18px ink-2 status on the left ("Waiting for the randomness to land…" → "Tearing off the covers, one at a time" → "All 10 revealed"). On the right, during the reveal only and at every width, the text button "Skip to total". **Nothing appears on the right after the end.** The duplicate "Total 0.08 SOL" is gone (must-fix).
   2. **Strip:**
-     - up to 10 stubs per row at 100×212 (`width = min(100, (main − 0)/10)`, min 88), joined by perforations;
+     - up to 10 stubs per row at 100×212 (`width = min(100, (main − 0)/10)`, min 88), joined by perforations. The main column is measured with a callback ref (the sheet mounts before the session arrives, so a mount-time effect never sees the strip). A purchase of 10 or fewer that can't sit on one row splits into even rows (5 + 5, not 8 + 2), and the strip's `max-width` makes the flex rows break there;
      - the strip row is 252px tall so winners can drop;
      - for more than 10 tickets, rows of 10 under horizontal perforations;
      - each stub shows a `.t-serial` 22px serial: ink, or red-ink once won (must-fix: loser serials are ink);
      - the cover (126px) has a "RESULT" tab;
      - after the lift: loser "no win" or winner amount + "SOL won" + WON stamp, plus the **roll line** `.t-key` ink-3 "roll 168 / 1000" at the stub's bottom (graft).
-  3. **Roll key** (`.t-fine` ink-3, one line under the strip, visible once the randomness lands): "A roll under 200 wins: under 10 pays 0.20 SOL, under 50 pays 0.05, under 200 pays 0.01. Each roll is sha256(randomness + ticket number), scaled to 1000." The thresholds are the cumulative `d.iwTiers` odds.
+  3. **Roll key** (`.t-fine` ink-3, visible once the randomness lands): "Demo odds, boosted: a roll under 200 wins. Under 10 pays 0.20 SOL, under 50 pays 0.05, under 200 pays 0.01. Each roll is sha256(randomness + ticket number), scaled to 1000." The thresholds are the cumulative `d.iwTiers` odds, and the odds carry their "demo odds, boosted" label (§6). **Placement:** at ≥ 1024px it sits at the foot of the side column (beside the strip it explains, under a `--rule`); below 1024px it is the last of the notes under the receipt. It is *not* a line under the strip: every pixel between the strip and the slot is the reveal's vertical budget on short screens (§5.6 "Short screens").
   4. **Double rule** (red-plate shifted, §4.8).
-  5. **Slot**, 224px tall, the same box during and after the reveal so nothing shifts:
-     - *During:* the now-showing ticket (graft from Poster). It shows `.t-now` "#0036" in ink, then a 32px gap, then "+0.05 SOL" in red-ink for a win, or the ticket number in ink-3 with `.t-voice` 40px "no win" in ink-3 for a loss. Under it, `.t-ui` "Won so far **0.06 SOL**" (red-ink amount) as the running tally.
-     - *After, with wins:* a grid `[total auto | detail 1fr | stamp 144px]`, gap 48.
+  5. **Slot**, 224px tall while the covers come off, so nothing shifts during the reveal. Once it ends the slot grows (`height: auto; min-height: 224px`) to fit the end layout, so a narrow column can never push the total into the bottom row:
+     - *Before any result is known* (confirming, vrf, revealing): no ticket number and no tally (a grey "#0031 sealed / Won so far 0.00 SOL" read as a result). One `.t-voice` line in ink-2 with the busy dot says the stage, and the status row above stays empty so it is said once: "Confirming your purchase on devnet…" / "The covers come off as soon as ORAO's randomness lands, usually about 2 s." / "Approve the reveal in your wallet. It pays any wins in the same transaction." Failed: the slot is empty and folds to nothing, so the one next step comes up under the strip.
+     - *During:* the now-showing ticket (graft from Poster). A win shows `.t-now` 120px "#0036" in ink, then a 32px gap, then "+0.05 SOL" in red-ink. A loss is quiet: the ticket number at **64px** (40 on phones) in ink-3 with a plain `.t-voice` "no win" in ink-3, so a win steps up in scale as well as colour. Under it, `.t-ui` "Won so far **0.06 SOL**" (red-ink amount) as the running tally. The row never wraps (52px figures at ≤ 380px).
+     - *After, with wins:* the layout follows the **main column's width**, not the viewport (`.rv-main { container-type: inline-size }`). From 900px: a grid `[total auto | detail ≥ 272 | stamp 144px]`, gap 48, with the figure at 196px stepping down until it fits (170 at 1280, 187 at 1366). Under 900px (lg 1024–1279, md, phones): the total (144px) and the stamp share a row and the detail sets underneath, at most 36em wide.
        - Total column: `.t-voice` "You won", then the money-plate total `.t-total` "0.08 SOL" on its horizon, with the sun (§4.9).
        - Detail column: `.t-body` "**4 winning tickets:** #0034 +0.01, #0036 +0.05, #0037 +0.01 and #0040 +0.01. Paid to 5zXY…4wAD in the reveal transaction." plus **Payout transaction**. Every address and amount is `nowrap` (must-fix: no mid-string wrap).
        - Stamp column: the PAID stamp (reveal variant), in its own cell so it **can never overlap text** (must-fix).
+       - **Staging:** total (fade .3s) → sun (.2s delay) → PAID (.35s) → winners sentence (.45s) → actions (.6s), so text and a solid button never arrive before the money. Reduced motion zeroes every delay.
      - *After, no wins:* `.t-voice` 40px "No instant wins this time." plus `.t-body` "All 10 tickets are still in the grand draw for 1 SOL." No sun and no PAID stamp.
   6. **Bottom row** `[receipt slip 300 | 48 | notes + actions]`. This fills the formerly dead paper (about y 760–900).
      - Receipt slip (§4.10).
-     - Actions (only once the reveal has ended; the cell stays empty during it): primary **"Buy more tickets"** (`closeSession()` then `focusBuy()`, keeping the quantity; hidden if sales are no longer open), the text button "Back to Draw Nº 3", and the text button "Replay" (re-runs the animation; not shown under reduced motion).
+     - Actions (only once the reveal has ended, or on failure; the cell stays empty during it). Failed: one primary btn-56, "Try the reveal again" (`reveal(entry)`) when the entry is unrevealed and paid, else "Back to Draw Nº 3", and the note "Your tickets are safe; you can reveal them later from Your tickets." (unless the error already says so). Ended: primary **"Buy more tickets"** (`closeSession()` then `focusBuy()`, keeping the quantity; hidden if sales are no longer open), the text button "Back to Draw Nº 3", and the text button "Replay" (scrolls the overlay back to the top, then re-runs the animation; not shown under reduced motion).
      - Notes in `.t-fine` ink-3: "All 10 tickets stay in the grand draw for 1 SOL, drawn at sell-out or on Sun 4 Oct, 04:13 UTC." and "Each stamp's ink is printed from that ticket's randomness."
+
+**Short screens and auto-scroll.** The overlay follows the reveal, only ever downwards, never after the reader has scrolled by hand (wheel, touch or scroll keys), and never against the action:
+- once the first cover is off, just enough to bring the slot into view, but never past the strip's top edge (the strip is the action then);
+- once it has ended, enough to bring the total and the first action ("Buy more tickets") into view, but never past 96px above the slot, so the total and the strip's lower edge stay in view.
+- From 761px with `max-height: 819px` (1366×657, 1280×650, 1024×768): top bar 56, strip rows 176px (cover 96, stub amount 38px, WON stamp 46px, winners drop 16–20px), row gap 24, slot 176px, now-showing 88px (loser 56), and the total at 144px with a 264px sun. At 1366×657 and 1280×650 the total and "Buy more tickets" end inside the first screen with no scroll; at 1024×768 and 768×1024 the overlay scrolls to them.
+- Phones with `max-height: 700px` (iPhone SE): the three step lines fold into one ("✓ Bought ✓ ORAO 1.8 s ✓ Revealed & paid"), now-showing 52px, slot 96px, total 80px with a 192px sun.
 
 **Announcer** (graft from Studio):
 - A visually hidden `<p aria-live="polite">` mirrors the slot.
@@ -880,22 +900,25 @@ This is the emotional peak. It is a full-viewport overlay below the strip (`top:
 2. h1 24px with the ticket range on the same line, right-aligned (the top bar already names the draw; it wraps under the h1 below 360px).
 3. Steps as three compact 22px lines (20px marks, 13px text), then **one 44px row of their proof links** ("Purchase tx · Request · Reveal tx"), so no two tap targets overlap.
 4. Status (15px).
-5. **Strip as a 2-column list** (`repeat(2, minmax(0, 1fr))`, so it never overflows; at ≤ 380px the serial and the result share the top line and the roll line runs underneath): rows 56px tall, serial 18px with the roll line under it on the left, result on the right. Winners become **solid `--red-fill` slips** with stock text, rotated ±1.4° at scale 1.03, with no WON stamp. Losers show "no win" in italic ink-3.
+5. **Strip as a 2-column list** (`repeat(2, minmax(0, 1fr))`, so it never overflows; at ≤ 380px the serial and the result share the top line and the roll line runs underneath): rows 48px tall, serial 18px with the roll line under it on the left, result on the right. Winners become **solid `--red-fill` slips** with stock text, rotated ±1.4° at scale 1.03, with no WON stamp. Losers show "no win" in italic ink-3.
 6. Double rule.
-7. Slot: now-showing at 64px during; after, "You won" 20px + `.t-total` 96px with a 224px sun and the PAID stamp in a 100px box top-right (no overlap with the figure).
-8. Winners sentence + Payout transaction (by about y 765).
-9. Receipt slip at full width.
-10. Actions stacked at full width.
+5a. Covers: the 48px rows are too short for the desktop lift, so a cover slides off sideways inside its own row (`translateX(28px) rotate(-4deg)`, fading over .34s), clipped by the row: no ghost of "RESULT" ever crosses a neighbour or the red slip.
+7. Slot: 104px while the covers come off (the 56px now-showing line + 16 + the 24px tally + 8), so no dead band pushes the receipt toward the fold (nothing is reserved for the end: on phones the actions are inserted above the receipt at the end anyway); after, "You won" 20px + `.t-total` 96px with a 224px sun and the PAID stamp in a 100px box top-right (no overlap with the figure).
+8. Winners sentence + Payout transaction (bottom ≤ 760).
+9. Actions stacked at full width: **"Buy more tickets" before the receipt slip**, fully inside 390×844, so the reveal never ends without its next step in view.
+10. Receipt slip at full width.
 11. Notes.
+
+Once the reveal has ended, phones drop the status line ("All 10 revealed"): the h1 and the strip already say it.
 
 **Other stages:**
 
 | Stage | Display |
 |---|---|
-| `confirming` | All covers on; status "Confirming your purchase on devnet…" |
-| `vrf` | Status "Waiting for the randomness to land…" |
-| `revealing` | Status "Approve the reveal in your wallet. It pays any wins in the same transaction." |
-| `failed` | `ErrorNote` with the human message, plus the text button "Try the reveal again" (`reveal(entry)`) when the entry is unrevealed and paid. Covers stay on |
+| `confirming` | All covers on; the slot says "Confirming your purchase on devnet…" with the busy dot (fixture `reveal-buying`) |
+| `vrf` | The slot says "The covers come off as soon as ORAO's randomness lands, usually about 2 s." (fixture `reveal-wait`) |
+| `revealing` | The slot says "Approve the reveal in your wallet. It pays any wins in the same transaction." (fixture `reveal-approve`) |
+| `failed` | Status "The covers stay on until the reveal goes through." · `ErrorNote` with the human message · the slot is empty · the actions cell holds one primary button, "Try the reveal again" (`reveal(entry)`) when the entry is unrevealed and paid, else "Back to Draw Nº 3", with the safe-tickets note (fixture `reveal-failed`). Covers stay on |
 
 **Data:**
 - tiers, amounts, `vrfMs`, `buyTx`, `vrfRequest`, `revealTx` and `instantPaid` come from `RevealSession`, exactly as today. They are never decided in the client.
@@ -929,7 +952,9 @@ Section grid `[248 | 40 | 1fr]`, `id="my-tickets"`.
 - paid but not revealed: "Bought 5" · "#0097–#0101" · "sealed".
 
   It is followed by one `.t-small` line: "The reveal transaction wasn't sent after this purchase, so these results are still sealed. Anyone can send it; any wins are paid to you." Then the primary 44px button **"Reveal 5 tickets"** (`reveal(e)`).
-- Rolls of more than 5 get a row each. The short rolls (5 or fewer, sealed or revealed) and the free entry share one row side by side (`flex`, gap 32) from 761px, before and after a reveal, and stack on mobile. The free entry only stands alone when there is no short roll.
+- Rolls of more than 5 get a row each. The short rolls (5 or fewer, sealed or revealed) and the free entry share one row side by side from 761px, before and after a reveal, and stack on mobile. The free entry only stands alone when there is no short roll.
+  - The usual pair (one short paid roll + the free entry) shares two grid tracks with `subgrid`: captions in row 1, set on the row's floor; strips, notes and buttons in row 2. Both strips start on one line. Column gap 24 (16 at lg, where the column is 656px: 510 + 16 leaves the free entry 130px, so its caption sets as "Free entry #0059" / "grand draw only"); the free entry's caption sets on one line wherever it fits.
+  - Any other mix wraps with `flex`, gap 32.
 - Mobile strips: stubs at 20% width, 108px tall, wrapping into rows of 5.
 
 **Draw-state overlays on rolls:**
@@ -949,7 +974,7 @@ Removed: the three-up `dl` grid of identical cells, the dark stub tone, the per-
 
 Section grid. **Left column:** `.t-sec` "Every entry" and `.t-small` "Each row is an Entry account on devnet. 13 entries, 102 tickets."
 
-**Right column:** a ruled ledger (not a box). It has a 2px ink rule on top and `--rule` rows 44px tall, in `.t-ui` 15 tabular. Column headers are `.t-ui` 14/600 ink-2 in **sentence case**: "Time (UTC)", "Wallet", "Tickets", "Instant result".
+**Right column:** a ruled ledger (not a box). It has a 2px ink rule on top and `--rule` rows 44px tall, in `.t-ui` 15 tabular. Column headers are `.t-ui` 14/600 ink-2 in **sentence case**: "Time (UTC)", "Wallet", "Tickets", "Instant result". From 761px the columns are fixed, 96 / 176 / 176 / 1fr with 24 gaps, and the result is **left-aligned**, so each row reads as one line written by a clerk ("22:35 · 5zXY…4wAD you · #0097–#0101 ×5 · sealed") and nothing floats 500px from its row. The ledger is capped at **760px** (96 + 176 + 176 + ~200 + 3 × 24, on the 8px scale), so its rules end where the writing ends and "Show all 13 entries" sits under the same measure.
 
 | Column | Value |
 |---|---|
@@ -981,7 +1006,7 @@ Section grid `id="past"`.
 **Right column**, for the most recent settled draw:
 - **The old ticket:**
   - 512px, rotate −1.2°, radius 5, `--shadow-ticket`, grid `[body | stub 132]`;
-  - body: head (`.t-ticket-head` 12px + serial "Nº 0002" in ink), "1 SOL" at 112px `.t-prize`, `.t-small` "Grand prize, paid to 9goW…639n", the DRAWN stamp, the three punched holes and the past barcode (§4.4) along the bottom;
+  - body: head (`.t-ticket-head` 12px + serial "Nº 0002" in ink; on phones the body beside the stub is 170–240px wide, so the head sets in two lines, "DRAWSOL" / "GRAND DRAW", with the serial on the second line's baseline: the issuer's name is never dropped), "1 SOL" at 112px `.t-prize`, `.t-small` "Grand prize, paid to 9goW…639n", the DRAWN stamp, the three punched holes and the past barcode (§4.4) along the bottom;
   - stub: italic "Winning ticket", `.t-serial` 40px "#0006" in red-ink, and the PAID stamp (past variant).
 - **The carbon slip** (§4.11) beside it at xl, under it below 1336px.
 
@@ -1014,6 +1039,8 @@ Removed: SplitFlap serials, `Verify` chips and the "Proof / Hide proof" ghost bu
 
 `id="rules"`. The back of the ticket is one stock object: radius 6, `--shadow-ticket`, padding 48 (24 on mobile).
 
+**Printed head** (on the paper): "DRAWSOL · CONDITIONS OF ISSUE" + "Nº 0003"; on phones it sets in two lines, "DRAWSOL" / "CONDITIONS OF ISSUE", the serial on the second line's baseline (never drop the brand).
+
 **Head:** `.t-sec` "The back of the ticket" in **sentence case** (must-fix: no uppercase tracked heading), `.t-small` "Six promises, and where to check each one.", then a double rule.
 
 **One ledger table** (graft from Studio: a single "check every claim" ledger, not a 2×3 card grid):
@@ -1040,7 +1067,9 @@ A colophon, not a billboard:
   3. links in `.t-link` ink (not blue: navigation, not proof):
      - "Program FwM5…nuUb" (the Solscan account; full ID in `title`);
      - "Source on GitHub";
-     - "How it works".
+     - "How it works" (only once a draw has loaded, as in the header nav: the back of the ticket, `#rules`, isn't printed in the loading, error and no-draw states).
+
+  Each link is a 44px hit row with its text pinned to the top, so the first link shares the first line of the wordmark and the colophon.
 
 Removed: the giant "DrawSol." wordmark and the brass logotype.
 
@@ -1067,7 +1096,7 @@ All three are paper objects in the hero's place, with no numbers.
     - "It is drawn at sell-out or a fixed deadline."
     - "Nobody chooses the randomness (ORAO VRF)."
     - "Anyone can run and settle it."
-  - the proof link "Program on Solscan" and the secondary button "Read the source".
+  - then, under the list, the secondary button "Read the source" and the proof link "Program on Solscan" (nothing outweighs the heading).
 - **Empty open draw:** not a separate panel. It is the open ticket with the zero copy in §5.3.
 
 ### 5.15 `WalletButton.tsx` + wallet-adapter modal
@@ -1125,7 +1154,7 @@ Unchanged. Keep importing `@solana/wallet-adapter-react-ui/styles.css`, which is
    - move it into the strip's right end, z 101, height `var(--strip-h)`;
    - text "Fixture data · ?fx=open" (mobile "Fixture · open") in Archivo 88% 700 12px, stock on `--ink` with no radius;
    - it must never cover page content (fixes the baseline's hazard tape);
-   - at 360px and below it shrinks to "Fx" plus a 2–3 letter code ("Fx rd"), so it never covers the honesty marker.
+   - at 360px and below it shrinks to "Fx" plus a 2–3 letter code ("Fx rd"), so it never covers the honesty marker. Single-word names use a fixed map (open op, confirm cf, due du, drawing dr, settled st, cancelled cx, nodraw nd, reveal rv, loading ld, error er, empty em); hyphenated names use their initials (reveal-done rd, open-guest og).
 2. **`FxState.entryRandomness`:** expose `FxWorld.entryRandomness` so the provider can reveal any entry.
 3. **`reveal(e)`** (fixes "Reveal replays #0031–#0040"): open a session for **that** entry:
    - `stage "revealed"`, `vrfRequest e.vrfRequest`, `vrfMs 1800`;
@@ -1142,6 +1171,9 @@ Unchanged. Keep importing `@solana/wallet-adapter-react-ui/styles.css`, which is
    | `reveal` | As today, but `initialShown: 6`, so the still frame pauses on #0036, a 0.05 win: the loud moment. Also set `randomness` |
    | `reveal-done` | Same session with `initialShown: 10` |
    | `reveal-5` | The session from item 3 for the #0097–#0101 entry |
+   | `reveal-buying` / `reveal-wait` / `reveal-approve` | A fresh purchase of 10 (#0031–#0040) at stage `confirming` / `vrf` / `revealing`: covers on, no tiers |
+   | `reveal-failed` | "Reveal 5 tickets" on the sealed #0097–#0101 entry, declined in the wallet ("You declined in your wallet. Nothing was sent."): stage `failed`, so "Try the reveal again" renders |
+   | `reveal-nowin` | A purchase whose rolls (fairness.ts, from its fixture randomness) are all "no win": the first scripted no-win entry is made this wallet's, shown at the end |
 
 5. **Timeline:** a scenario that moves `closesAt` into the past (due, drawing, settled, cancelled, and past Draw Nº 2) slides the whole purchase history, and the draw's `createdAt`, back so the newest entry lands a minute before the close (`fitBeforeClose`). No ticket is ever shown bought after the close or the payout.
 6. The fixture `buy`, `claimFree`, `runDraw`, `settle`, `cancel` and `refund` keep failing with "Fixture build — nothing is sent to devnet.", shown in an `ErrorNote`.
@@ -1270,10 +1302,10 @@ Rules for all copy:
 
 | Key | Copy |
 |---|---|
-| due | **Run the draw** · Sales closed {Sun 4 Oct, 04:13 UTC \| when the last ticket sold}. Anyone can run the draw: it asks ORAO for randomness nobody can choose, us included. · [Run the draw] · + ≈0.0005 SOL randomness fee, paid by you · busy: Approve in your wallet… / Confirming… |
+| due | **Run the draw** · Sales closed {Sun 4 Oct, 04:13 UTC \| when the last ticket sold}. Anyone can run it. The randomness comes from ORAO, and nobody can choose it, us included. · 1 You ask ORAO for randomness · 2 Randomness lands, usually in a few seconds · 3 Anyone settles; 1 SOL to the winning ticket · [Run the draw] · + ≈0.0005 SOL randomness fee, paid by you · busy: Approve in your wallet… / Confirming… |
 | due, no tickets | **Close the draw** · No tickets were sold. Closing returns the prize and reserve to the operator. Anyone can do it. · [Close the draw] |
 | drawing | **Settle the draw** · ✓ Randomness requested from ORAO for 102 tickets [Request] · ✓ Randomness landed / Waiting for ORAO, usually a few seconds · Settle pays 1 SOL to the winning ticket. Anyone can press it. · [Settle the draw] |
-| drawing safety | If randomness hasn't arrived by Tue 6 Oct, 04:13 UTC, anyone can cancel and every paid ticket is refunded. · after: Randomness never arrived within 48 h. Anyone can cancel now; every paid ticket becomes refundable. [Cancel the draw] |
+| drawing safety (only while the randomness hasn't landed) | If randomness hasn't arrived by Tue 6 Oct, 04:13 UTC, anyone can cancel and every paid ticket is refunded. · after: Randomness never arrived within 48 h. Anyone can cancel now; every paid ticket becomes refundable. [Cancel the draw] · landed but unsettled after 48 h: More than 48 h have passed since the close, so the program also lets anyone cancel; settling pays the winner instead. |
 | settled | **Draw finished** · You hold the winning ticket #0067. **1 SOL** was paid to your wallet. / Ticket #0067 won. Not one of yours this time. · A new draw will appear here when the operator opens one. There isn't one yet. |
 | cancelled | **Refunds are open** · The randomness never arrived within 48 h of closing, so the draw was cancelled. Every paid ticket can be refunded in full. There's no deadline. · *Your refund* 0.15 SOL · [Go to your refunds] |
 | cancelled, empty | **Closed with no tickets** · Nobody bought a ticket, so the prize and reserve went back to the operator. |
@@ -1285,12 +1317,13 @@ Rules for all copy:
 |---|---|
 | Top bar | Draw Nº 3 · [Back to the draw ✕] |
 | Title | Your 10 tickets / Your ticket · Draw Nº 3 · #0031–#0040 |
-| Steps | **Bought** 10 tickets · 0.10 SOL [Purchase tx] / Bought earlier [Entry] · **ORAO randomness** waiting… / landed in 1.8 s [Request] · **Revealed & paid** in one transaction [Reveal tx] |
-| Status | Confirming your purchase on devnet… · Waiting for the randomness to land… · Approve the reveal in your wallet. It pays any wins in the same transaction. · Tearing off the covers, one at a time · All 10 revealed |
+| Steps | **Bought** 10 tickets · 0.10 SOL [Purchase tx] / **Bought earlier** 5 tickets · 0.05 SOL [Entry] · **ORAO randomness** waiting… / landed in 1.8 s [Request] · **Revealed & paid** in one transaction [Reveal tx] · short phones: Bought · ORAO 1.8 s · Revealed & paid |
+| Status | Tearing off the covers, one at a time · All 10 revealed · failed: The covers stay on until the reveal goes through. |
+| Waiting (slot) | Confirming your purchase on devnet… · The covers come off as soon as ORAO's randomness lands, usually about 2 s. · Approve the reveal in your wallet. It pays any wins in the same transaction. |
 | Skip | Skip to total |
 | Cover tab | RESULT · sealed (Your tickets): SEALED |
 | Stub | no win · 0.05 *SOL won* · roll 27 / 1000 |
-| Roll key | A roll under 200 wins: under 10 pays 0.20 SOL, under 50 pays 0.05, under 200 pays 0.01. Each roll is sha256(randomness + ticket number), scaled to 1000. |
+| Roll key | Demo odds, boosted: a roll under 200 wins. Under 10 pays 0.20 SOL, under 50 pays 0.05, under 200 pays 0.01. Each roll is sha256(randomness + ticket number), scaled to 1000. |
 | Now showing | #0036  +0.05 SOL · #0035  *no win* · Won so far **0.06 SOL** |
 | Announcer (sr) | #0034 wins 0.01 SOL. … Paid: 0.08 SOL to 5zXY…4wAD, in the reveal transaction. |
 | End, wins | *You won* **0.08 SOL** · **4 winning tickets:** #0034 +0.01, #0036 +0.05, #0037 +0.01 and #0040 +0.01. Paid to 5zXY…4wAD in the reveal transaction. [Payout transaction] |
@@ -1299,7 +1332,7 @@ Rules for all copy:
 | Receipt | *Your receipt* |
 | Actions | [Buy more tickets] · Back to Draw Nº 3 · Replay |
 | Notes | All 10 tickets stay in the grand draw for 1 SOL, drawn at sell-out or on Sun 4 Oct, 04:13 UTC. · Each stamp's ink is printed from that ticket's randomness. |
-| Failure | **Didn't go through.** {human message} [Try the reveal again] · VRF timeout: ORAO hasn't delivered randomness yet. Your tickets are safe; reveal them later from Your tickets. |
+| Failure | **Didn't go through.** {human message} · [Try the reveal again] / [Back to Draw Nº 3] · Your tickets are safe; you can reveal them later from Your tickets. · VRF timeout: ORAO hasn't delivered randomness yet. Your tickets are safe; reveal them later from Your tickets. |
 
 ### Your tickets / Every entry / Past draws
 
@@ -1401,6 +1434,8 @@ The bottom of the bounding rect of each of these is ≤ 900, without scrolling:
 - [ ] The LOCKED stamp's box intersects neither the prize figure nor the countdown, with ≥ 16px clearance to the countdown.
 - [ ] The sticky bar is visible with − and + at **≥ 48×48** and "Buy 10 · 0.10 SOL" at ≥ 48px tall.
 - [ ] Exactly **one** quantity control on the page: the in-flow stub has no stepper, picks or Buy button.
+- [ ] In due, drawing and cancelled the action appears once, in the bar (the stub has no primary button), at 390 and at 768.
+- [ ] At 320 the LOCKED stamp (104px below 360) keeps ≥ 8px of clear stock to the paper edge.
 - [ ] The devnet strip stays visible while scrolling and while the confirm sheet is open.
 - [ ] The "Fixture" badge (fixture builds) sits inside the strip and covers no content.
 
@@ -1422,9 +1457,13 @@ The bottom of the bounding rect of each of these is ≤ 900, without scrolling:
 - [ ] No duplicate total remains at the top right.
 - [ ] The receipt slip fills the space below the total.
 - [ ] "Buy more tickets" is the primary action.
-- [ ] Mobile 390×844 (`?fx=reveal-done`): the total and the payout link are inside the first viewport; winning rows are solid red slips; no address wraps mid-string.
+- [ ] Mobile 390×844 (`?fx=reveal-done`): the total, the payout link and "Buy more tickets" are inside the first viewport; winning rows are solid red slips; no address wraps mid-string.
+- [ ] At 768, 900, 1024, 1100, 1280 and 1366 (`reveal-done`, `reveal-5`) the rects of `.money`, `.end .detail`, `.paid-cell`, `.receipt-slip` and the action buttons do not intersect.
+- [ ] At 1280×900 and 1366×900 every reveal stub shares one row and the total ends above 900.
 - [ ] "Reveal 5 tickets" under #0097–#0101 opens a 5-ticket reveal of **that** entry (`?fx=reveal-5` shows #0098 +0.01).
-- [ ] Reduced motion: the final state appears as soon as the tiers are known; no transforms.
+- [ ] Reduced motion: the final state appears as soon as the tiers are known; no transforms. Probe: after "Reveal 5 tickets", PAID, sun and WON read opacity 1 at 50ms.
+- [ ] Short screens (1366×657, 1280×720, 1024×768, 768×1024, 375×667; both motion modes): after the end and the auto-scroll, the `.money` bottom ≤ `innerHeight` and "Buy more tickets" is wholly inside the viewport. Mid-reveal (after the first cover), the now-showing row is in view and the strip's top edge is not scrolled away.
+- [ ] Before any result (`reveal-buying`, `reveal-wait`, `reveal-approve`) the slot shows one stage line with the busy dot: no ticket number, no "Won so far". `reveal-failed` shows one primary next step ("Try the reveal again") and no inline duplicate.
 
 ### 8.5 Proof and honesty
 

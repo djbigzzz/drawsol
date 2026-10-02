@@ -5,7 +5,7 @@ import { LiveProvider } from "@/hooks/LiveProvider";
 import { useDrawSol } from "@/hooks/context";
 import { DevnetStrip, Header } from "@/components/Header";
 import { Hero } from "@/components/DrawTicket";
-import { ConfirmSheet, MobileBuyBar } from "@/components/BuyPanel";
+import { BarSpacer, ConfirmSheet, MobileBuyBar } from "@/components/BuyPanel";
 import { BuyProvider } from "@/components/BuyContext";
 import { MyTickets } from "@/components/MyTickets";
 import { EntriesBoard } from "@/components/EntriesBoard";
@@ -52,7 +52,7 @@ function Shell() {
       <Header />
       <Office />
       <Footer />
-      <MobileBuyBar />
+      <BarSpacer />
       <ConfirmSheet />
       <RevealSheet />
     </BuyProvider>
@@ -69,6 +69,8 @@ function Office() {
       {load.kind === "ready" && current && (
         <>
           <Hero />
+          {/* fixed below 1024px: placed here so its Buy button follows the hero in tab and reading order */}
+          <MobileBuyBar />
           <MyTickets />
           <EntriesBoard />
           <PastDraws />

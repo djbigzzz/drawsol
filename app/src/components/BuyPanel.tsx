@@ -85,8 +85,10 @@ function Selling({ d }: { d: DrawView }) {
 }
 
 function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
-  const { wallet, player, myEntries } = useDrawSol();
+  const { wallet, player, myEntries, myState } = useDrawSol();
   const { claimFree, phase, errors, clearError, disabledReason } = useActions();
+  // this wallet's counts are shown only once its accounts have been read
+  const mineRead = myState === "ready";
   const spent = player?.spent ?? myEntries.reduce((n, e) => n + e.paidLamports, BigInt(0));
   const won = player?.won ?? myEntries.reduce((n, e) => n + e.instantPaid, BigInt(0));
   const { setVisible } = useWalletModal();
@@ -144,7 +146,10 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
     <div className="stub-pick stub-in">
       {bb?.kind === "cap" && (
         <p className="cap-line t-body">
-          You hold {bb.held} of {d.maxPerWallet} tickets, the most one wallet can hold in Draw Nº {d.id}.
+          You hold {bb.held} of {d.maxPerWallet} tickets, the most one wallet can hold in Draw Nº {d.id}.{" "}
+          <a className="tbtn" href="#my-tickets">
+            See them
+          </a>
         </p>
       )}
       {capped && controls && (
@@ -211,17 +216,26 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
           </div>
           {wallet ? (
             <>
-              <div>
-                <dt>You hold</dt>
-                <dd>
-                  {held}
-                  {held > 0 && (
-                    <a className="tbtn" href="#my-tickets">
-                      see them
-                    </a>
-                  )}
-                </dd>
-              </div>
+              {/* at the limit the sentence above already says how many you hold */}
+              {!capped && (
+                <div>
+                  <dt>You hold</dt>
+                  <dd>
+                    {mineRead ? (
+                      <>
+                        {held}
+                        {held > 0 && (
+                          <a className="tbtn" href="#my-tickets">
+                            see them
+                          </a>
+                        )}
+                      </>
+                    ) : (
+                      <span className="c-ink-3">{myState === "error" ? "can’t read" : "…"}</span>
+                    )}
+                  </dd>
+                </div>
+              )}
               {capped ? (
                 <>
                   <div>
@@ -240,7 +254,7 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
               ) : (
                 <div>
                   <dt>You can still buy</dt>
-                  <dd>{Math.min(allowance.wallet, remaining(d))}</dd>
+                  <dd>{mineRead ? Math.min(allowance.wallet, remaining(d)) : <span className="c-ink-3">…</span>}</dd>
                 </div>
               )}
             </>
@@ -270,7 +284,7 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
           )}
         </p>
         {errors.free && (
-          <div style={{ marginTop: 12 }}>
+          <div style={{ marginTop: 16 }}>
             <ErrorNote onDismiss={() => clearError("free")}>{errors.free.message}</ErrorNote>
           </div>
         )}
@@ -322,6 +336,8 @@ function YourEntry() {
 function Due({ d }: { d: DrawView }) {
   const { phase, errors, runDraw, clearError, disabledReason } = useActions();
   const { costs } = useDrawSol();
+  // below 1024px the sticky bar owns the action; the stub explains it (one control, as when selling)
+  const { barMode } = useBuy();
   const ph = phase.run;
   const busy = inFlight(ph);
   const soldOut = d.paidTickets >= d.ticketCap;
@@ -346,14 +362,14 @@ function Due({ d }: { d: DrawView }) {
         {empty ? (
           <>No tickets were sold. Closing returns the prize and reserve to the operator. Anyone can do it.</>
         ) : (
-          <>Anyone can run the draw: it asks ORAO for randomness nobody can choose, us included.</>
+          <>Anyone can run it. The randomness comes from ORAO, and nobody can choose it, us included.</>
         )}
       </p>
       {!empty && (
         <ol className="steps">
           <li className="now">
             <span className="mk" aria-hidden="true">1</span>
-            <p className="ttl">Run the draw: asks ORAO for randomness</p>
+            <p className="ttl">You ask ORAO for randomness</p>
           </li>
           <li className="todo">
             <span className="mk" aria-hidden="true">2</span>
@@ -367,10 +383,12 @@ function Due({ d }: { d: DrawView }) {
           </li>
         </ol>
       )}
-      <button type="button" className="btn btn-block btn-56" style={{ marginTop: empty ? 24 : 8 }} onClick={runDraw} disabled={busy || !!disabledReason}>
-        {busy && <Busy />}
-        {ph === "simulating" ? "Checking with the program…" : ph === "signing" ? "Approve in your wallet…" : ph === "confirming" ? "Confirming…" : verb}
-      </button>
+      {!barMode && (
+        <button type="button" className="btn btn-block btn-56" style={{ marginTop: empty ? 24 : 8 }} onClick={runDraw} disabled={busy || !!disabledReason}>
+          {busy && <Busy />}
+          {ph === "simulating" ? "Checking with the program…" : ph === "signing" ? "Approve in your wallet…" : ph === "confirming" ? "Confirming…" : verb}
+        </button>
+      )}
       {costs.oraoFee !== null && !empty && <p className="fee-plain">+ ≈{solRound(costs.oraoFee, 4, 1)} SOL randomness fee, paid by you</p>}
       {disabledReason && <p className="helper t-fine">{disabledReason}</p>}
       {errors.run && (
@@ -386,6 +404,7 @@ function Due({ d }: { d: DrawView }) {
 function Drawing({ d, now }: { d: DrawView; now: number }) {
   const { drawRandomness: r } = useDrawSol();
   const { phase, errors, settle, cancel, clearError, disabledReason } = useActions();
+  const { barMode } = useBuy();
   const ready = !!r?.fulfilled && !!r.randomness;
   const sp = phase.settle;
   const busy = inFlight(sp);
@@ -422,27 +441,35 @@ function Drawing({ d, now }: { d: DrawView; now: number }) {
           </p>
         </li>
       </ol>
-      <button type="button" className="btn btn-block btn-56" onClick={settle} disabled={!ready || busy || !!disabledReason}>
-        {busy && <Busy />}
-        {sp === "simulating" ? "Checking with the program…" : sp === "signing" ? "Approve in your wallet…" : sp === "confirming" ? "Confirming…" : "Settle the draw"}
-      </button>
+      {!barMode && (
+        <button type="button" className="btn btn-block btn-56" onClick={settle} disabled={!ready || busy || !!disabledReason}>
+          {busy && <Busy />}
+          {sp === "simulating" ? "Checking with the program…" : sp === "signing" ? "Approve in your wallet…" : sp === "confirming" ? "Confirming…" : "Settle the draw"}
+        </button>
+      )}
       {errors.settle && (
         <div style={{ marginTop: 16 }}>
           <ErrorNote onDismiss={() => clearError("settle")}>{errors.settle.message}</ErrorNote>
         </div>
       )}
-      <p className="safety t-fine">
-        {cancellable ? (
-          <>Randomness never arrived within 48 h. Anyone can cancel now; every paid ticket becomes refundable.</>
-        ) : (
-          <>
-            If randomness hasn’t arrived by <span className="nw">{utcLabel(d.closesAt + CANCEL_GRACE_SECS)}</span>, anyone can cancel and every paid ticket is
-            refunded.
-          </>
-        )}
-      </p>
-      {cancellable && (
-        <button type="button" className="btn btn-sec btn-block" style={{ marginTop: 12 }} onClick={cancel} disabled={inFlight(cp) || !!disabledReason}>
+      {/* the safety valve is about randomness that hasn't arrived: once it has landed, the line goes */}
+      {!ready && (
+        <p className="safety t-fine">
+          {cancellable ? (
+            <>Randomness never arrived within 48 h. Anyone can cancel now; every paid ticket becomes refundable.</>
+          ) : (
+            <>
+              If randomness hasn’t arrived by <span className="nw">{utcLabel(d.closesAt + CANCEL_GRACE_SECS)}</span>, anyone can cancel and every paid ticket is
+              refunded.
+            </>
+          )}
+        </p>
+      )}
+      {ready && cancellable && (
+        <p className="safety t-fine">More than 48 h have passed since the close, so the program also lets anyone cancel; settling pays the winner instead.</p>
+      )}
+      {cancellable && !barMode && (
+        <button type="button" className="btn btn-sec btn-block" style={{ marginTop: 16 }} onClick={cancel} disabled={inFlight(cp) || !!disabledReason}>
           {inFlight(cp) && <Busy />}
           Cancel the draw
         </button>
@@ -458,8 +485,10 @@ function Drawing({ d, now }: { d: DrawView; now: number }) {
 }
 
 function Settled({ d }: { d: DrawView }) {
-  const { myEntries } = useDrawSol();
+  const { myEntries, myState, wallet } = useDrawSol();
   const mine = myEntries.some((e) => e.firstTicket <= d.winningTicket && d.winningTicket < e.firstTicket + e.count);
+  // "not one of yours" only once this wallet's tickets have actually been read
+  const notMine = !!wallet && myState === "ready";
   return (
     <>
       <div className="stub-head">
@@ -472,10 +501,10 @@ function Settled({ d }: { d: DrawView }) {
             You hold the winning ticket {ticketNo(d.winningTicket)}. <span className="c-red nw b">{sol(d.prizeLamports, 0, 4)} SOL</span> was paid to your wallet.
           </>
         ) : (
-          <>Ticket {ticketNo(d.winningTicket)} won. Not one of yours this time.</>
+          <>Ticket {ticketNo(d.winningTicket)} won.{notMine && " Not one of yours this time."}</>
         )}
       </p>
-      <p className="t-small c-ink-2" style={{ marginTop: 12 }}>
+      <p className="t-small c-ink-2" style={{ marginTop: 16 }}>
         A new draw will appear here when the operator opens one. There isn’t one yet.
       </p>
       <CarbonSlip d={d} id="slip-current" />
@@ -484,7 +513,8 @@ function Settled({ d }: { d: DrawView }) {
 }
 
 function Cancelled({ d }: { d: DrawView }) {
-  const { myEntries, wallet } = useDrawSol();
+  const { myEntries, wallet, myState } = useDrawSol();
+  const { barMode } = useBuy();
   const paid = myEntries.filter((e) => !e.isFree);
   const paidTickets = paid.reduce((n, e) => n + e.count, 0);
   const owed = paid.filter((e) => !e.refunded).reduce((n, e) => n + e.paidLamports, BigInt(0));
@@ -504,7 +534,7 @@ function Cancelled({ d }: { d: DrawView }) {
       </p>
       {!empty && (
         <>
-          {wallet && myEntries.length > 0 ? (
+          {wallet && myState === "ready" && myEntries.length > 0 ? (
             // a refund receipt: one line per purchase, then the total owed to this wallet
             <dl className="ledger refunds" aria-label={`Your entry: ${paidTickets} paid ${plural(paidTickets, "ticket", "tickets")}`}>
               {paid.slice(0, 4).map((e) => (
@@ -538,11 +568,19 @@ function Cancelled({ d }: { d: DrawView }) {
             <dl className="ledger">
               <div>
                 <dt>Your refund</dt>
-                <dd>{wallet ? "No tickets in this draw" : "Connect a wallet to check"}</dd>
+                <dd>
+                  {!wallet
+                    ? "Connect a wallet to check"
+                    : myState === "ready"
+                      ? "No tickets in this draw"
+                      : myState === "error"
+                        ? "Can’t read your tickets right now"
+                        : "Reading your tickets…"}
+                </dd>
               </div>
             </dl>
           )}
-          {wallet && owed > BigInt(0) && (
+          {wallet && owed > BigInt(0) && !barMode && (
             <a className="btn btn-block btn-56" style={{ marginTop: 24 }} href="#my-tickets">
               Go to your refunds
             </a>
@@ -569,15 +607,32 @@ export function MobileBuyBar() {
   return null;
 }
 
+/**
+ * The bar sits right after the hero in the DOM (page.tsx), so on phones and tablets its stepper and Buy
+ * button come straight after the vault link in tab and reading order; it is fixed, so nothing moves.
+ * The room it needs at the end of the page is kept by <BarSpacer/>, rendered after the footer.
+ */
 function BarShell({ children, label, hidden }: { children: ReactNode; label: string; hidden?: boolean }) {
   return (
-    <>
-      <div className="bar-spacer" aria-hidden="true" />
-      <div className="buybar" role="region" aria-label={label} aria-hidden={hidden ? true : undefined}>
-        {children}
-      </div>
-    </>
+    <div className="buybar" role="region" aria-label={label} aria-hidden={hidden ? true : undefined}>
+      {children}
+    </div>
   );
+}
+
+/** True when MobileBuyBar prints a bar (it shows below 1024px); mirrors its branches. */
+function useHasBar() {
+  const { current: d, now, myEntries, wallet } = useDrawSol();
+  if (!d) return false;
+  const ph = phaseOf(d, now);
+  if (ph === "selling" || ph === "due" || ph === "drawing") return true;
+  if (ph === "cancelled") return !!wallet && myEntries.some((e) => !e.isFree && !e.refunded && e.paidLamports > BigInt(0));
+  return false;
+}
+
+/** Room at the end of the page for the fixed bar (below 1024px only, via .bar-spacer). */
+export function BarSpacer() {
+  return useHasBar() ? <div className="bar-spacer" aria-hidden="true" /> : null;
 }
 
 function SellBar({ d }: { d: DrawView }) {
@@ -649,9 +704,9 @@ function SellBar({ d }: { d: DrawView }) {
 }
 
 function ActionBar({ d, ph }: { d: DrawView; ph: "due" | "drawing" | "cancelled" }) {
-  const { drawRandomness: r, myEntries, wallet } = useDrawSol();
-  const { phase, errors, runDraw, settle, disabledReason } = useActions();
-  const failed = (k: "run" | "settle") =>
+  const { drawRandomness: r, myEntries, wallet, now } = useDrawSol();
+  const { phase, errors, runDraw, settle, cancel, disabledReason } = useActions();
+  const failed = (k: "run" | "settle" | "cancel") =>
     errors[k] ? (
       <span className="bar-note t-small c-red">
         Didn’t go through.{" "}
@@ -679,9 +734,31 @@ function ActionBar({ d, ph }: { d: DrawView; ph: "due" | "drawing" | "cancelled"
     const ready = !!r?.fulfilled && !!r.randomness;
     const p = phase.settle;
     const busy = inFlight(p);
+    // the safety valve lives here too below 1024px (the stub is info only)
+    const cancellable = canCancel(d, now);
+    const cp = phase.cancel;
+    const cancelLabel = cp === "simulating" ? "Checking…" : cp === "signing" ? "Approve in your wallet…" : cp === "confirming" ? "Confirming…" : "Cancel the draw";
+    if (cancellable && !ready)
+      return (
+        <BarShell label="The draw">
+          {failed("cancel") ?? <span className="bar-note t-small">Randomness never arrived</span>}
+          <button type="button" className="btn" onClick={cancel} disabled={inFlight(cp) || !!disabledReason}>
+            {inFlight(cp) && <Busy />}
+            {cancelLabel}
+          </button>
+        </BarShell>
+      );
     return (
       <BarShell label="The draw">
-        {failed("settle") ?? <span className="bar-note t-small">{ready ? "Anyone can settle" : "Randomness requested"}</span>}
+        {failed("settle") ??
+          (cancellable ? (
+            <button type="button" className="tbtn bar-tbtn" onClick={cancel} disabled={inFlight(cp) || !!disabledReason}>
+              {inFlight(cp) && <Busy />}
+              {cancelLabel}
+            </button>
+          ) : (
+            <span className="bar-note t-small">{ready ? "Anyone can settle" : "Randomness requested"}</span>
+          ))}
         <button type="button" className="btn" onClick={settle} disabled={!ready || busy || !!disabledReason}>
           {busy && <Busy />}
           {!ready ? "Waiting for ORAO…" : p === "simulating" ? "Checking…" : p === "signing" ? "Approve in your wallet…" : p === "confirming" ? "Confirming…" : "Settle the draw"}

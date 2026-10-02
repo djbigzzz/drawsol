@@ -9,7 +9,7 @@ import { solscanAccount } from "@/lib/config";
 
 /** The wallet-adapter button, rebuilt as a plain underlined address with a stock-slip menu. */
 export function WalletButton() {
-  const { wallet, myEntries, player } = useDrawSol();
+  const { wallet, myEntries, myState, player } = useDrawSol();
   const { disconnect, connecting } = useWallet();
   const { setVisible } = useWalletModal();
   const [open, setOpen] = useState(false);
@@ -67,7 +67,7 @@ export function WalletButton() {
             <span className="tab">{wallet.balance !== null ? `${sol(wallet.balance, 2, 4)} SOL` : "—"}</span>
           </div>
           <a role="menuitem" href="#my-tickets" onClick={() => setOpen(false)}>
-            Your tickets ({tickets})
+            Your tickets{myState === "ready" ? ` (${tickets})` : ""}
           </a>
           <a role="menuitem" href={solscanAccount(addr)} target="_blank" rel="noopener noreferrer">
             <span className="proof" style={{ textDecoration: "none" }}>

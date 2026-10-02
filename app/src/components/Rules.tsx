@@ -112,7 +112,10 @@ export function Rules() {
           <div className="tk-body">
             <div className="tk-head">
               <span className="t-ticket-head">
-                <span className="th-brand">DrawSol · </span>conditions of issue
+                <span className="th-brand">
+                  DrawSol<span className="th-sep"> · </span>
+                </span>
+                conditions of issue
               </span>
               <span className="t-serial tk-serial">Nº {String(d.id).padStart(4, "0")}</span>
             </div>

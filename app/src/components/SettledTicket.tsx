@@ -49,7 +49,10 @@ export function SettledTicket({ d }: { d: DrawView }) {
       <div className="ob">
         <div className="tk-head">
           <span className="t-ticket-head">
-            <span className="th-brand">DrawSol · </span>grand draw
+            <span className="th-brand">
+              DrawSol<span className="th-sep"> · </span>
+            </span>
+            grand draw
           </span>
           <span className="t-serial">Nº {String(d.id).padStart(4, "0")}</span>
         </div>

@@ -13,7 +13,7 @@ import { Stamp } from "./print/Stamp";
 import { Stub, type StubState } from "./TicketStub";
 
 export function MyTickets() {
-  const { wallet, myEntries, player, current: d } = useDrawSol();
+  const { wallet, myEntries, myState, player, current: d, refresh } = useDrawSol();
   const { setVisible } = useWalletModal();
   if (!d) return null;
 
@@ -24,6 +24,25 @@ export function MyTickets() {
         <button type="button" className="btn btn-sec" style={{ marginTop: 16 }} onClick={() => setVisible(true)}>
           Connect wallet
         </button>
+      </SectionGrid>
+    );
+
+  // no counts and no "no tickets" until this wallet's accounts have been read
+  if (myState !== "ready")
+    return (
+      <SectionGrid id="my-tickets" title="Your tickets">
+        {myState === "error" ? (
+          <p className="t-body c-ink-2">
+            Can’t load the tickets of <Addr k={wallet.address} /> from devnet right now.{" "}
+            <button type="button" className="tbtn" onClick={refresh}>
+              Try again
+            </button>
+          </p>
+        ) : (
+          <p className="t-body c-ink-2" aria-busy="true">
+            Reading the tickets of <Addr k={wallet.address} /> from devnet…
+          </p>
+        )}
       </SectionGrid>
     );
 
@@ -109,7 +128,8 @@ export function MyTickets() {
           <Roll key={e.address.toBase58()} e={e} d={d} />
         ))}
         {short.length > 0 && (
-          <div className="rolls-row">
+          // the usual pair (one short paid roll + the free entry) lines its strips up on shared tracks
+          <div className={`rolls-row ${short.length === 2 && short.some((e) => e.isFree) && short.some((e) => !e.isFree) ? "pair" : ""}`}>
             {short.map((e) => (
               <Roll key={e.address.toBase58()} e={e} d={d} />
             ))}
@@ -161,71 +181,73 @@ function Roll({ e, d }: { e: EntryView; d: DrawView }) {
           </>
         )}
       </p>
-      <div className={`strip-of ${e.count > 5 ? "rows" : "n-few"}`} role="list" aria-label={`Tickets ${ticketRange(e.firstTicket, e.count)}`}>
-        {Array.from({ length: e.count }, (_, i) => {
-          const t = e.firstTicket + i;
-          const st = stateOf(i);
-          return (
-            <Stub
-              key={i}
-              serial={t}
-              state={st}
-              amount={st === "won" ? tierAmount(d, e.tiers[i]) : undefined}
-              ink={st === "drawn" ? inkAt(d.randomness, 32) : ticketInk(e.address.toBytes(), t)}
-              prize={prize}
-            />
-          );
-        })}
-        {e.refunded && (
-          <Stamp kind="refunded" className="refund-stamp" seed={inkAt(e.address.toBytes(), 0)} label="Stamped: refunded" />
+      <div className="roll-body">
+        <div className={`strip-of ${e.count > 5 ? "rows" : "n-few"}`} role="list" aria-label={`Tickets ${ticketRange(e.firstTicket, e.count)}`}>
+          {Array.from({ length: e.count }, (_, i) => {
+            const t = e.firstTicket + i;
+            const st = stateOf(i);
+            return (
+              <Stub
+                key={i}
+                serial={t}
+                state={st}
+                amount={st === "won" ? tierAmount(d, e.tiers[i]) : undefined}
+                ink={st === "drawn" ? inkAt(d.randomness, 32) : ticketInk(e.address.toBytes(), t)}
+                prize={prize}
+              />
+            );
+          })}
+          {e.refunded && (
+            <Stamp kind="refunded" className="refund-stamp" seed={inkAt(e.address.toBytes(), 0)} label="Stamped: refunded" />
+          )}
+        </div>
+
+        {holds && (
+          <p className="roll-say">
+            Ticket <span className="nw">{ticketNo(d.winningTicket)}</span> won the grand prize. <span className="nw">{prize} SOL</span> was paid to you.
+          </p>
+        )}
+
+        {canReveal && (
+          <>
+            <p className="roll-note t-small">
+              The reveal transaction wasn’t sent after this purchase, so these results are still sealed. Anyone can send it; any wins are paid to you.
+            </p>
+            <div className="roll-act">
+              <button type="button" className="btn" onClick={() => reveal(e)} disabled={!!disabledReason}>
+                Reveal {e.count} {plural(e.count, "ticket", "tickets")}
+              </button>
+            </div>
+          </>
+        )}
+
+        {d.status === "cancelled" &&
+          (e.isFree ? (
+            <p className="roll-note t-small">Free entry: nothing to refund.</p>
+          ) : e.refunded ? (
+            <p className="roll-note t-small">
+              Refunded <span className="nw">{sol(e.paidLamports, 2, 4)} SOL</span>.
+            </p>
+          ) : (
+            <div className="roll-act">
+              <button type="button" className="btn btn-sec" onClick={() => refund(e)} disabled={refundBusy || !!disabledReason}>
+                {refundBusy && <Busy />}
+                {rp === "simulating" ? "Checking with the program…" : rp === "signing" ? "Approve in your wallet…" : rp === "confirming" ? "Confirming…" : `Refund ${sol(e.paidLamports, 2, 4)} SOL`}
+              </button>
+            </div>
+          ))}
+
+        {errors[rk] && (
+          <div style={{ marginTop: 16 }}>
+            <ErrorNote onDismiss={() => clearError(rk)}>{errors[rk]!.message}</ErrorNote>
+          </div>
+        )}
+        {errors[vk] && (
+          <div style={{ marginTop: 16 }}>
+            <ErrorNote onDismiss={() => clearError(vk)}>{errors[vk]!.message}</ErrorNote>
+          </div>
         )}
       </div>
-
-      {holds && (
-        <p className="roll-say">
-          Ticket <span className="nw">{ticketNo(d.winningTicket)}</span> won the grand prize. <span className="nw">{prize} SOL</span> was paid to you.
-        </p>
-      )}
-
-      {canReveal && (
-        <>
-          <p className="roll-note t-small">
-            The reveal transaction wasn’t sent after this purchase, so these results are still sealed. Anyone can send it; any wins are paid to you.
-          </p>
-          <div className="roll-act">
-            <button type="button" className="btn" onClick={() => reveal(e)} disabled={!!disabledReason}>
-              Reveal {e.count} {plural(e.count, "ticket", "tickets")}
-            </button>
-          </div>
-        </>
-      )}
-
-      {d.status === "cancelled" &&
-        (e.isFree ? (
-          <p className="roll-note t-small">Free entry: nothing to refund.</p>
-        ) : e.refunded ? (
-          <p className="roll-note t-small">
-            Refunded <span className="nw">{sol(e.paidLamports, 2, 4)} SOL</span>.
-          </p>
-        ) : (
-          <div className="roll-act">
-            <button type="button" className="btn btn-sec" onClick={() => refund(e)} disabled={refundBusy || !!disabledReason}>
-              {refundBusy && <Busy />}
-              {rp === "simulating" ? "Checking with the program…" : rp === "signing" ? "Approve in your wallet…" : rp === "confirming" ? "Confirming…" : `Refund ${sol(e.paidLamports, 2, 4)} SOL`}
-            </button>
-          </div>
-        ))}
-
-      {errors[rk] && (
-        <div style={{ marginTop: 12 }}>
-          <ErrorNote onDismiss={() => clearError(rk)}>{errors[rk]!.message}</ErrorNote>
-        </div>
-      )}
-      {errors[vk] && (
-        <div style={{ marginTop: 12 }}>
-          <ErrorNote onDismiss={() => clearError(vk)}>{errors[vk]!.message}</ErrorNote>
-        </div>
-      )}
     </div>
   );
 }

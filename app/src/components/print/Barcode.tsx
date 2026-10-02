@@ -58,15 +58,16 @@ export function Barcode({
   const rise = mobile ? 6 : 8;
   const L = width > 0 ? barcodeMarks({ slots, taken, free, mine, drawn, width, h, rise, spread }) : null;
 
-  // key candidates, positioned under the bars they name, in priority order ("yours" wins over "#0000")
+  // key candidates, positioned under the bars they name, in priority order: yours > "N left" > #0000 >
+  // sell-out (with nothing sold, "150 left" sits at x 0 and is the useful count; "#0000" yields to it)
   type Lab = { x: number; text: string; cls: string; align: "l" | "r" };
   const cands: Lab[] = [];
   if (L && showKey) {
     const px = (t: number) => L.xAt(Math.floor(t / L.group));
     const mineR = ranges(mine);
     if (mineR.length) cands.push({ x: px(mineR[0][0]), text: "yours", cls: "yours", align: "l" });
-    cands.push({ x: 0, text: ticketNo(0), cls: "", align: "l" });
     if (taken < slots && leftLabel) cands.push({ x: px(taken), text: leftLabel, cls: "", align: "l" });
+    cands.push({ x: 0, text: ticketNo(0), cls: "", align: "l" });
     cands.push({ x: L.w, text: "sell-out", cls: "", align: "r" });
   }
   // drop a label only if its measured box comes within 8px of a label already placed

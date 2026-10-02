@@ -6,8 +6,10 @@ import { solRound } from "./fmt";
 
 /** ORAO fee + rent for the ticket record (+ the one-time player record), from the chain. null when unknown. */
 export function useFees(): bigint | null {
-  const { costs, player } = useDrawSol();
+  const { costs, player, wallet, myState } = useDrawSol();
   if (costs.oraoFee === null || costs.entryRent === null) return null;
+  // whether the player record already exists is unknown until this wallet's accounts are read
+  if (wallet && myState !== "ready") return null;
   if (!player && costs.playerRent === null) return null;
   return costs.oraoFee + costs.entryRent + (player ? BigInt(0) : costs.playerRent ?? BigInt(0));
 }

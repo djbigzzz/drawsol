@@ -53,8 +53,11 @@ export function inkAt(bytes: Uint8Array, offset: number): Uint8Array {
  * Halftone sun. Integer 45° lattice: dot centres sit on (4k+2, 4m+2) with
  * k+m even, so every dot rasterises identically at 1x and 2x (no moiré).
  * Centre on the bottom edge (the horizon). Render at 1:1 only.
+ * Density is nearly flat and only softens in the outer rim, so the part
+ * that shows above the figures (d ≈ .75–1) prints as a solid red object:
+ * r = min(2.7, 1.7 + 1.05 × (1 − d⁸)) → 2.57 at d .8, 2.3 at .9, 1.7 at the rim.
  * ------------------------------------------------------------------ */
-export function sunDots(width: number, { pitch = 4, rMax = 2.6, rMin = 0.9 } = {}): [number, number, number][] {
+export function sunDots(width: number, { pitch = 4, rMax = 2.7, rRim = 1.7, swell = 1.05 } = {}): [number, number, number][] {
   const R = width / 2;
   const cx = width / 2;
   const cy = R;
@@ -67,8 +70,7 @@ export function sunDots(width: number, { pitch = 4, rMax = 2.6, rMin = 0.9 } = {
       if (y > cy) continue;
       const d = Math.hypot(x - cx, y - cy) / R;
       if (d > 1) continue;
-      const r = rMin + (rMax - rMin) * (1 - d * d);
-      if (r < rMin) continue;
+      const r = Math.min(rMax, rRim + swell * (1 - d ** 8));
       dots.push([x, y, Math.round(r * 100) / 100]);
     }
   }

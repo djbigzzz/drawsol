@@ -1,11 +1,13 @@
 "use client";
 
+import { useDrawSol } from "@/hooks/context";
 import { PROGRAM_ID, SOURCE_URL, solscanAccount } from "@/lib/config";
 import { short } from "@/lib/format";
 import { Mark } from "./print/Mark";
 
 /** A colophon, not a billboard. */
 export function Footer() {
+  const { load } = useDrawSol();
   const id = PROGRAM_ID.toBase58();
   return (
     <footer className="page">
@@ -30,11 +32,14 @@ export function Footer() {
               Source on GitHub
             </a>
           </li>
-          <li>
-            <a className="nav-link" href="#rules">
-              How it works
-            </a>
-          </li>
+          {/* the back of the ticket (#rules) is only printed once a draw has loaded, as in the header nav */}
+          {load.kind === "ready" && (
+            <li>
+              <a className="nav-link" href="#rules">
+                How it works
+              </a>
+            </li>
+          )}
         </ul>
       </div>
     </footer>

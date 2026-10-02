@@ -48,7 +48,7 @@ export function CarbonSlip({ d, tilt = false, id }: { d: DrawView; tilt?: boolea
         Carbon copy
       </p>
       <h3 className="t-stub-head" id={`${id ?? "slip"}-h`}>
-        Recompute {n} in this browser
+        Recompute <span className="nw">{n}</span> in this browser
       </h3>
       <div className="slip-lines">
         <div className="slip-line">

@@ -37,7 +37,10 @@ export function useEntries(program: AnyProgram, draw: DrawView | null, nonce = 0
   return { entries, state };
 }
 
-/** This wallet's entries + Player account in a draw. */
+/**
+ * This wallet's entries + Player account in a draw. `state` is "ready" only once both have been read
+ * for this wallet and draw: until then (or after a failed read) the UI shows no counts for the wallet.
+ */
 export function useMyEntries(
   program: AnyProgram,
   draw: DrawView | null,
@@ -46,13 +49,16 @@ export function useMyEntries(
 ) {
   const [myEntries, setMine] = useState<EntryView[]>([]);
   const [player, setPlayer] = useState<PlayerView | null>(null);
+  const [state, setState] = useState<"loading" | "error" | "ready">("loading");
   const key = drawKey(draw);
   const w = wallet?.toBase58() ?? "";
+  const scope = `${w}:${draw?.address.toBase58() ?? ""}`;
 
   useEffect(() => {
     setMine([]);
     setPlayer(null);
-  }, [w]);
+    setState("loading");
+  }, [scope]);
 
   useEffect(() => {
     if (!draw || !wallet) return;
@@ -62,13 +68,14 @@ export function useMyEntries(
         if (!alive) return;
         setMine(e);
         setPlayer(p);
+        setState("ready");
       })
-      .catch(() => {});
+      .catch(() => alive && setState("error"));
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [program, key, w, nonce]);
 
-  return { myEntries, player };
+  return { myEntries, player, state };
 }

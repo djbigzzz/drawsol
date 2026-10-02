@@ -36,6 +36,8 @@ export interface DrawSolData {
   wallet: WalletView | null;
   player: PlayerView | null;
   myEntries: EntryView[];
+  /** read state of `player` + `myEntries` for the connected wallet; show no wallet counts unless "ready" */
+  myState: "loading" | "error" | "ready";
   /** ORAO request for the current draw (Drawing only) */
   drawRandomness: RandomnessView | null;
   costs: Costs;

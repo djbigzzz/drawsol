@@ -184,6 +184,7 @@ export function DrawTicket() {
                 </span>
                 .
               </strong>{" "}
+              <br />
               {settleTx ? <ProofLink tx={settleTx}>Prize transaction</ProofLink> : settleTx === null ? <span className="c-ink-3">Transaction not indexed.</span> : null}
             </>
           ) : cancelled ? (
@@ -194,7 +195,8 @@ export function DrawTicket() {
                   , which holds <span className="nw">{vault}</span>
                 </>
               ) : null}
-              . <ProofLink account={vaultPda(d.address)}>Check the vault on Solscan</ProofLink>
+              .<br />
+              <ProofLink account={vaultPda(d.address)}>Check the vault on Solscan</ProofLink>
             </>
           ) : (
             <>
@@ -202,9 +204,10 @@ export function DrawTicket() {
               {vault ? (
                 <>
                   The vault holds <span className="nw">{vault}</span>:{" "}
-                  {d.proceedsLamports > BigInt(0) ? "the prize, the instant-win reserve and sales so far" : "the prize and the instant-win reserve"}.{" "}
+                  {d.proceedsLamports > BigInt(0) ? "the prize, the instant-win reserve and sales so\u00a0far" : "the prize and the instant-win reserve"}.
                 </>
               ) : null}
+              <br />
               <ProofLink account={vaultPda(d.address)}>Check the vault on Solscan</ProofLink>
             </>
           )}
@@ -326,7 +329,7 @@ function FactLeft({ d, ph, now }: { d: DrawView; ph: Phase; now: number }) {
         <p className="fig">
           <span className={`t-fact ${w === null ? "c-ink-3" : ""}`}>{w === null ? "#????" : ticketNo(w)}</span>
         </p>
-        <p className="note" style={{ marginTop: 10 }}>
+        <p className="note" style={{ marginTop: 8 }}>
           {w === null ? "Waiting for ORAO, usually a few seconds." : "Computed from ORAO’s randomness. Final once settled."}
         </p>
       </div>
@@ -339,7 +342,7 @@ function FactLeft({ d, ph, now }: { d: DrawView; ph: Phase; now: number }) {
         <p className="fig">
           <span className="t-fact c-red">{ticketNo(d.winningTicket)}</span>
         </p>
-        <p className="note" style={{ marginTop: 10 }}>
+        <p className="note" style={{ marginTop: 8 }}>
           out of {d.nextTicket} tickets
         </p>
       </div>
@@ -354,7 +357,7 @@ function FactLeft({ d, ph, now }: { d: DrawView; ph: Phase; now: number }) {
         <span className="t-fact">{sol(d.proceedsLamports, 2, 4)}</span>
         <span className="unit">SOL</span>
       </p>
-      <p className="note" style={{ marginTop: 10 }}>
+      <p className="note" style={{ marginTop: 8 }}>
         Each paid ticket is refunded from the vault when its owner claims it.
       </p>
     </div>
@@ -362,7 +365,7 @@ function FactLeft({ d, ph, now }: { d: DrawView; ph: Phase; now: number }) {
 }
 
 function FactRight({ d, ph }: { d: DrawView; ph: Phase }) {
-  const { myEntries, wallet } = useDrawSol();
+  const { myEntries, wallet, myState } = useDrawSol();
   if (ph === "settled")
     return (
       <div className="fact fact-sold">
@@ -372,7 +375,7 @@ function FactRight({ d, ph }: { d: DrawView; ph: Phase }) {
             <Addr k={d.winner} />
           </span>
         </p>
-        <p className="note" style={{ marginTop: 10 }}>
+        <p className="note" style={{ marginTop: 8 }}>
           <span className="nw">{sol(d.prizeLamports, 0, 4)} SOL</span>, in the settle transaction.
         </p>
       </div>
@@ -382,13 +385,15 @@ function FactRight({ d, ph }: { d: DrawView; ph: Phase }) {
     return (
       <div className="fact fact-sold">
         <span className="t-label">Your refund</span>
-        {wallet ? (
+        {!wallet ? (
+          <p className="note">Connect a wallet to check.</p>
+        ) : myState === "ready" ? (
           <p className="fig">
             <span className="t-fact">{sol(owed, 2, 4)}</span>
             <span className="unit">SOL</span>
           </p>
         ) : (
-          <p className="note">Connect a wallet to check.</p>
+          <p className="note">{myState === "error" ? "Can’t read your tickets right now." : "Reading your tickets…"}</p>
         )}
       </div>
     );
@@ -396,7 +401,11 @@ function FactRight({ d, ph }: { d: DrawView; ph: Phase }) {
   if (ph === "drawing")
     return (
       <div className="fact fact-sold">
-        <p className="fig" style={{ marginTop: 26 }}>
+        {/* an empty label line, so this figure sits on the same line as the one beside it */}
+        <span className="t-label" aria-hidden="true">
+          &nbsp;
+        </span>
+        <p className="fig">
           <span className="t-fact">{d.nextTicket}</span>
           <span className="unit">tickets in the draw</span>
         </p>

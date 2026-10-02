@@ -80,7 +80,8 @@ export function RevealStub({
   amount: bigint;
   shown: boolean;
   roll: number | null;
-  denom: number;
+  /** the draw's instant-win denominator; null when the draw isn't loaded (no roll is shown) */
+  denom: number | null;
   ink: Uint8Array;
   rowFirst: boolean;
   rowLast: boolean;
@@ -101,7 +102,7 @@ export function RevealStub({
     >
       <span className="sl" aria-hidden="true">
         <span className="t-serial">{s}</span>
-        {known && roll !== null && (
+        {known && roll !== null && denom !== null && (
           <span className="roll">
             roll {roll} / {denom}
           </span>

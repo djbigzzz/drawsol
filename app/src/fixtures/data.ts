@@ -219,13 +219,29 @@ export type Scenario =
   | "confirm"
   | "reveal"
   | "reveal-done"
-  | "reveal-5";
+  | "reveal-5"
+  | "reveal-buying"
+  | "reveal-wait"
+  | "reveal-approve"
+  | "reveal-failed"
+  | "reveal-nowin";
 
 /** Every scenario the fixture build understands (anything else falls back to "open"). */
 export const SCENARIOS: Scenario[] = [
   "open", "open-guest", "open-low", "open-cap", "empty", "due", "drawing", "drawing-wait", "settled",
   "cancelled", "nodraw", "loading", "error", "confirm", "reveal", "reveal-done", "reveal-5",
+  "reveal-buying", "reveal-wait", "reveal-approve", "reveal-failed", "reveal-nowin",
 ];
+
+/** The first other wallet whose revealed, paid entry won nothing (computed by fairness.ts, not chosen). */
+function noWinLabel(now: number): string | null {
+  const w = buildWorld(3, now, "open");
+  const e = w.entries
+    .slice()
+    .sort((a, b) => a.seq - b.seq)
+    .find((x) => !x.owner.equals(ME) && !x.isFree && x.revealed && x.count >= 2 && x.instantPaid === BigInt(0));
+  return e ? SCRIPT[e.seq][0] : null;
+}
 
 /** A revealed session for one entry, with tiers recomputed by fairness.ts from its randomness. */
 export function revealSessionFor(e: EntryView, d: DrawView, rand: Uint8Array, label: string): RevealSession {
@@ -287,7 +303,10 @@ export function scenario(s: Scenario, now: number): FxState {
   if (s === "loading" || s === "error" || s === "nodraw") return { ...fx, load: s, wallet: null };
 
   let w: FxWorld;
+  // a purchase that won nothing: one of the scripted no-win entries is this wallet's
+  const nowin = s === "reveal-nowin" ? noWinLabel(now) : null;
   if (s === "empty") w = buildWorld(3, now, "open", 0);
+  else if (nowin) w = buildWorld(3, now, "open", 1, [nowin]);
   // wallet at its limit: three more of the scripted purchases are this wallet's, so it really holds 50
   else if (s === "open-cap") w = buildWorld(3, now, "open", 1, ["b", "c", "h"]);
   else w = buildWorld(3, now, "open");
@@ -364,6 +383,42 @@ export function scenario(s: Scenario, now: number): FxState {
       randomness: rand,
       initialShown: s === "reveal" ? 6 : 10,
     };
+  }
+  // the stages before any result is known, on a fresh purchase of 10 (#0031–#0040): covers on, no tiers
+  if (s === "reveal-buying" || s === "reveal-wait" || s === "reveal-approve") {
+    const e = w.mine.find((m) => !m.isFree && m.count === 10)!;
+    const stage = s === "reveal-buying" ? "confirming" : s === "reveal-wait" ? "vrf" : "revealing";
+    fx.session = {
+      entry: e.address,
+      firstTicket: e.firstTicket,
+      count: e.count,
+      stage,
+      buyTx: stage === "confirming" ? undefined : fxSig("buy"),
+      vrfRequest: stage === "confirming" ? undefined : e.vrfRequest,
+      vrfMs: stage === "revealing" ? 1840 : undefined,
+      randomness: stage === "revealing" ? w.entryRandomness.get(e.address.toBase58()) : undefined,
+      tierAmounts: w.draw.iwTiers.map((t) => t.amount),
+    };
+  }
+  // "Reveal 5 tickets" on the sealed entry, declined in the wallet: covers stay on, "Try the reveal again"
+  if (s === "reveal-failed") {
+    const e = w.mine.find((m) => !m.isFree && !m.revealed)!;
+    fx.session = {
+      entry: e.address,
+      firstTicket: e.firstTicket,
+      count: e.count,
+      stage: "failed",
+      vrfRequest: e.vrfRequest,
+      vrfMs: 1800,
+      randomness: w.entryRandomness.get(e.address.toBase58()),
+      tierAmounts: w.draw.iwTiers.map((t) => t.amount),
+      error: { code: "Rejected", message: "You declined in your wallet. Nothing was sent." },
+    };
+  }
+  // a fresh purchase whose results (fairness.ts, from its fixture randomness) are all "no win", at the end
+  if (s === "reveal-nowin" && nowin) {
+    const e = w.mine.find((m) => !m.isFree && m.revealed && m.instantPaid === BigInt(0) && m.count >= 2)!;
+    fx.session = { ...revealSessionFor(e, w.draw, w.entryRandomness.get(e.address.toBase58())!, String(e.seq)), buyTx: fxSig("buy-nowin"), initialShown: e.count };
   }
   if (s === "reveal-5") {
     // the sealed entry (#0097–#0101), opened with "Reveal 5 tickets"

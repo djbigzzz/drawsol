@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useActions, useDrawSol, type RevealSession } from "@/hooks/context";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { phaseOf, tierAmount } from "@/lib/derive";
@@ -44,22 +44,61 @@ const LOSE_BEAT = 330;
 const FIRST_BEAT = 450;
 const END_BEAT = 250;
 
-/** Measures the strip so up to 10 stubs fit per row (88–100px each). */
-function useStripLayout(count: number) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [w, setW] = useState(1000);
-  useLayoutEffect(() => {
-    const el = ref.current;
+/**
+ * Measures the main column with a callback ref, so the observer attaches whenever the strip mounts
+ * (the sheet first renders with no session, so a mount-time effect would never see the element).
+ */
+function useColumnWidth() {
+  const [w, setW] = useState(0);
+  const ro = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((el: HTMLDivElement | null) => {
+    ro.current?.disconnect();
+    ro.current = null;
     if (!el) return;
     const set = () => setW(Math.floor(el.getBoundingClientRect().width));
     set();
-    const ro = new ResizeObserver(set);
-    ro.observe(el);
-    return () => ro.disconnect();
+    ro.current = new ResizeObserver(set);
+    ro.current.observe(el);
   }, []);
-  const perRow = Math.max(1, Math.min(10, count, Math.floor(w / 88)));
+  useEffect(() => () => ro.current?.disconnect(), []);
+  return { ref, w };
+}
+
+/**
+ * Up to 10 stubs per row at 88–100px each. A purchase of 10 or fewer that can't sit on one row is
+ * split into even rows (5 + 5, not 8 + 2); longer purchases run in rows of as many as fit.
+ */
+function stripLayout(w: number, count: number) {
+  const fit = Math.max(1, Math.min(10, count, Math.floor(w / 88)));
+  const perRow = count <= 10 ? Math.ceil(count / Math.ceil(count / fit)) : fit;
   const stubW = Math.min(100, Math.floor(w / perRow));
-  return { ref, perRow, stubW };
+  return { perRow, stubW };
+}
+
+/**
+ * The reveal total's size from the main column's width (the end layout is chosen by the same width
+ * with a container query in globals.css): [total | detail ≥ 272 | PAID 144] with 48px gaps from 900px,
+ * else the total and the stamp share a row and the winners sentence sets underneath.
+ */
+function totalFit(w: number, mobile: boolean, short: boolean): { size: number; maxW?: number } {
+  // short screens (a 1366×768 laptop, an iPad in landscape, an iPhone SE) step the figure down, so the
+  // total, the payout link and "Buy more tickets" can share the first screen with the strip
+  if (mobile) return { size: short ? 80 : 96 };
+  if (w >= 900) return { size: short ? 144 : 196, maxW: w - 48 - 272 - 48 - 144 };
+  return { size: 144, maxW: Math.max(160, w - 24 - 144) };
+}
+
+/** A media query as state (client only; false on the prerender). */
+function useMedia(q: string) {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia(q);
+    const set = () => setOn(mq.matches);
+    set();
+    mq.addEventListener?.("change", set);
+    return () => mq.removeEventListener?.("change", set);
+  }, [q]);
+  return on;
 }
 
 export function RevealSheet() {
@@ -74,7 +113,17 @@ export function RevealSheet() {
   const titleRef = useRef<HTMLHeadingElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const opener = useRef<HTMLElement | null>(null);
-  const strip = useStripLayout(s?.count ?? 10);
+  const col = useColumnWidth();
+  const colW = col.w || 1000;
+  const strip = stripLayout(colW, s?.count ?? 10);
+  // the same breakpoints as the short-screen blocks in globals.css
+  const shortScreen = useMedia(mobile ? "(max-height: 700px)" : "(max-height: 819px)");
+  const fit = totalFit(colW, mobile, shortScreen);
+  const slotRef = useRef<HTMLDivElement>(null);
+  const stripRef = useRef<HTMLDivElement>(null);
+  const actRef = useRef<HTMLDivElement>(null);
+  const userScrolled = useRef(false);
+  const scrolledDuring = useRef(false);
 
   const entryKey = s?.entry.toBase58();
   const hasTiers = !!s?.tiers;
@@ -87,6 +136,8 @@ export function RevealSheet() {
     setShown(start);
     setFinished(replays === 0 && s.initialShown !== undefined && s.initialShown >= s.count);
     setAnnounce("");
+    userScrolled.current = false;
+    scrolledDuring.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entryKey, replays]);
 
@@ -124,6 +175,52 @@ export function RevealSheet() {
     else setAnnounce(`All ${s.count} revealed. No instant wins this time.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finished]);
+
+  // The overlay follows the reveal on short screens, only ever downwards and never against the reader:
+  // once the first cover is off, just enough to bring the now-showing slot into view (never past the
+  // strip's top edge: the strip is the action); once it has ended, enough to show the total and the
+  // next step (never past 96px above the slot, so the total and the strip's lower edge stay in view).
+  useEffect(() => {
+    const box = boxRef.current;
+    if (!box) return;
+    const mark = () => (userScrolled.current = true);
+    const keys = (e: KeyboardEvent) => {
+      if (["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", " "].includes(e.key)) mark();
+    };
+    box.addEventListener("wheel", mark, { passive: true });
+    box.addEventListener("touchmove", mark, { passive: true });
+    box.addEventListener("keydown", keys);
+    return () => {
+      box.removeEventListener("wheel", mark);
+      box.removeEventListener("touchmove", mark);
+      box.removeEventListener("keydown", keys);
+    };
+  }, [entryKey]);
+  useEffect(() => {
+    if (!s || !hasTiers) return;
+    const during = !finished && shown > 0 && !scrolledDuring.current;
+    if (!during && !finished) return;
+    if (during) scrolledDuring.current = true;
+    const go = () => {
+      const box = boxRef.current;
+      const slot = slotRef.current;
+      if (!box || !slot || userScrolled.current) return;
+      const vh = window.innerHeight;
+      const top = box.getBoundingClientRect().top;
+      const target = finished ? ((actRef.current?.firstElementChild as HTMLElement | null) ?? slot) : slot;
+      const need = target.getBoundingClientRect().bottom - (vh - 16);
+      if (need <= 0) return;
+      const room = finished
+        ? slot.getBoundingClientRect().top - top - 96
+        : (stripRef.current?.getBoundingClientRect().top ?? top) - top - 8;
+      const by = Math.min(need + 8, Math.max(0, room));
+      if (by > 0) box.scrollBy({ top: by, behavior: reduced ? "auto" : "smooth" });
+    };
+    // after the end layout has set (the figure fits itself to the column in a layout effect)
+    const t = setTimeout(go, finished ? (reduced ? 0 : 120) : 60);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown > 0, finished, hasTiers, entryKey, replays]);
 
   // dialog: focus, Esc, focus trap, scroll lock; focus returns to whatever opened it
   useEffect(() => {
@@ -177,18 +274,28 @@ export function RevealSheet() {
   const price = d ? d.ticketPrice * BigInt(count) : null;
   const inkFor = (ticket: number) => (s.randomness && s.randomness.length ? ticketInk(s.randomness, ticket) : ticketInk(s.entry.toBytes(), ticket));
 
-  const status =
+  // Before any result is known, the slot says what's happening (with the busy dot) and the status row
+  // stays quiet, so the stage is said once, where the eye goes after the strip (DESIGN.md §5.6).
+  const waiting = !hasTiers && s.stage !== "failed";
+  const wait =
     s.stage === "confirming"
       ? "Confirming your purchase on devnet…"
       : s.stage === "vrf"
-        ? "Waiting for the randomness to land…"
+        ? "The covers come off as soon as ORAO’s randomness lands, usually about 2 s."
         : s.stage === "revealing"
           ? "Approve the reveal in your wallet. It pays any wins in the same transaction."
-          : s.stage === "failed"
-            ? "The covers stay on until the reveal goes through."
-            : finished
-              ? `All ${count} revealed`
-              : "Tearing off the covers, one at a time";
+          : "Reading the results from devnet…";
+  const status =
+    s.stage === "failed"
+      ? "The covers stay on until the reveal goes through."
+      : waiting
+        ? ""
+        : finished
+          ? `All ${count} revealed`
+          : "Tearing off the covers, one at a time";
+  const canRetry = !!retryEntry && !retryEntry.revealed && !retryEntry.isFree;
+  // the VRF timeout message already says the tickets are safe
+  const safeNote = s.stage === "failed" && !/safe/i.test(s.error?.message ?? "");
 
   // cumulative thresholds for the roll key
   const key = (() => {
@@ -201,7 +308,7 @@ export function RevealSheet() {
       parts.push({ under: cum, amt: sol(t.amount, 2, 4) });
     });
     if (!parts.length) return null;
-    return `A roll under ${cum} wins: ${parts.map((p, i) => `under ${p.under} pays ${p.amt}${i === 0 ? " SOL" : ""}`).join(", ")}. Each roll is sha256(randomness + ticket number), scaled to ${d.iwDenominator}.`;
+    return `Demo odds, boosted: a roll under ${cum} wins. Under ${parts.map((p, i) => `${p.under} pays ${p.amt}${i === 0 ? " SOL" : ""}`).join(", under ")}. Each roll is sha256(randomness + ticket number), scaled to ${d.iwDenominator}.`;
   })();
 
   const revealing = s.stage === "revealed" && hasTiers && !finished && shown < count;
@@ -220,26 +327,31 @@ export function RevealSheet() {
     s.vrfRequest && s.stage !== "confirming" ? <ProofLink account={s.vrfRequest}>Request</ProofLink> : null,
     s.revealTx ? <ProofLink tx={s.revealTx}>Reveal tx</ProofLink> : null,
   ];
-  const stepDetail = [
-    {
-      title: "Bought",
-      body: s.buyTx ? (
+  const bought = (
+    <>
+      {count} {plural(count, "ticket", "tickets")}
+      {price !== null && (
         <>
-          {count} {plural(count, "ticket", "tickets")}
-          {price !== null && <> · {sol(price, 2, 4)} SOL</>}
+          {" "}
+          · <span className="nw">{sol(price, 2, 4)} SOL</span>
         </>
-      ) : s.stage === "confirming" ? (
-        "confirming…"
-      ) : (
-        "Bought earlier"
-      ),
-    },
+      )}
+    </>
+  );
+  // `short` is the one-line form for short phones ("Bought · ORAO 1.8 s · Revealed & paid")
+  const stepDetail = [
+    s.buyTx || s.stage === "confirming"
+      ? { title: "Bought", short: "Bought", body: s.buyTx ? bought : "confirming…" }
+      : // a later reveal (from Your tickets): what was bought, not the word twice
+        { title: "Bought earlier", short: "Bought", body: bought },
     {
       title: "ORAO randomness",
+      short: s.vrfMs !== undefined ? `ORAO ${(s.vrfMs / 1000).toFixed(1)} s` : "ORAO",
       body: s.vrfMs !== undefined ? `landed in ${(s.vrfMs / 1000).toFixed(1)} s` : s.stage === "confirming" ? "after the purchase" : "waiting…",
     },
     {
       title: "Revealed & paid",
+      short: "Revealed & paid",
       body: "in one transaction",
     },
   ];
@@ -259,7 +371,7 @@ export function RevealSheet() {
           </div>
           <button type="button" className="tbtn" onClick={closeSession}>
             Back to the draw
-            <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true" style={{ display: "inline-block", marginLeft: 6 }}>
+            <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true" style={{ display: "inline-block", marginLeft: 8 }}>
               <path d="M2 2 8 8M8 2 2 8" stroke="currentColor" strokeWidth="1.6" fill="none" />
             </svg>
           </button>
@@ -282,6 +394,9 @@ export function RevealSheet() {
                 <li key={st.title} className={states[i] === "done" ? "done" : states[i] === "busy" ? "busy-s" : states[i]}>
                   <span className="mk" aria-hidden="true">
                     {states[i] === "done" ? <Check size={11} /> : states[i] === "busy" ? <Busy /> : i + 1}
+                  </span>
+                  <span className="txt-s" aria-hidden="true">
+                    {st.short}
                   </span>
                   <span className="txt">
                     <b>{st.title}</b>
@@ -311,7 +426,8 @@ export function RevealSheet() {
           </aside>
 
           <section className="rv-main" aria-label="Instant results">
-            <div className="rv-status">
+            {/* phones drop the "All 10 revealed" line once it's over, so the total and the next step fit */}
+            <div className={`rv-status ${finished && hasTiers ? "over" : ""}`}>
               <span className="t-voice">{status}</span>
               {/* during the reveal only; nothing on the right once it has ended */}
               {revealing && (
@@ -323,19 +439,19 @@ export function RevealSheet() {
 
             {s.stage === "failed" && s.error && (
               <div className="rv-fail">
-                <ErrorNote>
-                  {s.error.message}{" "}
-                  {retryEntry && !retryEntry.revealed && !retryEntry.isFree && (
-                    <button type="button" className="tbtn" onClick={() => reveal(retryEntry)}>
-                      Try the reveal again
-                    </button>
-                  )}
-                </ErrorNote>
+                <ErrorNote>{s.error.message}</ErrorNote>
               </div>
             )}
 
-            <div ref={strip.ref}>
-              <div className="rstrip" role="list" aria-label={`${count} ${plural(count, "ticket", "tickets")}`}>
+            <div ref={col.ref}>
+              <div
+                ref={stripRef}
+                className="rstrip"
+                role="list"
+                aria-label={`${count} ${plural(count, "ticket", "tickets")}`}
+                // rows break where the layout says (5 + 5), not wherever the flex line runs out
+                style={mobile ? undefined : { maxWidth: strip.perRow * strip.stubW }}
+              >
                 {(mobile ? [Array.from({ length: count }, (_, i) => i)] : rows).flatMap((row) =>
                   row.map((i, k) => {
                     const tier = tiers?.[i];
@@ -347,7 +463,7 @@ export function RevealSheet() {
                         amount={tier ? tierAmount(s, tier) : BigInt(0)}
                         shown={i < shown || (finished && hasTiers)}
                         roll={rolls ? rolls[i] : null}
-                        denom={d?.iwDenominator ?? 1000}
+                        denom={d ? d.iwDenominator : null}
                         ink={inkFor(s.firstTicket + i)}
                         rowFirst={k === 0}
                         rowLast={k === row.length - 1}
@@ -368,12 +484,14 @@ export function RevealSheet() {
               <i className="k2" />
             </div>
 
-            <div className="slot">
+            {/* 224px while the covers come off; once the reveal ends it grows to fit the end layout */}
+            {/* failed: the slot is empty and folds away, so the one next step comes up under the strip */}
+            <div className={`slot ${finished && hasTiers ? "done" : ""} ${s.stage === "failed" ? "failed" : ""}`} ref={slotRef}>
               {finished && hasTiers ? (
                 total > BigInt(0) ? (
                   <div className="end fin">
                     <div className="total-col">
-                      <MoneyTotal amount={sol(total, 2, 4)} mobile={mobile} />
+                      <MoneyTotal amount={sol(total, 2, 4)} mobile={mobile} size={fit.size} maxW={fit.maxW} />
                     </div>
                     <div className="detail t-body">
                       <p>
@@ -411,15 +529,15 @@ export function RevealSheet() {
                     </p>
                   </div>
                 )
-              ) : (
+              ) : waiting ? (
+                <p className="slot-wait t-voice" role="status">
+                  <Busy />
+                  <span>{wait}</span>
+                </p>
+              ) : !hasTiers || shown === 0 || nowTier === undefined ? null : (
                 <div>
                   <div className="now" key={`${nowIdx}-${shown}`}>
-                    {shown === 0 || nowTier === undefined ? (
-                      <>
-                        <span className="t-now dim">{ticketNo(s.firstTicket)}</span>
-                        <span className="t-voice big">sealed</span>
-                      </>
-                    ) : nowTier > 0 ? (
+                    {nowTier > 0 ? (
                       <>
                         <span className="t-now">{ticketNo(s.firstTicket + nowIdx)}</span>
                         <span className="t-now won">
@@ -441,7 +559,8 @@ export function RevealSheet() {
               )}
             </div>
 
-            <div className="rv-bottom">
+            {/* phones: the actions come before the receipt slip (globals.css), so the next step is in view */}
+            <div className={`rv-bottom ${finished && hasTiers ? "done" : ""}`}>
               <div className="slip receipt-slip">
                 <p className="t-label">Your receipt</p>
                 <ReceiptBars
@@ -457,9 +576,19 @@ export function RevealSheet() {
                   }
                 />
               </div>
-              <div>
-                <div className="rv-actions">
-                  {finished && hasTiers ? (
+              <div className="rv-act-col">
+                <div className="rv-actions" ref={actRef}>
+                  {s.stage === "failed" ? (
+                    canRetry ? (
+                      <button type="button" className="btn btn-56" onClick={() => reveal(retryEntry!)}>
+                        Try the reveal again
+                      </button>
+                    ) : (
+                      <button type="button" className="btn btn-56" onClick={closeSession}>
+                        Back to {n}
+                      </button>
+                    )
+                  ) : finished && hasTiers ? (
                     <>
                       {selling && (
                         <button
@@ -477,7 +606,15 @@ export function RevealSheet() {
                         Back to {n}
                       </button>
                       {!reduced && (
-                        <button type="button" className="tbtn" onClick={() => setReplays((r) => r + 1)}>
+                        <button
+                          type="button"
+                          className="tbtn"
+                          onClick={() => {
+                            // replay from the top: on a phone Replay sits below the fold
+                            boxRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                            setReplays((r) => r + 1);
+                          }}
+                        >
                           Replay
                         </button>
                       )}
@@ -485,6 +622,7 @@ export function RevealSheet() {
                   ) : null}
                 </div>
                 <div className="rv-notes t-fine">
+                  {safeNote && <p className="c-ink-2">Your tickets are safe; you can reveal them later from Your tickets.</p>}
                   <p>
                     All {count} {plural(count, "ticket stays", "tickets stay")} in the grand draw{d ? <> for <span className="nw">{sol(d.prizeLamports, 0, 4)} SOL</span></> : ""}
                     {d ? (

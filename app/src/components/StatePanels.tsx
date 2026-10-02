@@ -83,12 +83,6 @@ export function NoDraw({ reason }: { reason: "no-program" | "no-config" | "no-dr
             <p className="t-body c-ink-2" style={{ marginTop: 16, maxWidth: "34em" }}>
               {copy} When one opens, its prize is locked in the vault before the first ticket sells, and this page shows it straight from the chain.
             </p>
-            <div style={{ marginTop: 32, display: "flex", flexWrap: "wrap", gap: 24, alignItems: "center" }}>
-              <a className="btn btn-sec" href={SOURCE_URL} target="_blank" rel="noopener noreferrer">
-                Read the source
-              </a>
-              <ProofLink account={PROGRAM_ID}>Program on Solscan</ProofLink>
-            </div>
           </div>
           <div>
             <p className="t-label">Every draw promises</p>
@@ -98,6 +92,13 @@ export function NoDraw({ reason }: { reason: "no-program" | "no-config" | "no-dr
               <li>Nobody chooses the randomness (ORAO VRF).</li>
               <li>Anyone can run and settle it.</li>
             </ul>
+            {/* list first, then the link and the (secondary) button: nothing outweighs the heading */}
+            <div className="nodraw-act">
+              <a className="btn btn-sec" href={SOURCE_URL} target="_blank" rel="noopener noreferrer">
+                Read the source
+              </a>
+              <ProofLink account={PROGRAM_ID}>Program on Solscan</ProofLink>
+            </div>
           </div>
         </div>
       </section>

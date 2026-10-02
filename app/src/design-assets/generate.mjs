@@ -19,7 +19,9 @@ const svg = (w, h, body, label) =>
  *    and 2x and the screen cannot beat against the pixel grid (no moiré).
  *    Render at 1:1 only (CSS width = viewBox width). Never scale it.
  * ------------------------------------------------------------------ */
-export function sunDots(width, { pitch = 4, rMax = 2.6, rMin = 0.9 } = {}) { // near-touching core, printed floor at the rim (d2 review)
+// Density is nearly flat and softens only in the outer rim, so what shows above the figures
+// (d ≈ .75–1) prints as a solid red object (d4 review): r = min(2.7, 1.7 + 1.05 × (1 − d⁸)).
+export function sunDots(width, { pitch = 4, rMax = 2.7, rRim = 1.7, swell = 1.05 } = {}) {
   const R = width / 2, cx = width / 2, cy = R; // centre on the horizon (bottom edge)
   const dots = [];
   for (let m = 0; m * pitch <= R; m++) {
@@ -29,15 +31,16 @@ export function sunDots(width, { pitch = 4, rMax = 2.6, rMin = 0.9 } = {}) { // 
       if (y > cy) continue;
       const d = Math.hypot(x - cx, y - cy) / R;
       if (d > 1) continue;
-      const r = rMin + (rMax - rMin) * (1 - d * d); // denser at the core, never below rMin at the rim
-      if (r < rMin) continue;
+      const r = Math.min(rMax, rRim + swell * (1 - d ** 8));
       dots.push([x, y, Math.round(r * 100) / 100]);
     }
   }
   return dots;
 }
-function sunSvg(width) {
-  const dots = sunDots(width);
+// from 761px the rim floor is heavier (more of the rim shows above the figure); phones keep the defaults
+const WIDE_SUN = { rRim: 1.9, swell: 0.85 };
+function sunSvg(width, opts) {
+  const dots = sunDots(width, opts);
   const body = `<g fill="${RED}">${dots.map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}"/>`).join("")}</g>`;
   return svg(width, width / 2, body);
 }
@@ -129,8 +132,8 @@ export function stampPrint(b, baseAngle) {
 const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
 const mine = [...range(31, 40), 59, ...range(97, 101)];
 
-writeFileSync(join(here, "sun-440.svg"), sunSvg(440));
-writeFileSync(join(here, "sun-280.svg"), sunSvg(280));
+writeFileSync(join(here, "sun-440.svg"), sunSvg(440, WIDE_SUN));
+writeFileSync(join(here, "sun-280.svg"), sunSvg(280, WIDE_SUN));
 
 const open = barcode({ slots: 152, taken: 102, free: [41, 59], mine, width: 576 });
 writeFileSync(join(here, "barcode-open.svg"), svg(open.w, open.h, open.body,

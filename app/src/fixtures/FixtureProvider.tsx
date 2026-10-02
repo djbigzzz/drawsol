@@ -53,6 +53,7 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
     wallet: fx.wallet,
     player: fx.player,
     myEntries: fx.mine,
+    myState: "ready",
     drawRandomness: fx.drawRandomness,
     costs: { oraoFee: BigInt(500_000), entryRent: BigInt(2_276_160), playerRent: BigInt(1_545_600) },
     now,
@@ -97,10 +98,25 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
   );
 }
 
+const CODES: Record<string, string> = {
+  open: "op",
+  confirm: "cf",
+  due: "du",
+  drawing: "dr",
+  settled: "st",
+  cancelled: "cx",
+  nodraw: "nd",
+  reveal: "rv",
+  loading: "ld",
+  error: "er",
+  empty: "em",
+};
+
 /** Sits inside the devnet strip's right end (z 101), never over page content. */
 function FxBadge({ name }: { name: string }) {
-  // at 360px and below a 2–3 letter code ("Fx rd"), so the honesty marker beside it is never covered
-  const code = name.includes("-") ? name.split("-").map((p) => p[0]).join("") : name.slice(0, 3);
+  // at 360px and below a 2–3 letter code ("Fx rd"), so the honesty marker beside it is never covered;
+  // single words get a fixed code (slicing "open" to "ope" read as a typo), hyphenated ones their initials
+  const code = CODES[name] ?? (name.includes("-") ? name.split("-").map((p) => p[0]).join("") : name.slice(0, 2));
   return (
     <div
       role="note"

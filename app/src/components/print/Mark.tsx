@@ -17,19 +17,21 @@ export function Mark({ className = "" }: { className?: string }) {
           <rect key={`p${y}`} x="29" y={y} width="1" height="2" />
         ))}
       </g>
-      <rect x="24" y="1" width="2" height="22" fill="#DE3F2B" />
+      <rect x="23" y="1" width="3" height="22" fill="#DE3F2B" />
     </svg>
   );
 }
 
-/** [x, width] of the knocked-out bars: 1/2/1/3/1/1, packed asymmetrically. */
+/**
+ * [x, width] of the knocked-out bars: 1/2/1/3 with uneven gaps, so they read as a barcode, not a fence.
+ * Nothing is knocked out next to the red bar: it has solid ink on both sides (x 19–23 and 26–29), so at
+ * 20px it is still a 2px bar, not a pink hairline.
+ */
 const BARS: [number, number][] = [
-  [6, 1],
-  [8, 2],
-  [11, 1],
-  [14, 3],
-  [18, 1],
-  [21, 1],
+  [7, 1],
+  [9, 2],
+  [13, 1],
+  [16, 3],
 ];
 
 /** The lower line of the ticket head's double rule: the program ID, printed at 4px. Zoom in to read it. */
@@ -45,11 +47,16 @@ export function Microtext() {
   );
 }
 
-/** "DEVNET SPECIMEN · NO CASH VALUE", overprinted in blue along the perforation (the strip is the accessible marker). */
+/**
+ * "DEVNET SPECIMEN · PLAY MONEY · NO CASH VALUE", overprinted in blue along the perforation (the strip is
+ * the accessible marker). Phones' horizontal line (~326px) drops "play money" (the strip above says it),
+ * and below 360px "no cash value" too (DESIGN.md §4.7).
+ */
 export function Specimen() {
   return (
     <p className="specimen t-specimen" aria-hidden="true">
-      Devnet specimen<span className="sp-more"> · no cash value</span>
+      Devnet specimen<span className="sp-play"> · play money</span>
+      <span className="sp-more"> · no cash value</span>
     </p>
   );
 }

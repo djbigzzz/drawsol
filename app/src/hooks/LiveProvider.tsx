@@ -51,7 +51,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const { draw: current, vault, failures } = useDraw(program, listed);
   const { entries, state: entriesState } = useEntries(program, current, nonce);
   const pk = walletCtx.publicKey;
-  const { myEntries, player } = useMyEntries(program, current, pk, nonce);
+  const { myEntries, player, state: myState } = useMyEntries(program, current, pk, nonce);
   const balance = useBalance(connection, pk, nonce);
   const drawRandomness = useRandomness(
     connection,
@@ -115,6 +115,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     wallet: pk ? { address: pk, balance } : null,
     player,
     myEntries,
+    myState,
     drawRandomness,
     costs,
     now,
