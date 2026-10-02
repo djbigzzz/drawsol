@@ -16,6 +16,22 @@
       "vrf_request": "CyKPa54QHFANXf8P6EsYHxrW4xGkzaKWzfQGBeeafBhF"
     }
   ],
+  "draw_seed_v3": [
+    {
+      "client_nonce": "07070707070707070707070707070707",
+      "draw": "AMuDLgQRDyKWqL1G7cEbT6Di6ehH1afrXjURkhfTPjwN",
+      "next_ticket": 1,
+      "seed": "45410fd2bfbd1840fe8177434ed529ef2c05196c770362ba0869af28dc49718f",
+      "vrf_request": "7BJD19SeCNasF4NwEFZSLRzJLvzvgsHKjNkjLnrUKaKQ"
+    },
+    {
+      "client_nonce": "66656463626139383736353433323130",
+      "draw": "EjTsN5ckb7zyyT8vvKJgsP5cLCaZ8eSXuGGZwqwwEBeL",
+      "next_ticket": 300,
+      "seed": "9e55ca8f22d9d15852daa3bb25c2d0d36e06ade2d3ee63c1ed6d3831360f40b6",
+      "vrf_request": "3J2rDpR1LoKvD9a1UUCX1Ki3xpfFTrpFFECpiLvXCn4S"
+    }
+  ],
   "entry_seed": [
     {
       "buyer": "E54td9UdkjvA8dN1FBC8d6Mfs4sKmVPGXHiyYesN2CJU",
@@ -42,6 +58,32 @@
       "vrf_request": "FvwUJYnsFctKEW4wNyH8JtndXZvh6wePp8sHVM5DRsmL"
     }
   ],
+  "entry_seed_v3": [
+    {
+      "buyer": "E54td9UdkjvA8dN1FBC8d6Mfs4sKmVPGXHiyYesN2CJU",
+      "client_nonce": "00000000000000000000000000000000",
+      "draw": "AMuDLgQRDyKWqL1G7cEbT6Di6ehH1afrXjURkhfTPjwN",
+      "seed": "02d0eba55bdf01d9cd1307061ba67dbf2b7cbfff321c458196146e8463c22a87",
+      "seq": 0,
+      "vrf_request": "F59wEjHvEbF8MNGLkUP2aB4LHxAmq5QFdqhQzhnUAY6A"
+    },
+    {
+      "buyer": "44EQD2WcreEEh6CK24KpzcntBRrzPvhraKmmFZEEVKyQ",
+      "client_nonce": "abababababababababababababababab",
+      "draw": "EjTsN5ckb7zyyT8vvKJgsP5cLCaZ8eSXuGGZwqwwEBeL",
+      "seed": "517399b18232195a994b3e2ad46972f6537fa645df3ac1bf5884be8f785e8e12",
+      "seq": 1,
+      "vrf_request": "FM7raWxeSLYaYUDZ64RzgT7Vu5heu5y5hSiuCVXXAVav"
+    },
+    {
+      "buyer": "BaLb4omR2Sn4Qr1BRS2McGrAGHPPQVBi3V52y9jgWofS",
+      "client_nonce": "30313233343536373839616263646566",
+      "draw": "CM4aFTA7uVXNSSt5VTJ7hQPWRSV39WL8ejufLaF1er8i",
+      "seed": "4acb8afbaa09d1e77f43f81b9596fe7673aacc42b4ea0157f1cde1745843afc6",
+      "seq": 4000000000,
+      "vrf_request": "HbUWk8Ng6msV9sRnhv8QqTjXQ7RSNNnawFG9GfAwMcWp"
+    }
+  ],
   "functions": {
     "draw_vrf_seed": "sha256('drawsol:v2:draw' || draw || next_ticket_le_u32 || client_nonce[16])",
     "entry_vrf_seed": "sha256('drawsol:v2:entry' || draw || buyer || seq_le_u32 || client_nonce[16])",
@@ -50,6 +92,12 @@
     "vrf_request": "PDA(['orao-vrf-randomness-request', seed], ORAO)",
     "winning_ticket": "(u64_le(sha256(randomness64 || 'draw')[0..8]) * next_ticket) >> 64",
     "x": "(roll * denominator) >> 64"
+  },
+  "functions_v3": {
+    "draw_vrf_seed": "sha256('drawsol:v3:draw' || draw || next_ticket_le_u32 || client_nonce[16])",
+    "entry_vrf_seed": "sha256('drawsol:v3:entry' || draw || buyer || seq_le_u32 || client_nonce[16])",
+    "pdas": "config ['config']; draw ['draw3', id_le_u64]; vault ['vault3', draw]; entry ['entry3', draw, seq_le_u32]; player ['player3', draw, wallet]; profile ['profile', wallet]",
+    "ticket_roll / x / tier / winning_ticket": "unchanged from v2 (tier uses only each tier's odds)"
   },
   "orao_program_id": "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y",
   "pdas": {
@@ -63,6 +111,22 @@
       "wallet": "E54td9UdkjvA8dN1FBC8d6Mfs4sKmVPGXHiyYesN2CJU"
     },
     "vault_of_draw_0": "c77cm1FShDvGsyJan8jzKViAT6TzW3Y3Xt7ZXFx7Gsr"
+  },
+  "pdas_v3": {
+    "config": "4VeD5PtuXrAWUjJ23g4PuavyhWpL9PAT5yzhXRPF5T29",
+    "draw_2": "AMuDLgQRDyKWqL1G7cEbT6Di6ehH1afrXjURkhfTPjwN",
+    "draw_3": "EjTsN5ckb7zyyT8vvKJgsP5cLCaZ8eSXuGGZwqwwEBeL",
+    "entry_0_of_draw_2": "H1xCiS9TcNocGLy71wk9Czt49QhKaA4kyScsenXJR2e5",
+    "entry_7_of_draw_2": "CympM6MLRzBu9A5bEYfUAyMDapuRW4HpCHDAt9cXSJUb",
+    "player_of_draw_2": {
+      "player": "6yGon9aRcWEdo91cmEf2SzGEfXVnPZ8Lm94aBeRvJBjj",
+      "wallet": "E54td9UdkjvA8dN1FBC8d6Mfs4sKmVPGXHiyYesN2CJU"
+    },
+    "profile": {
+      "profile": "961Qz835bEbYTixEfUw3TXcrpM7CQcNwFvG2nxowF7eJ",
+      "wallet": "E54td9UdkjvA8dN1FBC8d6Mfs4sKmVPGXHiyYesN2CJU"
+    },
+    "vault_of_draw_2": "8Y5DDTtrvnkP3Kqu8BzhcMWq1r6rVxQFit7Kiocrc8tL"
   },
   "program_id": "FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb",
   "ticket_tier": [

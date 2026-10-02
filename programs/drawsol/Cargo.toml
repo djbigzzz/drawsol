@@ -1,7 +1,7 @@
 [package]
 name = "drawsol"
-version = "2.0.0"
-description = "DrawSol v2 - escrowed prize draw with ORAO VRF instant wins"
+version = "3.0.0"
+description = "DrawSol v3 - pot and headline prize draws with ORAO VRF instant wins"
 edition = "2021"
 # Load-bearing: lets the resolver pick crate versions that platform-tools v1.43 (cargo 1.79) can parse.
 rust-version = "1.79"

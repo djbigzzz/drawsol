@@ -1,4 +1,4 @@
-//! Shared LiteSVM harness for the DrawSol v2 program.
+//! Shared LiteSVM harness for the DrawSol v3 program.
 //!
 //! - drawsol is deployed as a real **upgradeable** program (Program + ProgramData accounts written with
 //!   `set_account`) so `init_config`'s upgrade-authority check runs exactly as on chain.
@@ -9,12 +9,13 @@
 
 use anchor_lang::{
     prelude::Pubkey,
-    solana_program::{bpf_loader_upgradeable, clock::Clock, instruction::Instruction, system_program},
+    solana_program::{bpf_loader_upgradeable, clock::Clock, instruction::Instruction, system_instruction, system_program},
     AccountDeserialize, Discriminator, InstructionData, ToAccountMetas,
 };
 use drawsol::{
-    instructions::CreateDrawParams,
-    state::{Config, Draw, Entry, IwTier, Player},
+    constants::*,
+    instructions::{CommonDrawParams, HeadlineDrawParams, PotDrawParams},
+    state::{Config, DrawV3, EntryV3, IwTierV3, PlayerV3, Profile},
 };
 use litesvm::LiteSVM;
 use orao_solana_vrf::state::{NetworkState, RandomnessV2};
@@ -26,10 +27,13 @@ use solana_transaction::Transaction;
 
 pub const ROOT: &str = env!("CARGO_MANIFEST_DIR");
 pub const SOL: u64 = 1_000_000_000;
+pub const CENT: u64 = SOL / 100;
 /// Start of simulated time.
 pub const T0: i64 = 1_800_000_000;
+pub const MIN: i64 = 60;
 pub const HOUR: i64 = 3600;
 pub const DAY: i64 = 86400;
+pub const CLOSE: i64 = T0 + 2 * HOUR;
 
 pub fn fixture(name: &str) -> String {
     format!("{ROOT}/fixtures/{name}")
@@ -42,56 +46,114 @@ pub fn config_pda() -> Pubkey {
     pda(&[b"config"])
 }
 pub fn draw_pda(id: u64) -> Pubkey {
-    pda(&[b"draw", &id.to_le_bytes()])
+    pda(&[b"draw3", &id.to_le_bytes()])
 }
 pub fn vault_pda(draw: &Pubkey) -> Pubkey {
-    pda(&[b"vault", draw.as_ref()])
+    pda(&[b"vault3", draw.as_ref()])
 }
 pub fn player_pda(draw: &Pubkey, wallet: &Pubkey) -> Pubkey {
-    pda(&[b"player", draw.as_ref(), wallet.as_ref()])
+    pda(&[b"player3", draw.as_ref(), wallet.as_ref()])
 }
 pub fn entry_pda(draw: &Pubkey, seq: u32) -> Pubkey {
-    pda(&[b"entry", draw.as_ref(), &seq.to_le_bytes()])
+    pda(&[b"entry3", draw.as_ref(), &seq.to_le_bytes()])
+}
+pub fn profile_pda(wallet: &Pubkey) -> Pubkey {
+    pda(&[b"profile", wallet.as_ref()])
+}
+pub fn legacy_draw_pda(id: u64) -> Pubkey {
+    pda(&[b"draw", &id.to_le_bytes()])
+}
+pub fn legacy_vault_pda(draw: &Pubkey) -> Pubkey {
+    pda(&[b"vault", draw.as_ref()])
 }
 pub fn programdata_pda(program: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[program.as_ref()], &bpf_loader_upgradeable::ID).0
 }
 
-/// Devnet demo preset (SPEC §3): 1 SOL prize, 0.01 SOL tickets, 150 cap, 25/50 limits, 15 free,
-/// tiers 0.2 SOL×10, 0.05 SOL×40, 0.01 SOL×150 per 1000, 2 SOL reserve.
-pub fn demo_params(closes_at: i64) -> CreateDrawParams {
-    CreateDrawParams {
-        ticket_price: SOL / 100,
-        ticket_cap: 150,
+pub fn sol_share(odds: u32, bps: u32) -> IwTierV3 {
+    IwTierV3 { odds, kind: TIER_SOL_SHARE, value: bps }
+}
+pub fn credits_tier(odds: u32, credits: u32) -> IwTierV3 {
+    IwTierV3 { odds, kind: TIER_CREDITS, value: credits }
+}
+pub const NO_TIER: IwTierV3 = IwTierV3 { odds: 0, kind: 0, value: 0 };
+
+pub fn common(closes_at: i64, cap: u32) -> CommonDrawParams {
+    CommonDrawParams {
+        ticket_price: CENT,
+        ticket_cap: cap,
         max_per_tx: 25,
         max_per_wallet: 50,
         free_cap: 15,
         closes_at,
-        prize_lamports: SOL,
-        iw_reserve_lamports: 2 * SOL,
-        iw_denominator: 1000,
-        iw_tiers: [
-            IwTier { amount: SOL / 5, odds: 10 },
-            IwTier { amount: SOL / 20, odds: 40 },
-            IwTier { amount: SOL / 100, odds: 150 },
-            IwTier { amount: 0, odds: 0 },
-        ],
+        draw_at: closes_at,
+        public_grace_secs: 30 * MIN as u32,
+        house_bps: 5500,
         terms_hash: [7u8; 32],
     }
 }
 
-/// Expected reveal result recomputed with the same public functions the program uses.
-pub fn expected_reveal(rnd: &[u8; 64], d: &Draw, e: &Entry) -> ([u8; 25], u64) {
+/// SPEC-v3 §3 devnet nightly pot draw: 0.01 SOL, cap 300, 5500/3500/1000, 25/50, free 15, grace 30 min,
+/// tiers /1000: 15 × 20% of snapshot, 60 × 4%, 150 × 1 credit.
+pub fn pot_params(closes_at: i64) -> PotDrawParams {
+    PotDrawParams {
+        common: common(closes_at, 300),
+        pot_bps: 3500,
+        instant_bps: 1000,
+        iw_denominator: 1000,
+        iw_tiers: [sol_share(15, 2000), sol_share(60, 400), credits_tier(150, 1), NO_TIER],
+    }
+}
+
+/// SPEC-v3 §3 devnet weekly headline draw: prize 1 SOL, 0.01 SOL, cap 230, min 120, margin 20%.
+pub fn headline_params(closes_at: i64) -> HeadlineDrawParams {
+    HeadlineDrawParams { common: common(closes_at, 230), prize_lamports: SOL, min_tickets: 120, floor_margin_bps: 2000 }
+}
+
+/// Expected reveal recomputed with the program's public fairness function: (tiers, owed SOL, credits).
+pub fn expected_reveal(rnd: &[u8; 64], d: &DrawV3, e: &EntryV3) -> ([u8; 25], u64, u32) {
     let mut tiers = [0u8; 25];
-    let mut total = 0u64;
+    let (mut owed, mut credits) = (0u64, 0u32);
     for i in 0..e.count as u32 {
-        let t = drawsol::fairness::ticket_tier(rnd, e.first_ticket + i, d.iw_denominator, &d.iw_tiers);
+        let t = drawsol::fairness::ticket_tier(rnd, e.first_ticket + i, d.iw_denominator, &d.tier_odds());
         tiers[i as usize] = t;
         if t > 0 {
-            total += d.iw_tiers[t as usize - 1].amount;
+            let tier = d.iw_tiers[t as usize - 1];
+            match tier.kind {
+                TIER_SOL_SHARE => owed += (e.pool_snapshot as u128 * tier.value as u128 / 10_000) as u64,
+                TIER_CREDITS => credits += tier.value,
+                _ => {}
+            }
         }
     }
-    (tiers, total)
+    (tiers, owed, credits)
+}
+
+/// Deterministic search for randomness whose recomputed instant result satisfies `pred(owed, credits)`.
+pub fn find_randomness(d: &DrawV3, e: &EntryV3, pred: impl Fn(u64, u32) -> bool) -> [u8; 64] {
+    for k in 0u32..200_000 {
+        let mut rnd = [0u8; 64];
+        rnd[..4].copy_from_slice(&k.to_le_bytes());
+        rnd[4..].fill(0xA5);
+        let (_, owed, credits) = expected_reveal(&rnd, d, e);
+        if pred(owed, credits) {
+            return rnd;
+        }
+    }
+    panic!("no randomness found");
+}
+
+/// Randomness whose grand-draw winning ticket satisfies `pred`.
+pub fn find_draw_randomness(next_ticket: u32, pred: impl Fn(u32) -> bool) -> [u8; 64] {
+    for k in 0u32..100_000 {
+        let mut rnd = [0u8; 64];
+        rnd[..4].copy_from_slice(&k.to_le_bytes());
+        rnd[4..].fill(0x5A);
+        if pred(drawsol::fairness::winning_ticket(&rnd, next_ticket)) {
+            return rnd;
+        }
+    }
+    panic!("no draw randomness found");
 }
 
 pub struct TxOk {
@@ -99,10 +161,17 @@ pub struct TxOk {
     pub logs: Vec<String>,
 }
 
+pub struct Bought {
+    pub entry: Pubkey,
+    /// ORAO request (None for entries without an instant roll)
+    pub req: Option<Pubkey>,
+}
+
 pub struct Env {
     pub svm: LiteSVM,
     /// Upgrade authority of the program and (after init_config) the admin.
     pub admin: Keypair,
+    pub keeper: Keypair,
     /// Neutral fee payer so balance assertions on participants are exact.
     pub cranker: Keypair,
     pub vrf_config: Pubkey,
@@ -112,11 +181,14 @@ pub struct Env {
 }
 
 impl Env {
-    pub fn new() -> Self {
+    /// Program deployed, Config NOT initialised.
+    pub fn bare() -> Self {
         let mut svm = LiteSVM::new();
         let admin = Keypair::new();
+        let keeper = Keypair::new();
         let cranker = Keypair::new();
         svm.airdrop(&admin.pubkey(), 1_000 * SOL).unwrap();
+        svm.airdrop(&keeper.pubkey(), 10 * SOL).unwrap();
         svm.airdrop(&cranker.pubkey(), 100 * SOL).unwrap();
 
         let elf = std::fs::read(format!("{ROOT}/../target/deploy/drawsol.so"))
@@ -125,9 +197,7 @@ impl Env {
         svm.add_program_from_file(orao_solana_vrf::ID, fixture("orao_vrf.so")).unwrap();
 
         // ORAO network state, cloned from devnet (getAccountInfo JSON).
-        let ns_json = std::fs::read_to_string(fixture("network_state.json")).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&ns_json).unwrap();
-        let ns_data = base64_decode(v["result"]["value"]["data"][0].as_str().unwrap());
+        let ns_data = rpc_fixture_data("network_state.json");
         let ns = NetworkState::try_deserialize(&mut &ns_data[..]).unwrap();
         let vrf_config = orao_solana_vrf::network_state_account_address(&orao_solana_vrf::ID);
         let lamports = svm.minimum_balance_for_rent_exemption(ns_data.len());
@@ -142,6 +212,7 @@ impl Env {
         let mut env = Env {
             svm,
             admin,
+            keeper,
             cranker,
             vrf_config,
             treasury,
@@ -152,11 +223,22 @@ impl Env {
         env
     }
 
-    /// Env with Config initialised and draw 0 created from `params`.
-    pub fn with_draw(params: CreateDrawParams) -> (Self, Pubkey) {
-        let mut env = Env::new();
+    /// Program deployed and Config initialised with `keeper`.
+    pub fn new() -> Self {
+        let mut env = Env::bare();
         env.init_config().unwrap();
-        let draw = env.create_draw(params).unwrap();
+        env
+    }
+
+    pub fn with_pot(params: PotDrawParams) -> (Self, Pubkey) {
+        let mut env = Env::new();
+        let draw = env.create_pot(params).unwrap();
+        (env, draw)
+    }
+
+    pub fn with_headline(params: HeadlineDrawParams) -> (Self, Pubkey) {
+        let mut env = Env::new();
+        let draw = env.create_headline(params).unwrap();
         (env, draw)
     }
 
@@ -201,6 +283,18 @@ impl Env {
         }
     }
 
+    /// Sends `ix` paid for by the neutral cranker.
+    pub fn crank(&mut self, ix: Instruction) -> Result<TxOk, String> {
+        let c = self.cranker.insecure_clone();
+        self.send(&[ix], &[&c])
+    }
+
+    /// Plain SOL transfer (e.g. topping up a vault).
+    pub fn transfer(&mut self, from: &Keypair, to: &Pubkey, lamports: u64) {
+        let ix = system_instruction::transfer(&from.pubkey(), to, lamports);
+        self.send(&[ix], &[from]).unwrap();
+    }
+
     pub fn balance(&self, k: &Pubkey) -> u64 {
         self.svm.get_account(k).map(|a| a.lamports).unwrap_or(0)
     }
@@ -210,21 +304,28 @@ impl Env {
     pub fn vault_rent(&self) -> u64 {
         self.rent(8)
     }
-    fn load<T: AccountDeserialize>(&self, k: &Pubkey) -> T {
+    /// Vault balance above rent.
+    pub fn vault_free(&self, draw: &Pubkey) -> u64 {
+        self.balance(&vault_pda(draw)) - self.vault_rent()
+    }
+    pub fn load<T: AccountDeserialize>(&self, k: &Pubkey) -> T {
         let acc = self.svm.get_account(k).unwrap_or_else(|| panic!("account {k} missing"));
         T::try_deserialize(&mut &acc.data[..]).unwrap()
     }
     pub fn config(&self) -> Config {
         self.load(&config_pda())
     }
-    pub fn draw(&self, k: &Pubkey) -> Draw {
+    pub fn draw(&self, k: &Pubkey) -> DrawV3 {
         self.load(k)
     }
-    pub fn entry(&self, k: &Pubkey) -> Entry {
+    pub fn entry(&self, k: &Pubkey) -> EntryV3 {
         self.load(k)
     }
-    pub fn player(&self, k: &Pubkey) -> Player {
-        self.load(k)
+    pub fn player(&self, draw: &Pubkey, wallet: &Pubkey) -> PlayerV3 {
+        self.load(&player_pda(draw, wallet))
+    }
+    pub fn profile(&self, wallet: &Pubkey) -> Profile {
+        self.load(&profile_pda(wallet))
     }
 
     /// Overwrites a pending ORAO request with its fulfilled form (what FulfillV2 leaves on chain).
@@ -259,9 +360,9 @@ impl Env {
             .unwrap();
     }
 
-    // ------------------------------------------------------------------ instruction builders
+    // ------------------------------------------------------------------ config
 
-    pub fn ix_init_config(&self, signer: &Pubkey, program_data: Pubkey) -> Instruction {
+    pub fn ix_init_config(&self, signer: &Pubkey, program_data: Pubkey, keeper: Pubkey) -> Instruction {
         Instruction {
             program_id: drawsol::ID,
             accounts: drawsol::accounts::InitConfig {
@@ -272,58 +373,117 @@ impl Env {
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
-            data: drawsol::instruction::InitConfig {}.data(),
+            data: drawsol::instruction::InitConfig { keeper }.data(),
         }
     }
 
     pub fn init_config(&mut self) -> Result<TxOk, String> {
-        let ix = self.ix_init_config(&self.admin.pubkey(), programdata_pda(&drawsol::ID));
+        let ix = self.ix_init_config(&self.admin.pubkey(), programdata_pda(&drawsol::ID), self.keeper.pubkey());
         let admin = self.admin.insecure_clone();
         self.send(&[ix], &[&admin])
     }
 
-    pub fn ix_create_draw(&self, signer: &Pubkey, id: u64, params: CreateDrawParams) -> Instruction {
-        let draw = draw_pda(id);
+    pub fn ix_migrate_config(&self, signer: &Pubkey, keeper: Pubkey) -> Instruction {
         Instruction {
             program_id: drawsol::ID,
-            accounts: drawsol::accounts::CreateDraw {
+            accounts: drawsol::accounts::MigrateConfig {
                 config: config_pda(),
-                draw,
-                vault: vault_pda(&draw),
                 admin: *signer,
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
-            data: drawsol::instruction::CreateDraw { params }.data(),
+            data: drawsol::instruction::MigrateConfig { keeper }.data(),
         }
     }
 
-    pub fn create_draw(&mut self, params: CreateDrawParams) -> Result<Pubkey, String> {
+    pub fn ix_set_keeper(&self, signer: &Pubkey, keeper: Pubkey) -> Instruction {
+        Instruction {
+            program_id: drawsol::ID,
+            accounts: drawsol::accounts::SetKeeper { config: config_pda(), admin: *signer }.to_account_metas(None),
+            data: drawsol::instruction::SetKeeper { keeper }.data(),
+        }
+    }
+
+    // ------------------------------------------------------------------ creation
+
+    pub fn ix_create_pot(&self, creator: &Pubkey, id: u64, params: PotDrawParams) -> Instruction {
+        let draw = draw_pda(id);
+        Instruction {
+            program_id: drawsol::ID,
+            accounts: drawsol::accounts::CreatePotDraw {
+                config: config_pda(),
+                draw,
+                vault: vault_pda(&draw),
+                creator: *creator,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            data: drawsol::instruction::CreatePotDraw { params }.data(),
+        }
+    }
+
+    pub fn create_pot_as(&mut self, creator: &Keypair, params: PotDrawParams) -> Result<Pubkey, String> {
         let id = self.config().next_draw_id;
-        let ix = self.ix_create_draw(&self.admin.pubkey(), id, params);
+        let ix = self.ix_create_pot(&creator.pubkey(), id, params);
+        self.send(&[ix], &[creator])?;
+        Ok(draw_pda(id))
+    }
+
+    pub fn create_pot(&mut self, params: PotDrawParams) -> Result<Pubkey, String> {
+        let admin = self.admin.insecure_clone();
+        self.create_pot_as(&admin, params)
+    }
+
+    pub fn ix_create_headline(&self, admin: &Pubkey, id: u64, params: HeadlineDrawParams) -> Instruction {
+        let draw = draw_pda(id);
+        Instruction {
+            program_id: drawsol::ID,
+            accounts: drawsol::accounts::CreateHeadlineDraw {
+                config: config_pda(),
+                draw,
+                vault: vault_pda(&draw),
+                admin: *admin,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            data: drawsol::instruction::CreateHeadlineDraw { params }.data(),
+        }
+    }
+
+    pub fn create_headline(&mut self, params: HeadlineDrawParams) -> Result<Pubkey, String> {
+        let id = self.config().next_draw_id;
+        let ix = self.ix_create_headline(&self.admin.pubkey(), id, params);
         let admin = self.admin.insecure_clone();
         self.send(&[ix], &[&admin])?;
         Ok(draw_pda(id))
     }
 
-    /// Returns (instruction, entry, vrf_request) for the next entry of `draw`.
-    pub fn ix_buy(&mut self, draw: &Pubkey, buyer: &Pubkey, quantity: u16) -> (Instruction, Pubkey, Pubkey) {
+    // ------------------------------------------------------------------ play
+
+    /// Builds buy_tickets for the next entry; ORAO accounts only when the draw rolls.
+    /// Returns (instruction, entry, vrf_request).
+    pub fn ix_buy(&mut self, draw: &Pubkey, buyer: &Pubkey, quantity: u16, use_credits: u16) -> (Instruction, Pubkey, Option<Pubkey>) {
         let nonce = self.next_nonce();
-        let seq = self.draw(draw).entry_count;
-        let seed = drawsol::fairness::entry_vrf_seed(draw, buyer, seq, &nonce);
-        let req = drawsol::fairness::vrf_request_address(&seed);
-        let ix = self.ix_buy_raw(draw, buyer, seq, quantity, nonce, req);
+        let d = self.draw(draw);
+        let seq = d.entry_count;
+        let req = d.needs_roll().then(|| {
+            drawsol::fairness::vrf_request_address(&drawsol::fairness::entry_vrf_seed(draw, buyer, seq, &nonce))
+        });
+        let ix = self.ix_buy_raw(draw, buyer, seq, quantity, use_credits, nonce, req, req.is_some());
         (ix, entry_pda(draw, seq), req)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn ix_buy_raw(
         &self,
         draw: &Pubkey,
         buyer: &Pubkey,
         seq: u32,
         quantity: u16,
+        use_credits: u16,
         client_nonce: [u8; 16],
-        vrf_request: Pubkey,
+        vrf_request: Option<Pubkey>,
+        with_orao: bool,
     ) -> Instruction {
         Instruction {
             program_id: drawsol::ID,
@@ -332,23 +492,62 @@ impl Env {
                 vault: vault_pda(draw),
                 entry: entry_pda(draw, seq),
                 player: player_pda(draw, buyer),
+                profile: profile_pda(buyer),
                 buyer: *buyer,
                 vrf_request,
-                vrf_config: self.vrf_config,
-                vrf_treasury: self.treasury,
-                vrf: orao_solana_vrf::ID,
+                vrf_config: with_orao.then_some(self.vrf_config),
+                vrf_treasury: with_orao.then_some(self.treasury),
+                vrf: with_orao.then_some(orao_solana_vrf::ID),
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
-            data: drawsol::instruction::BuyTickets { quantity, client_nonce }.data(),
+            data: drawsol::instruction::BuyTickets { quantity, use_credits, client_nonce }.data(),
         }
     }
 
-    /// Buys and returns (entry, vrf_request).
-    pub fn buy(&mut self, draw: &Pubkey, buyer: &Keypair, quantity: u16) -> Result<(Pubkey, Pubkey), String> {
-        let (ix, entry, req) = self.ix_buy(draw, &buyer.pubkey(), quantity);
+    pub fn buy_credits(&mut self, draw: &Pubkey, buyer: &Keypair, quantity: u16, use_credits: u16) -> Result<Bought, String> {
+        let (ix, entry, req) = self.ix_buy(draw, &buyer.pubkey(), quantity, use_credits);
         self.send(&[ix], &[buyer])?;
-        Ok((entry, req))
+        Ok(Bought { entry, req })
+    }
+
+    pub fn buy(&mut self, draw: &Pubkey, buyer: &Keypair, quantity: u16) -> Result<Bought, String> {
+        self.buy_credits(draw, buyer, quantity, 0)
+    }
+
+    pub fn ix_claim_free(&mut self, draw: &Pubkey, buyer: &Pubkey) -> (Instruction, Pubkey, Option<Pubkey>) {
+        let nonce = self.next_nonce();
+        let d = self.draw(draw);
+        let seq = d.entry_count;
+        let req = d.needs_roll().then(|| {
+            drawsol::fairness::vrf_request_address(&drawsol::fairness::entry_vrf_seed(draw, buyer, seq, &nonce))
+        });
+        let with = req.is_some();
+        let entry = entry_pda(draw, seq);
+        let ix = Instruction {
+            program_id: drawsol::ID,
+            accounts: drawsol::accounts::ClaimFreeEntry {
+                draw: *draw,
+                entry,
+                player: player_pda(draw, buyer),
+                profile: profile_pda(buyer),
+                buyer: *buyer,
+                vrf_request: req,
+                vrf_config: with.then_some(self.vrf_config),
+                vrf_treasury: with.then_some(self.treasury),
+                vrf: with.then_some(orao_solana_vrf::ID),
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            data: drawsol::instruction::ClaimFreeEntry { client_nonce: nonce }.data(),
+        };
+        (ix, entry, req)
+    }
+
+    pub fn claim_free(&mut self, draw: &Pubkey, buyer: &Keypair) -> Result<Bought, String> {
+        let (ix, entry, req) = self.ix_claim_free(draw, &buyer.pubkey());
+        self.send(&[ix], &[buyer])?;
+        Ok(Bought { entry, req })
     }
 
     pub fn ix_reveal_with(&self, draw: &Pubkey, entry: &Pubkey, vrf_request: Pubkey) -> Instruction {
@@ -360,6 +559,7 @@ impl Env {
                 vault: vault_pda(draw),
                 entry: *entry,
                 player: player_pda(draw, &e.owner),
+                profile: profile_pda(&e.owner),
                 owner: e.owner,
                 vrf_request,
             }
@@ -371,56 +571,41 @@ impl Env {
     pub fn reveal(&mut self, draw: &Pubkey, entry: &Pubkey) -> Result<TxOk, String> {
         let req = self.entry(entry).vrf_request;
         let ix = self.ix_reveal_with(draw, entry, req);
-        let c = self.cranker.insecure_clone();
-        self.send(&[ix], &[&c])
+        self.crank(ix)
     }
 
-    pub fn ix_claim_free(&self, draw: &Pubkey, buyer: &Pubkey) -> (Instruction, Pubkey) {
-        let seq = self.draw(draw).entry_count;
-        let entry = entry_pda(draw, seq);
-        let ix = Instruction {
-            program_id: drawsol::ID,
-            accounts: drawsol::accounts::ClaimFreeEntry {
-                draw: *draw,
-                entry,
-                player: player_pda(draw, buyer),
-                buyer: *buyer,
-                system_program: system_program::ID,
-            }
-            .to_account_metas(None),
-            data: drawsol::instruction::ClaimFreeEntry {}.data(),
-        };
-        (ix, entry)
+    /// Fulfils the entry's request with `rnd` and reveals it.
+    pub fn fulfill_and_reveal(&mut self, draw: &Pubkey, b: &Bought, rnd: [u8; 64]) -> TxOk {
+        self.fulfill(&b.req.expect("entry has a roll"), rnd);
+        self.reveal(draw, &b.entry).unwrap()
     }
 
-    pub fn claim_free(&mut self, draw: &Pubkey, buyer: &Keypair) -> Result<Pubkey, String> {
-        let (ix, entry) = self.ix_claim_free(draw, &buyer.pubkey());
-        self.send(&[ix], &[buyer])?;
-        Ok(entry)
-    }
+    // ------------------------------------------------------------------ draw lifecycle
 
-    /// Returns (instruction, vrf_request) for request_draw paid by the cranker.
-    pub fn ix_request_draw(&mut self, draw: &Pubkey) -> (Instruction, Pubkey) {
+    /// request_draw signed/paid by `payer`. Returns (instruction, vrf_request).
+    pub fn ix_request_draw(&mut self, draw: &Pubkey, payer: &Pubkey) -> (Instruction, Pubkey) {
         let nonce = self.next_nonce();
         let d = self.draw(draw);
         let seed = drawsol::fairness::draw_vrf_seed(draw, d.next_ticket, &nonce);
         let req = drawsol::fairness::vrf_request_address(&seed);
-        (self.ix_request_draw_raw(draw, nonce, req), req)
+        (self.ix_request_draw_raw(draw, payer, nonce, Some(req)), req)
     }
 
-    pub fn ix_request_draw_raw(&self, draw: &Pubkey, client_nonce: [u8; 16], vrf_request: Pubkey) -> Instruction {
+    pub fn ix_request_draw_raw(&self, draw: &Pubkey, payer: &Pubkey, client_nonce: [u8; 16], vrf_request: Option<Pubkey>) -> Instruction {
         let d = self.draw(draw);
+        let with = vrf_request.is_some();
         Instruction {
             program_id: drawsol::ID,
             accounts: drawsol::accounts::RequestDraw {
+                config: config_pda(),
                 draw: *draw,
                 vault: vault_pda(draw),
                 authority: d.authority,
-                payer: self.cranker.pubkey(),
+                payer: *payer,
                 vrf_request,
-                vrf_config: self.vrf_config,
-                vrf_treasury: self.treasury,
-                vrf: orao_solana_vrf::ID,
+                vrf_config: with.then_some(self.vrf_config),
+                vrf_treasury: with.then_some(self.treasury),
+                vrf: with.then_some(orao_solana_vrf::ID),
                 system_program: system_program::ID,
             }
             .to_account_metas(None),
@@ -428,11 +613,16 @@ impl Env {
         }
     }
 
-    pub fn request_draw(&mut self, draw: &Pubkey) -> Result<Pubkey, String> {
-        let (ix, req) = self.ix_request_draw(draw);
-        let c = self.cranker.insecure_clone();
-        self.send(&[ix], &[&c])?;
+    pub fn request_draw_as(&mut self, draw: &Pubkey, payer: &Keypair) -> Result<Pubkey, String> {
+        let (ix, req) = self.ix_request_draw(draw, &payer.pubkey());
+        self.send(&[ix], &[payer])?;
         Ok(req)
+    }
+
+    /// request_draw by the keeper.
+    pub fn request_draw(&mut self, draw: &Pubkey) -> Result<Pubkey, String> {
+        let k = self.keeper.insecure_clone();
+        self.request_draw_as(draw, &k)
     }
 
     pub fn ix_settle(&self, draw: &Pubkey, winning_entry: &Pubkey, winner: &Pubkey) -> Instruction {
@@ -454,8 +644,26 @@ impl Env {
     pub fn settle(&mut self, draw: &Pubkey, winning_entry: &Pubkey) -> Result<TxOk, String> {
         let owner = self.entry(winning_entry).owner;
         let ix = self.ix_settle(draw, winning_entry, &owner);
-        let c = self.cranker.insecure_clone();
-        self.send(&[ix], &[&c])
+        self.crank(ix)
+    }
+
+    /// Entry of `draw` that holds `ticket`.
+    pub fn entry_holding(&self, draw: &Pubkey, ticket: u32) -> Pubkey {
+        let d = self.draw(draw);
+        (0..d.entry_count)
+            .map(|s| entry_pda(draw, s))
+            .find(|e| self.entry(e).contains(ticket))
+            .expect("some entry holds the ticket")
+    }
+
+    /// Fulfils the draw request with `rnd` and settles with the right entry. Returns the winning entry.
+    pub fn fulfill_and_settle(&mut self, draw: &Pubkey, rnd: [u8; 64]) -> Pubkey {
+        let d = self.draw(draw);
+        self.fulfill(&d.draw_vrf_request, rnd);
+        let w = drawsol::fairness::winning_ticket(&rnd, d.next_ticket);
+        let e = self.entry_holding(draw, w);
+        self.settle(draw, &e).unwrap();
+        e
     }
 
     pub fn cancel(&mut self, draw: &Pubkey) -> Result<TxOk, String> {
@@ -464,8 +672,7 @@ impl Env {
             accounts: drawsol::accounts::CancelDraw { draw: *draw }.to_account_metas(None),
             data: drawsol::instruction::CancelDraw {}.data(),
         };
-        let c = self.cranker.insecure_clone();
-        self.send(&[ix], &[&c])
+        self.crank(ix)
     }
 
     pub fn ix_refund(&self, draw: &Pubkey, entry: &Pubkey) -> Instruction {
@@ -476,6 +683,7 @@ impl Env {
                 draw: *draw,
                 vault: vault_pda(draw),
                 entry: *entry,
+                profile: profile_pda(&e.owner),
                 owner: e.owner,
             }
             .to_account_metas(None),
@@ -483,10 +691,13 @@ impl Env {
         }
     }
 
-    pub fn refund(&mut self, draw: &Pubkey, entry: &Pubkey) -> Result<TxOk, String> {
+    /// Refund sent by the cranker; returns the owner's balance delta.
+    pub fn refund(&mut self, draw: &Pubkey, entry: &Pubkey) -> Result<u64, String> {
+        let owner = self.entry(entry).owner;
+        let before = self.balance(&owner);
         let ix = self.ix_refund(draw, entry);
-        let c = self.cranker.insecure_clone();
-        self.send(&[ix], &[&c])
+        self.crank(ix)?;
+        Ok(self.balance(&owner) - before)
     }
 
     pub fn ix_withdraw(&self, draw: &Pubkey, authority: &Pubkey) -> Instruction {
@@ -507,6 +718,67 @@ impl Env {
         self.send(&[ix], &[&c, &admin])?;
         Ok(self.balance(&admin.pubkey()) - before)
     }
+
+    // ------------------------------------------------------------------ profile
+
+    pub fn ix_profile(&self, wallet: &Pubkey, data: Vec<u8>) -> Instruction {
+        Instruction {
+            program_id: drawsol::ID,
+            accounts: drawsol::accounts::UpdateProfile {
+                profile: profile_pda(wallet),
+                wallet: *wallet,
+                system_program: system_program::ID,
+            }
+            .to_account_metas(None),
+            data,
+        }
+    }
+
+    pub fn set_limit(&mut self, wallet: &Keypair, lamports: u64) -> Result<TxOk, String> {
+        let ix = self.ix_profile(&wallet.pubkey(), drawsol::instruction::SetLimit { lamports }.data());
+        self.send(&[ix], &[wallet])
+    }
+
+    pub fn self_exclude(&mut self, wallet: &Keypair, until: i64) -> Result<TxOk, String> {
+        let ix = self.ix_profile(&wallet.pubkey(), drawsol::instruction::SelfExclude { until }.data());
+        self.send(&[ix], &[wallet])
+    }
+
+    // ------------------------------------------------------------------ legacy
+
+    pub fn ix_legacy_close(&self, admin: &Pubkey, draw_id: u64) -> Instruction {
+        let d = legacy_draw_pda(draw_id);
+        Instruction {
+            program_id: drawsol::ID,
+            accounts: drawsol::accounts::LegacyCloseV2 {
+                config: config_pda(),
+                admin: *admin,
+                legacy_draw: d,
+                legacy_vault: legacy_vault_pda(&d),
+            }
+            .to_account_metas(None),
+            data: drawsol::instruction::LegacyCloseV2 { draw_id }.data(),
+        }
+    }
+
+    pub fn set_program_account(&mut self, at: Pubkey, data: Vec<u8>, lamports: u64) {
+        self.svm
+            .set_account(at, Account { lamports, data, owner: drawsol::ID, executable: false, rent_epoch: 0 })
+            .unwrap();
+    }
+}
+
+/// Raw account data of a getAccountInfo JSON fixture.
+pub fn rpc_fixture_data(name: &str) -> Vec<u8> {
+    let json = std::fs::read_to_string(fixture(name)).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    base64_decode(v["result"]["value"]["data"][0].as_str().unwrap())
+}
+
+pub fn rpc_fixture_lamports(name: &str) -> u64 {
+    let json = std::fs::read_to_string(fixture(name)).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    v["result"]["value"]["lamports"].as_u64().unwrap()
 }
 
 /// Writes an upgradeable-loader Program + ProgramData pair (as `solana program deploy` would).
@@ -547,7 +819,7 @@ pub fn expect_err<T>(r: Result<T, String>, needle: &str) {
     }
 }
 
-/// Anchor error by name, e.g. `anchor_err("SoldOut")`.
+/// Anchor error by name, e.g. `code("SoldOut")`.
 pub fn code(name: &str) -> String {
     format!("Error Code: {name}.")
 }
@@ -567,15 +839,21 @@ pub fn base64_decode(s: &str) -> Vec<u8> {
     out
 }
 
-/// Deterministic search for randomness whose recomputed instant result satisfies `pred(total)`.
-pub fn find_randomness(d: &Draw, e: &Entry, pred: impl Fn(u64) -> bool) -> [u8; 64] {
-    for k in 0u32..10_000 {
-        let mut rnd = [0u8; 64];
-        rnd[..4].copy_from_slice(&k.to_le_bytes());
-        rnd[4..].fill(0xA5);
-        if pred(expected_reveal(&rnd, d, e).1) {
-            return rnd;
+impl Env {
+    /// Gives `wallet` `n` extra credits by rewriting its Profile (creating it first if needed).
+    pub fn grant_credits(&mut self, wallet: &Keypair, n: u32) {
+        use anchor_lang::AccountSerialize;
+        let key = profile_pda(&wallet.pubkey());
+        if self.svm.get_account(&key).is_none() {
+            self.set_limit(wallet, 0).unwrap(); // init_if_needed, no-op otherwise
         }
+        let mut p = self.profile(&wallet.pubkey());
+        p.credits += n;
+        let mut data = Vec::new();
+        p.try_serialize(&mut data).unwrap();
+        let mut acc = self.svm.get_account(&key).unwrap();
+        assert_eq!(acc.data.len(), data.len());
+        acc.data = data;
+        self.svm.set_account(key, acc).unwrap();
     }
-    panic!("no randomness found");
 }

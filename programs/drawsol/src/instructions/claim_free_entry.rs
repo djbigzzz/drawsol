@@ -1,66 +1,121 @@
 use anchor_lang::prelude::*;
+use orao_solana_vrf::program::OraoVrf;
+use orao_solana_vrf::state::NetworkState;
+use orao_solana_vrf::CONFIG_ACCOUNT_SEED;
 
-use crate::constants::{DRAW_SEED, ENTRY_SEED, PLAYER_SEED};
+use crate::constants::{DRAW_SEED, ENTRY_SEED, PLAYER_SEED, PROFILE_SEED};
 use crate::errors::DrawError;
 use crate::events::FreeEntryClaimed;
-use crate::state::{Draw, DrawStatus, Entry, Player};
+use crate::fairness::entry_vrf_seed;
+use crate::state::{DrawStatus, DrawV3, EntryV3, PlayerV3, Profile};
 use crate::utils::now;
+use crate::vrf::request_randomness;
 
 #[derive(Accounts)]
 pub struct ClaimFreeEntry<'info> {
     #[account(mut, seeds = [DRAW_SEED, &draw.id.to_le_bytes()], bump = draw.bump)]
-    pub draw: Box<Account<'info, Draw>>,
+    pub draw: Box<Account<'info, DrawV3>>,
 
     #[account(
         init,
         payer = buyer,
-        space = 8 + Entry::INIT_SPACE,
+        space = 8 + EntryV3::INIT_SPACE,
         seeds = [ENTRY_SEED, draw.key().as_ref(), &draw.entry_count.to_le_bytes()],
         bump
     )]
-    pub entry: Box<Account<'info, Entry>>,
+    pub entry: Box<Account<'info, EntryV3>>,
 
     #[account(
         init_if_needed,
         payer = buyer,
-        space = 8 + Player::INIT_SPACE,
+        space = 8 + PlayerV3::INIT_SPACE,
         seeds = [PLAYER_SEED, draw.key().as_ref(), buyer.key().as_ref()],
         bump
     )]
-    pub player: Box<Account<'info, Player>>,
+    pub player: Box<Account<'info, PlayerV3>>,
 
-    /// The claiming wallet (pays rent; becomes the entry owner).
+    #[account(
+        init_if_needed,
+        payer = buyer,
+        space = 8 + Profile::INIT_SPACE,
+        seeds = [PROFILE_SEED, buyer.key().as_ref()],
+        bump
+    )]
+    pub profile: Box<Account<'info, Profile>>,
+
+    /// The claiming wallet (pays rent and, in pot draws, the ORAO fee; becomes the entry owner).
     #[account(mut)]
     pub buyer: Signer<'info>,
 
+    /// CHECK: pot draws with instant tiers only; see buy_tickets.
+    #[account(mut)]
+    pub vrf_request: Option<UncheckedAccount<'info>>,
+
+    #[account(mut, seeds = [CONFIG_ACCOUNT_SEED], bump, seeds::program = orao_solana_vrf::ID)]
+    pub vrf_config: Option<Box<Account<'info, NetworkState>>>,
+
+    /// CHECK: ORAO fee treasury, checked against the network state in `request_randomness`.
+    #[account(mut)]
+    pub vrf_treasury: Option<UncheckedAccount<'info>>,
+
+    pub vrf: Option<Program<'info, OraoVrf>>,
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<ClaimFreeEntry>) -> Result<()> {
+pub fn handler(ctx: Context<ClaimFreeEntry>, client_nonce: [u8; 16]) -> Result<()> {
     let now = now()?;
     let draw_key = ctx.accounts.draw.key();
     let buyer_key = ctx.accounts.buyer.key();
 
-    let d = &ctx.accounts.draw;
-    require!(d.status == DrawStatus::Open, DrawError::WrongStatus);
-    require!(now < d.closes_at, DrawError::SalesClosed);
-    require!(d.free_tickets < d.free_cap, DrawError::FreeCapReached);
-    require!(!ctx.accounts.player.free_claimed, DrawError::FreeAlreadyClaimed);
-    let new_player = ctx.accounts.player.tickets.checked_add(1).ok_or(DrawError::MathOverflow)?;
-    require!(new_player <= d.max_per_wallet, DrawError::ExceedsWalletCap);
-    let seq = d.entry_count;
-    let ticket = d.next_ticket;
+    let (seq, ticket) = {
+        let d = &ctx.accounts.draw;
+        require!(d.status == DrawStatus::Open, DrawError::WrongStatus);
+        require!(now < d.closes_at, DrawError::SalesClosed);
+        require!(!d.sold_out(), DrawError::SoldOut);
+        require!(d.free_tickets < d.free_cap, DrawError::FreeCapReached);
+        require!(!ctx.accounts.player.free_claimed, DrawError::FreeAlreadyClaimed);
+        let new_player = ctx.accounts.player.tickets.checked_add(1).ok_or(DrawError::MathOverflow)?;
+        require!(new_player <= d.max_per_wallet, DrawError::ExceedsWalletCap);
+        (d.entry_count, d.next_ticket)
+    };
 
-    let player = &mut ctx.accounts.player;
-    if player.wallet == Pubkey::default() {
-        player.draw = draw_key;
-        player.wallet = buyer_key;
-        player.bump = ctx.bumps.player;
+    {
+        let bump = ctx.bumps.profile;
+        let pr = &mut ctx.accounts.profile;
+        pr.ensure_init(buyer_key, bump);
+        pr.check_not_excluded(now)?;
     }
-    player.tickets = new_player;
-    player.free_claimed = true;
 
+    let needs_reveal = ctx.accounts.draw.needs_roll();
+    let (vrf_request, vrf_seed) = if needs_reveal {
+        let seed = entry_vrf_seed(&draw_key, &buyer_key, seq, &client_nonce);
+        let req = request_randomness(
+            &ctx.accounts.buyer.to_account_info(),
+            &ctx.accounts.vrf_request,
+            &ctx.accounts.vrf_config,
+            &ctx.accounts.vrf_treasury,
+            &ctx.accounts.vrf,
+            &ctx.accounts.system_program.to_account_info(),
+            seed,
+        )?;
+        (req, seed)
+    } else {
+        (Pubkey::default(), [0u8; 32])
+    };
+
+    let player_bump = ctx.bumps.player;
+    let p = &mut ctx.accounts.player;
+    if p.wallet == Pubkey::default() {
+        p.draw = draw_key;
+        p.wallet = buyer_key;
+        p.bump = player_bump;
+    }
+    p.tickets = p.tickets.checked_add(1).ok_or(DrawError::MathOverflow)?;
+    p.free_claimed = true;
+
+    let pool_snapshot = ctx.accounts.draw.instant_pool_lamports;
     let entry_key = ctx.accounts.entry.key();
+    let entry_bump = ctx.bumps.entry;
     let e = &mut ctx.accounts.entry;
     e.draw = draw_key;
     e.owner = buyer_key;
@@ -68,20 +123,20 @@ pub fn handler(ctx: Context<ClaimFreeEntry>) -> Result<()> {
     e.first_ticket = ticket;
     e.count = 1;
     e.is_free = true;
-    e.paid_lamports = 0;
     e.created_at = now;
-    e.vrf_request = Pubkey::default();
-    e.vrf_seed = [0u8; 32];
-    e.revealed = true; // grand draw only: no instant roll
-    e.tiers = [0u8; 25];
-    e.instant_paid = 0;
-    e.refunded = false;
-    e.bump = ctx.bumps.entry;
+    e.pool_snapshot = pool_snapshot;
+    e.vrf_request = vrf_request;
+    e.vrf_seed = vrf_seed;
+    e.needs_reveal = needs_reveal;
+    e.bump = entry_bump;
 
     let d = &mut ctx.accounts.draw;
     d.free_tickets = d.free_tickets.checked_add(1).ok_or(DrawError::MathOverflow)?;
     d.next_ticket = d.next_ticket.checked_add(1).ok_or(DrawError::MathOverflow)?;
     d.entry_count = d.entry_count.checked_add(1).ok_or(DrawError::MathOverflow)?;
+    if needs_reveal {
+        d.rolled_entries = d.rolled_entries.checked_add(1).ok_or(DrawError::MathOverflow)?;
+    }
 
     emit!(FreeEntryClaimed { draw: draw_key, entry: entry_key, owner: buyer_key, ticket });
     Ok(())

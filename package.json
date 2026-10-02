@@ -1,6 +1,6 @@
 {
   "name": "drawsol",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "license": "MIT",
   "scripts": {
@@ -8,7 +8,9 @@
     "keeper": "tsx keeper/index.ts",
     "check-vectors": "tsx scripts/check-vectors.ts",
     "test:program": "cargo test --manifest-path tests-svm/Cargo.toml",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "keeper:once": "tsx keeper/index.ts --once",
+    "e2e:v3": "tsx scripts/e2e-devnet-v3.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.31.1",

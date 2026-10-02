@@ -1,68 +1,76 @@
 /**
- * DrawSol v2 admin CLI.  Usage:  npx tsx scripts/admin.ts <command> [flags]
+ * DrawSol v3 admin CLI.  Usage:  npx tsx scripts/admin.ts <command> [flags]
  *
- *   init-config
- *   create-draw --preset demo|prod [--prize SOL] [--reserve SOL] [--price SOL] [--cap N] [--minutes M]
- *               [--per-wallet N] [--free-cap N] [--per-tx N] [--dry-run]
+ *   migrate-config --keeper <pubkey>          v2 Config → v3 layout + keeper (once, after the upgrade)
+ *   set-keeper --keeper <pubkey>
+ *   init-config --keeper <pubkey>             fresh deployments only (signer = upgrade authority)
+ *   create-pot --preset nightly [overrides] [--dry-run]
+ *   create-headline --preset weekly [overrides] [--dry-run]
  *   status [--draw id]
  *   withdraw --draw id
  *   reveal-all --draw id
- *   run-draw --draw id          (request_draw if due, wait for ORAO, settle_draw)
+ *   run-draw --draw id [--timeout s]          request_draw when due, wait for ORAO, settle_draw
+ *   refund-all --draw id                      claim_refund for every entry of a cancelled draw (permissionless)
+ *   legacy-close --draw id                    close a v2 draw (#0 settled / #1 empty) into the admin wallet
+ *   terms --draw id                           re-render a draw's terms from chain and check its terms_hash
+ *
+ * Overrides (both kinds): --price SOL --cap N --house BPS --per-tx N --per-wallet N --free-cap N --grace-min M
+ *   timing: --closes <ISO|unix> --draw-at <ISO|unix>, or --minutes M (close in M minutes) [--draw-delay-min D]
+ *   default timing: pot = next 22:00 UTC; headline = next Sunday 20:00 UTC; draw_at = closes_at.
+ * Pot only: --pot BPS --instant BPS.   Headline only: --prize SOL --min N --margin BPS.
  *
  * Env: RPC_URL (default devnet), KEYPAIR_PATH (default ~/.config/solana/id.json).
  */
 import { BN } from "@coral-xyz/anchor";
-import { createHash } from "crypto";
+import { PublicKey } from "@solana/web3.js";
 import * as fs from "fs";
 import * as path from "path";
 import {
   CANCEL_GRACE_SECS,
-  RESERVE_UNLOCK_SECS,
+  HEADLINE_PRESETS,
+  POT_PRESETS,
   ROOT,
   RPC_URL,
+  buildHeadlineDraw,
+  buildPotDraw,
   configPda,
+  createDraw,
+  currentPrize,
   drawPda,
   fetchEntries,
+  fetchLegacyDraw,
+  iso,
   isDue,
-  lamports,
+  kindName,
+  legacyDrawPda,
+  legacyVaultPda,
   makeProgram,
+  nextDailyUtc,
+  nextWeeklyUtc,
+  nowSecs,
   programDataPda,
+  publicFrom,
   readRandomness,
+  refundAll,
+  renderTerms,
   requestDraw,
   revealReady,
   settleIfReady,
+  sha256,
   sleep,
   sol,
   statusName,
   vaultPda,
+  willCancelAtRequest,
   winningTicket,
+  type DrawAccount,
   type DrawsolProgram,
 } from "./lib";
 
-type Tier = { amount: number; odds: number }; // amount in SOL
-type Preset = {
-  prize: number; reserve: number; price: number; cap: number; perTx: number; perWallet: number;
-  freeCap: (cap: number) => number; minutes: number; denominator: number; tiers: Tier[]; label: string;
-};
-
-/** SPEC §3. */
-const PRESETS: Record<string, Preset> = {
-  demo: {
-    label: "Devnet demo (boosted demo odds)",
-    prize: 1, reserve: 2, price: 0.01, cap: 150, perTx: 25, perWallet: 50, freeCap: () => 15,
-    minutes: 24 * 60, denominator: 1000,
-    tiers: [{ amount: 0.2, odds: 10 }, { amount: 0.05, odds: 40 }, { amount: 0.01, odds: 150 }],
-  },
-  prod: {
-    label: "Production",
-    prize: 100, reserve: 32, price: 0.015, cap: 10_000, perTx: 25, perWallet: 200,
-    freeCap: (cap) => Math.floor(cap * 0.05), minutes: 30 * 24 * 60, denominator: 10_000,
-    tiers: [{ amount: 1, odds: 4 }, { amount: 0.25, odds: 16 }, { amount: 0.05, odds: 120 }, { amount: 0.015, odds: 400 }],
-  },
-};
+type Flags = Record<string, string>;
 
 function parseFlags(argv: string[]) {
-  const flags: Record<string, string> = {};
+  const flags: Flags = {};
   for (let i = 0; i < argv.length; i++) {
     if (!argv[i].startsWith("--")) throw new Error(`unexpected argument ${argv[i]}`);
     const k = argv[i].slice(2);
@@ -71,178 +79,188 @@ function parseFlags(argv: string[]) {
   }
   return flags;
 }
-const num = (f: Record<string, string>, k: string, dflt: number) => (f[k] !== undefined ? Number(f[k]) : dflt);
-const drawFlag = (f: Record<string, string>) => {
+const num = (f: Flags, k: string) => (f[k] !== undefined ? Number(f[k]) : undefined);
+const time = (v: string | undefined) => (v === undefined ? undefined : /^\d+$/.test(v) ? Number(v) : Math.floor(Date.parse(v) / 1000));
+const drawId = (f: Flags) => {
   if (f.draw === undefined) throw new Error("--draw <id> is required");
-  return drawPda(Number(f.draw));
+  return Number(f.draw);
+};
+const keeperFlag = (f: Flags) => {
+  if (!f.keeper) throw new Error("--keeper <pubkey> is required");
+  return new PublicKey(f.keeper);
 };
 
-// ------------------------------------------------------------------ commands
+/** --minutes / --closes / --draw-at handling shared by both kinds. */
+function timing(f: Flags) {
+  const minutes = num(f, "minutes");
+  const closesAt = minutes !== undefined ? nowSecs() + Math.round(minutes * 60) : time(f.closes);
+  const delay = num(f, "draw-delay-min");
+  const drawAt = time(f["draw-at"]) ?? (closesAt !== undefined && delay !== undefined ? closesAt + Math.round(delay * 60) : undefined);
+  return { closesAt, drawAt };
+}
 
-async function initConfig(program: DrawsolProgram) {
+// ------------------------------------------------------------------ config
+
+async function initConfig(program: DrawsolProgram, f: Flags) {
   const sig = await program.methods
-    .initConfig()
-    .accountsPartial({
-      config: configPda(),
-      admin: program.provider.publicKey!,
-      program: program.programId,
-      programData: programDataPda(),
-    })
+    .initConfig(keeperFlag(f))
+    .accountsPartial({ config: configPda(), admin: program.provider.publicKey!, program: program.programId, programData: programDataPda() })
     .rpc();
   console.log(`config initialised, admin = ${program.provider.publicKey} ${sig}`);
 }
 
-function renderTerms(id: number, p: Preset & { closesAt: number; freeCapN: number }) {
-  const template = fs.readFileSync(path.join(ROOT, "scripts/terms.md"), "utf8");
-  const hit = p.tiers.reduce((a, t) => a + t.odds, 0);
-  const ev = p.tiers.reduce((a, t) => a + t.amount * t.odds, 0) / p.denominator;
-  const rows = p.tiers.map((t) => `| ${t.amount} SOL | ${t.odds} in ${p.denominator.toLocaleString("en-US")} |`).join("\n");
-  return `${template}
-## 7. Parameters of this draw
-
-- Draw: #${id} (${p.label})
-- Program: ${process.env.PROGRAM_ID ?? "FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb"}
-- Grand prize: ${p.prize} SOL
-- Instant-win reserve: ${p.reserve} SOL
-- Ticket price: ${p.price} SOL
-- Paid tickets: ${p.cap}; max ${p.perTx} per transaction, ${p.perWallet} per wallet (including the free entry)
-- Free entries: up to ${p.freeCapN}, one per wallet
-- Closes at: ${new Date(p.closesAt * 1000).toISOString()} (unix ${p.closesAt})
-
-### Instant-win odds (per paid ticket)
-
-| Prize | Odds |
-|---|---|
-${rows}
-
-Instant hit rate: 1 in ${(p.denominator / hit).toFixed(1)}. Expected instant payout per ticket: ${ev.toFixed(6)} SOL.
-`;
+async function migrateConfig(program: DrawsolProgram, f: Flags) {
+  const keeper = keeperFlag(f);
+  const acc = await program.provider.connection.getAccountInfo(configPda());
+  if (!acc) throw new Error("no Config account: use init-config on a fresh deployment");
+  console.log(`config is ${acc.data.length} bytes (${acc.data.length === 49 ? "v2 layout" : "v3 layout?"})`);
+  const sig = await program.methods.migrateConfig(keeper).accountsPartial({ config: configPda(), admin: program.provider.publicKey! }).rpc();
+  const c = await program.account.config.fetch(configPda());
+  console.log(`migrated: admin ${c.admin}, keeper ${c.keeper}, next draw id ${c.nextDrawId} ${sig}`);
 }
 
-async function createDraw(program: DrawsolProgram, f: Record<string, string>) {
-  const base = PRESETS[f.preset ?? ""];
-  if (!base) throw new Error("--preset demo|prod is required");
-  const cap = num(f, "cap", base.cap);
-  const p = {
-    ...base,
-    prize: num(f, "prize", base.prize),
-    reserve: num(f, "reserve", base.reserve),
-    price: num(f, "price", base.price),
-    cap,
-    perTx: num(f, "per-tx", base.perTx),
-    perWallet: num(f, "per-wallet", base.perWallet),
-    freeCapN: num(f, "free-cap", base.freeCap(cap)),
-    closesAt: Math.floor(Date.now() / 1000) + Math.round(num(f, "minutes", base.minutes) * 60),
-  };
-  const config = await program.account.config.fetchNullable(configPda());
-  if (!config && !f["dry-run"]) throw new Error("config not initialised (run init-config)");
-  const id = config ? config.nextDrawId.toNumber() : 0;
-  const terms = renderTerms(id, p);
-  const termsHash = createHash("sha256").update(terms).digest();
+async function setKeeper(program: DrawsolProgram, f: Flags) {
+  const sig = await program.methods.setKeeper(keeperFlag(f)).accountsPartial({ config: configPda(), admin: program.provider.publicKey! }).rpc();
+  console.log(`keeper set to ${f.keeper} ${sig}`);
+}
 
-  const tiers = [...p.tiers, ...Array(4 - p.tiers.length).fill({ amount: 0, odds: 0 })].map((t: Tier) => ({
-    amount: lamports(t.amount),
-    odds: t.odds,
-  }));
-  const params = {
-    ticketPrice: lamports(p.price),
-    ticketCap: p.cap,
-    maxPerTx: p.perTx,
-    maxPerWallet: p.perWallet,
-    freeCap: p.freeCapN,
-    closesAt: new BN(p.closesAt),
-    prizeLamports: lamports(p.prize),
-    iwReserveLamports: lamports(p.reserve),
-    iwDenominator: p.denominator,
-    iwTiers: tiers,
-    termsHash: Array.from(termsHash),
+// ------------------------------------------------------------------ creation
+
+async function create(program: DrawsolProgram, f: Flags, kind: "pot" | "headline") {
+  const { closesAt, drawAt } = timing(f);
+  const common = {
+    price: num(f, "price"), cap: num(f, "cap"), houseBps: num(f, "house"), perTx: num(f, "per-tx"),
+    perWallet: num(f, "per-wallet"), freeCap: num(f, "free-cap"), graceMin: num(f, "grace-min"), closesAt, drawAt,
   };
-  console.log(`draw #${id}: prize ${p.prize} SOL, reserve ${p.reserve} SOL, ${p.cap} × ${p.price} SOL, ` +
-    `closes ${new Date(p.closesAt * 1000).toISOString()}, terms_hash ${termsHash.toString("hex")}`);
+  let shape;
+  if (kind === "pot") {
+    const preset = POT_PRESETS[f.preset ?? ""];
+    if (!preset) throw new Error(`--preset ${Object.keys(POT_PRESETS).join("|")} is required`);
+    shape = buildPotDraw(preset, { ...common, potBps: num(f, "pot"), instantBps: num(f, "instant") }, nextDailyUtc(22));
+  } else {
+    const preset = HEADLINE_PRESETS[f.preset ?? ""];
+    if (!preset) throw new Error(`--preset ${Object.keys(HEADLINE_PRESETS).join("|")} is required`);
+    shape = buildHeadlineDraw(preset, { ...common, prize: num(f, "prize"), minTickets: num(f, "min"), floorMarginBps: num(f, "margin") }, nextWeeklyUtc(0, 20));
+  }
+  const config = await program.account.config.fetchNullable(configPda()).catch(() => null); // null while still v2
+  if (!config && !f["dry-run"]) throw new Error("config not migrated/initialised (run migrate-config)");
+  const id = config ? config.nextDrawId.toNumber() : 0;
+  const terms = renderTerms(id, shape);
+  console.log(`${kind} draw #${id}: ${shape.ticketCap} × ${sol(shape.ticketPrice)} SOL, closes ${iso(shape.closesAt)}, draw ${iso(shape.drawAt)}` +
+    (kind === "headline" ? `, prize ${sol(shape.prizeLamports)} SOL, min ${shape.minTickets}` : `, split ${shape.houseBps}/${shape.potBps}/${shape.instantBps}`) +
+    `, terms_hash ${sha256(terms).toString("hex")}`);
   if (f["dry-run"]) {
     console.log(terms);
     return;
   }
-  const draw = drawPda(id);
-  const sig = await program.methods
-    .createDraw(params)
-    .accountsPartial({ config: configPda(), draw, vault: vaultPda(draw), admin: program.provider.publicKey! })
-    .rpc();
-  const out = path.join(ROOT, `scripts/terms/draw-${id}.md`);
+  const r = await createDraw(program, shape);
+  const out = path.join(ROOT, `scripts/terms/draw-${r.id}.md`);
   fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, terms);
-  console.log(`created draw #${id} at ${draw} ${sig}\nterms saved to ${path.relative(ROOT, out)}`);
+  fs.writeFileSync(out, r.terms);
+  console.log(`created ${kind} draw #${r.id} at ${r.draw} ${r.sig}\nterms saved to ${path.relative(ROOT, out)}`);
 }
 
-async function status(program: DrawsolProgram, f: Record<string, string>) {
+// ------------------------------------------------------------------ status
+
+function describe(id: number, draw: PublicKey, d: DrawAccount, vaultBal: number, now: number) {
+  const st = statusName(d.status);
+  const kind = kindName(d.kind);
+  const lines = [`\n#${id} ${kind.toUpperCase()} ${draw}  [${st.toUpperCase()}]${isDue(d, now) ? "  ← DUE: run-draw" : ""}`];
+  lines.push(`  price ${sol(d.ticketPrice)} · paid ${d.paidTickets}/${d.ticketCap} · credit ${d.creditTickets} · free ${d.freeTickets}/${d.freeCap}` +
+    ` · entries ${d.entryCount} (rolled ${d.rolledEntries}, revealed ${d.revealedEntries})`);
+  lines.push(`  closes ${iso(d.closesAt)} · draw ${iso(d.drawAt)} · public after ${iso(publicFrom(d))}`);
+  if (kind === "pot") {
+    lines.push(`  split ${d.houseBps}/${d.potBps}/${d.instantBps} · pot ${sol(d.potLamports)} · instant pool ${sol(d.instantPoolLamports)}` +
+      ` · house ${sol(d.houseLamports)} (withdrawn ${sol(d.houseWithdrawn)})`);
+  } else {
+    lines.push(`  prize ${sol(d.prizeLamports)} · min ${d.minTickets} paid · revenue ${sol(d.revenueLamports)} · house ${sol(d.houseLamports)} (withdrawn ${sol(d.houseWithdrawn)})` +
+      (st === "open" && willCancelAtRequest(d) ? "  [below min: would cancel + refund]" : ""));
+  }
+  lines.push(`  vault ${sol(vaultBal)} SOL · revenue ${sol(d.revenueLamports)} · refunded ${sol(d.refundedLamports)} · prize_paid=${d.prizePaid}`);
+  if (st === "open") lines.push(`  prize if drawn now: ${sol(currentPrize(d))} SOL`);
+  if (st === "settled") lines.push(`  winner ${d.winner} · ticket #${d.winningTicket} · prize ${sol(d.prizePaidLamports)} SOL`);
+  return lines;
+}
+
+async function status(program: DrawsolProgram, f: Flags) {
   const conn = program.provider.connection;
   console.log(`RPC ${RPC_URL}, program ${program.programId}`);
-  const config = await program.account.config.fetchNullable(configPda());
-  if (!config) {
-    console.log("config: not initialised (run init-config)");
-    return;
+  const raw = await conn.getAccountInfo(configPda());
+  if (!raw) return console.log("config: not initialised");
+  if (raw.data.length === 49) {
+    console.log("config: v2 layout — run `migrate-config --keeper <pubkey>`");
+  } else {
+    const c = await program.account.config.fetch(configPda());
+    console.log(`config: admin ${c.admin}, keeper ${c.keeper}, next draw id ${c.nextDrawId}`);
   }
-  console.log(`config: admin ${config.admin}, next draw id ${config.nextDrawId}`);
-  const now = Math.floor(Date.now() / 1000);
-  const ids = f.draw !== undefined ? [Number(f.draw)] : [...Array(config.nextDrawId.toNumber()).keys()];
+  const now = nowSecs();
+  const next = raw.data.readBigUInt64LE(raw.data.length === 49 ? 40 : 72);
+  const ids = f.draw !== undefined ? [Number(f.draw)] : [...Array(Number(next)).keys()];
   for (const id of ids) {
+    const legacy = await fetchLegacyDraw(conn, id);
+    if (legacy) {
+      console.log(`\n#${id} LEGACY v2 ${legacy.draw} [${legacy.status.toUpperCase()}] entries ${legacy.entryCount}, ` +
+        `${sol(legacy.drawLamports + legacy.vaultLamports)} SOL in draw + vault — ${legacy.closable ? "closable: legacy-close" : "NOT closable"}`);
+      continue;
+    }
     const draw = drawPda(id);
-    const d = await program.account.draw.fetch(draw);
+    const d = await program.account.drawV3.fetchNullable(draw);
+    if (!d) {
+      console.log(`\n#${id}: no account (closed v2 draw)`);
+      continue;
+    }
     const vaultBal = await conn.getBalance(vaultPda(draw));
+    for (const l of describe(id, draw, d, vaultBal, now)) console.log(l);
     const st = statusName(d.status);
-    const closes = d.closesAt.toNumber();
-    console.log(`\n#${id} ${draw}  [${st.toUpperCase()}]${isDue(d, now) ? "  ← DUE: run-draw" : ""}`);
-    console.log(`  prize ${sol(d.prizeLamports)} SOL · price ${sol(d.ticketPrice)} · paid ${d.paidTickets}/${d.ticketCap} · ` +
-      `free ${d.freeTickets}/${d.freeCap} · entries ${d.entryCount} (paid ${d.paidEntries}, revealed ${d.revealedEntries})`);
-    console.log(`  closes ${new Date(closes * 1000).toISOString()} (${closes > now ? `in ${Math.round((closes - now) / 60)} min` : "closed"})`);
-    console.log(`  vault ${sol(vaultBal)} SOL · proceeds ${sol(d.proceedsLamports)} · instant paid ${sol(d.iwPaidLamports)}/${sol(d.iwReserveLamports)}` +
-      ` · refunded ${sol(d.refundedLamports)}`);
-    console.log(`  flags: prize_paid=${d.prizePaid} proceeds_withdrawn=${d.proceedsWithdrawn} reserve_withdrawn=${d.reserveWithdrawn}`);
     if (st === "drawing") {
       const rnd = await readRandomness(conn, d.drawVrfRequest, d.drawVrfSeed);
       console.log(`  ORAO request ${d.drawVrfRequest}: ${rnd ? `fulfilled → winning ticket #${winningTicket(rnd, d.nextTicket)}` : "pending"}`);
-      if (now > closes + CANCEL_GRACE_SECS) console.log("  randomness grace period over: cancel_draw is allowed");
+      if (now > d.drawAt.toNumber() + CANCEL_GRACE_SECS) console.log("  randomness grace period over: cancel_draw is allowed");
     }
-    if (st === "settled") console.log(`  winner ${d.winner} · ticket #${d.winningTicket} · entry ${d.winningEntry}`);
-    if ((st === "settled" || st === "cancelled") && !d.reserveWithdrawn) {
-      const unlocked = d.revealedEntries === d.paidEntries || now > closes + RESERVE_UNLOCK_SECS;
-      console.log(`  reserve leftovers ${unlocked ? "withdrawable" : `locked until all entries are revealed or ${new Date((closes + RESERVE_UNLOCK_SECS) * 1000).toISOString()}`}`);
+    if (st === "cancelled") {
+      // Outstanding refunds vs vault (a pot entry that won more instant SOL than it paid can leave a shortfall).
+      let owed = 0n;
+      for (const { account: e } of await fetchEntries(program, draw)) {
+        if (e.refunded) continue;
+        const a = BigInt(e.paidLamports.toString()) - BigInt(e.solPaid.toString());
+        if (a > 0n) owed += a;
+      }
+      const rent = BigInt(await conn.getMinimumBalanceForRentExemption(8));
+      const free = BigInt(vaultBal) - rent;
+      console.log(`  refunds outstanding ${sol(owed)} SOL; vault above rent ${sol(free)} SOL` +
+        (owed > free ? `  ← SHORTFALL ${sol(owed - free)} SOL: top up the vault ${vaultPda(draw)}` : ""));
     }
   }
 }
 
-async function withdraw(program: DrawsolProgram, f: Record<string, string>) {
-  const draw = drawFlag(f);
+// ------------------------------------------------------------------ actions
+
+async function withdraw(program: DrawsolProgram, f: Flags) {
+  const draw = drawPda(drawId(f));
   const before = await program.provider.connection.getBalance(program.provider.publicKey!);
-  const sig = await program.methods
-    .withdraw()
-    .accountsPartial({ draw, vault: vaultPda(draw), authority: program.provider.publicKey! })
-    .rpc();
+  const sig = await program.methods.withdraw().accountsPartial({ draw, vault: vaultPda(draw), authority: program.provider.publicKey! }).rpc();
   const after = await program.provider.connection.getBalance(program.provider.publicKey!);
   console.log(`withdrew ≈${sol(after - before)} SOL (net of fee) ${sig}`);
 }
 
-async function revealAll(program: DrawsolProgram, f: Record<string, string>) {
-  const draw = drawFlag(f);
+async function revealAll(program: DrawsolProgram, f: Flags) {
+  const draw = drawPda(drawId(f));
   const n = await revealReady(program, draw);
-  const pending = (await fetchEntries(program, draw)).filter((e) => !e.account.revealed && !e.account.isFree).length;
-  console.log(`revealed ${n}; ${pending} paid entries still unrevealed (randomness pending or reveal failed)`);
+  const pending = (await fetchEntries(program, draw)).filter((e) => e.account.needsReveal && !e.account.revealed).length;
+  console.log(`revealed ${n}; ${pending} rolled entries still unrevealed (randomness pending or reveal failed)`);
 }
 
-async function runDraw(program: DrawsolProgram, f: Record<string, string>) {
-  const draw = drawFlag(f);
-  let d = await program.account.draw.fetch(draw);
+async function runDraw(program: DrawsolProgram, f: Flags) {
+  const draw = drawPda(drawId(f));
+  let d = await program.account.drawV3.fetch(draw);
   if (statusName(d.status) === "open") {
-    if (!isDue(d)) throw new Error(`draw #${d.id} is not due until ${new Date(d.closesAt.toNumber() * 1000).toISOString()} (or sell-out)`);
-    const req = await requestDraw(program, draw);
-    if (!req) return;
+    if (!isDue(d)) throw new Error(`draw #${d.id} is not due until ${iso(d.drawAt)}`);
+    await revealReady(program, draw); // reveal before the pool rolls into the pot
+    if (!(await requestDraw(program, draw))) return;
   }
-  d = await program.account.draw.fetch(draw);
-  if (statusName(d.status) !== "drawing") {
-    console.log(`draw #${d.id} is ${statusName(d.status)}; nothing to do`);
-    return;
-  }
-  const deadline = Date.now() + num(f, "timeout", 300) * 1000;
+  d = await program.account.drawV3.fetch(draw);
+  if (statusName(d.status) !== "drawing") return console.log(`draw #${d.id} is ${statusName(d.status)}; nothing to do`);
+  const deadline = Date.now() + (num(f, "timeout") ?? 300) * 1000;
   while (Date.now() < deadline) {
     if (await settleIfReady(program, draw)) return;
     console.log("waiting for ORAO fulfilment…");
@@ -251,17 +269,52 @@ async function runDraw(program: DrawsolProgram, f: Record<string, string>) {
   throw new Error("timed out waiting for randomness; rerun `run-draw` later (settle is permissionless)");
 }
 
+async function refundAllCmd(program: DrawsolProgram, f: Flags) {
+  const total = await refundAll(program, drawPda(drawId(f)));
+  console.log(`refunded ${sol(Number(total))} SOL in total`);
+}
+
+async function legacyClose(program: DrawsolProgram, f: Flags) {
+  const id = drawId(f);
+  const conn = program.provider.connection;
+  const legacy = await fetchLegacyDraw(conn, id);
+  if (!legacy) throw new Error(`no v2 draw #${id}`);
+  if (!legacy.closable) throw new Error(`v2 draw #${id} is ${legacy.status} with ${legacy.entryCount} entries and not fully withdrawn: not closable`);
+  const draw = legacyDrawPda(id);
+  const sig = await program.methods
+    .legacyCloseV2(new BN(id))
+    .accountsPartial({ config: configPda(), admin: program.provider.publicKey!, legacyDraw: draw, legacyVault: legacyVaultPda(draw) })
+    .rpc();
+  console.log(`closed v2 draw #${id}: ${sol(legacy.drawLamports + legacy.vaultLamports)} SOL returned to the admin ${sig}`);
+}
+
+async function terms(program: DrawsolProgram, f: Flags) {
+  const id = drawId(f);
+  const d = await program.account.drawV3.fetch(drawPda(id));
+  const text = renderTerms(id, d);
+  const ok = sha256(text).equals(Buffer.from(d.termsHash));
+  console.log(text);
+  console.log(`terms_hash on chain ${Buffer.from(d.termsHash).toString("hex")} — ${ok ? "MATCHES" : "DOES NOT MATCH"} this rendering`);
+  if (!ok) process.exit(1);
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const f = parseFlags(rest);
   const program = makeProgram();
   switch (cmd) {
-    case "init-config": return initConfig(program);
-    case "create-draw": return createDraw(program, f);
+    case "init-config": return initConfig(program, f);
+    case "migrate-config": return migrateConfig(program, f);
+    case "set-keeper": return setKeeper(program, f);
+    case "create-pot": return create(program, f, "pot");
+    case "create-headline": return create(program, f, "headline");
     case "status": return status(program, f);
     case "withdraw": return withdraw(program, f);
     case "reveal-all": return revealAll(program, f);
     case "run-draw": return runDraw(program, f);
+    case "refund-all": return refundAllCmd(program, f);
+    case "legacy-close": return legacyClose(program, f);
+    case "terms": return terms(program, f);
     default:
       console.log(fs.readFileSync(__filename, "utf8").split("*/")[0]);
       process.exit(cmd ? 1 : 0);

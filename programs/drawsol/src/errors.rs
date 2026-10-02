@@ -32,16 +32,35 @@ pub enum DrawError {
     VrfNotFulfilled,
     #[msg("Entry already revealed")]
     AlreadyRevealed,
-    #[msg("Free entries have no instant result or refund")]
-    FreeEntryNoReveal,
+    #[msg("This entry has no instant roll")]
+    NoInstantRoll,
     #[msg("This entry does not hold the winning ticket")]
     WrongWinningEntry,
     #[msg("The draw cannot be cancelled yet")]
     NotCancellable,
     #[msg("Entry already refunded")]
     AlreadyRefunded,
+    #[msg("Nothing to refund for this entry")]
+    NothingToRefund,
     #[msg("Nothing to withdraw right now")]
     NothingToWithdraw,
     #[msg("Arithmetic overflow")]
     MathOverflow,
+    // ---- v3
+    #[msg("The draw is not due yet (draw_at)")]
+    DrawNotDue,
+    #[msg("Not enough credits")]
+    InsufficientCredits,
+    #[msg("This purchase would exceed your spend limit for the period")]
+    SpendLimitExceeded,
+    #[msg("This wallet is self-excluded")]
+    SelfExcluded,
+    #[msg("The vault cannot cover this payment yet; the operator must top it up")]
+    VaultShortfall,
+    #[msg("Config is already migrated")]
+    AlreadyMigrated,
+    #[msg("Account is not a v2 account of this program")]
+    NotLegacyAccount,
+    #[msg("The v2 draw still holds liabilities and cannot be closed")]
+    LegacyNotClosable,
 }

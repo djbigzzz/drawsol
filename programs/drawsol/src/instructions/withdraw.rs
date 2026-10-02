@@ -1,10 +1,10 @@
 use anchor_lang::prelude::*;
 
-use crate::constants::{DRAW_SEED, RESERVE_UNLOCK_SECS, VAULT_SEED};
+use crate::constants::{DRAW_SEED, VAULT_SEED};
 use crate::errors::DrawError;
 use crate::events::Withdrawn;
-use crate::state::{Draw, DrawStatus, Vault};
-use crate::utils::{now, pay_from_vault};
+use crate::state::{DrawKind, DrawStatus, DrawV3, VaultV3};
+use crate::utils::pay_from_vault;
 
 #[derive(Accounts)]
 pub struct Withdraw<'info> {
@@ -14,54 +14,34 @@ pub struct Withdraw<'info> {
         bump = draw.bump,
         has_one = authority @ DrawError::Unauthorized,
     )]
-    pub draw: Box<Account<'info, Draw>>,
+    pub draw: Box<Account<'info, DrawV3>>,
 
     #[account(mut, seeds = [VAULT_SEED, draw.key().as_ref()], bump = draw.vault_bump)]
-    pub vault: Account<'info, Vault>,
+    pub vault: Account<'info, VaultV3>,
 
     #[account(mut)]
     pub authority: Signer<'info>,
 }
 
 /// Pays out whatever the authority is entitled to right now:
-/// - Settled: ticket proceeds (once).
-/// - Settled/Cancelled: unspent instant-win reserve, once every paid entry is revealed or
-///   `RESERVE_UNLOCK_SECS` after close.
-/// - Cancelled: the prize, if it was not already returned.
-/// Ticket proceeds of a cancelled draw are never withdrawable: they back the refunds.
+/// - Settled: `house_lamports − house_withdrawn` (pot: the house share; headline: all ticket revenue).
+/// - Cancelled headline: the escrowed prize, once (if `request_draw` did not already return it).
+/// A pot draw's house share is never withdrawable before Settled (refunds could still be owed), and a
+/// cancelled draw's ticket money only ever backs refunds.
 pub fn handler(ctx: Context<Withdraw>) -> Result<()> {
-    let now = now()?;
     let d = &mut ctx.accounts.draw;
     let mut amount: u64 = 0;
-    let mut did_something = false;
 
-    if d.status == DrawStatus::Settled && !d.proceeds_withdrawn {
-        amount = amount.checked_add(d.proceeds_lamports).ok_or(DrawError::MathOverflow)?;
-        d.proceeds_withdrawn = true;
-        did_something = true;
-    }
-
-    let unlock_at = d.closes_at.checked_add(RESERVE_UNLOCK_SECS).ok_or(DrawError::MathOverflow)?;
-    if !d.reserve_withdrawn
-        && (d.status == DrawStatus::Settled || d.status == DrawStatus::Cancelled)
-        && (d.revealed_entries == d.paid_entries || now > unlock_at)
-    {
-        let left = d
-            .iw_reserve_lamports
-            .checked_sub(d.iw_paid_lamports)
-            .ok_or(DrawError::MathOverflow)?;
+    if d.status == DrawStatus::Settled {
+        let left = d.house_lamports.checked_sub(d.house_withdrawn).ok_or(DrawError::MathOverflow)?;
+        d.house_withdrawn = d.house_lamports;
         amount = amount.checked_add(left).ok_or(DrawError::MathOverflow)?;
-        d.reserve_withdrawn = true;
-        did_something = true;
     }
-
-    if d.status == DrawStatus::Cancelled && !d.prize_paid {
-        amount = amount.checked_add(d.prize_lamports).ok_or(DrawError::MathOverflow)?;
+    if d.status == DrawStatus::Cancelled && d.kind == DrawKind::Headline && !d.prize_paid {
         d.prize_paid = true;
-        did_something = true;
+        amount = amount.checked_add(d.prize_lamports).ok_or(DrawError::MathOverflow)?;
     }
-
-    require!(did_something, DrawError::NothingToWithdraw);
+    require!(amount > 0, DrawError::NothingToWithdraw);
     let draw_key = d.key();
 
     pay_from_vault(

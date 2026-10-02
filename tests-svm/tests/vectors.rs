@@ -3,13 +3,41 @@
 //!
 //! The file is (re)written when missing or when `DRAWSOL_REGEN_VECTORS=1`; otherwise the test asserts
 //! that the committed file still matches what the Rust code produces.
+//!
+//! v3 changed only the VRF seed domains (`drawsol:v3:*`) and the PDA seeds. The v2 sections
+//! (`entry_seed`, `draw_seed`, `pdas`) are kept byte-identical for verifying legacy draws #0–#1;
+//! the v3 ones are `entry_seed_v3`, `draw_seed_v3`, `pdas_v3`.
 mod common;
 
 use anchor_lang::prelude::Pubkey;
 use common::*;
 use drawsol::fairness::*;
-use drawsol::state::IwTier;
 use serde_json::{json, Value};
+
+/// v2 instant tier (amount in lamports), kept only so the v2 vector sections stay identical.
+#[derive(Clone, Copy)]
+struct IwTier {
+    amount: u64,
+    odds: u32,
+}
+
+fn odds(t: &[IwTier; 4]) -> [u32; 4] {
+    [t[0].odds, t[1].odds, t[2].odds, t[3].odds]
+}
+
+/// v2 devnet demo tiers (SPEC.md §3).
+fn demo_tiers() -> [IwTier; 4] {
+    [
+        IwTier { amount: SOL / 5, odds: 10 },
+        IwTier { amount: SOL / 20, odds: 40 },
+        IwTier { amount: SOL / 100, odds: 150 },
+        IwTier { amount: 0, odds: 0 },
+    ]
+}
+
+fn legacy_pda(seeds: &[&[u8]]) -> Pubkey {
+    pda(seeds)
+}
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
@@ -35,7 +63,7 @@ fn tiers_json(t: &[IwTier; 4]) -> Value {
 }
 
 fn build() -> Value {
-    let demo = demo_params(T0).iw_tiers;
+    let demo = demo_tiers();
     let prod = [
         IwTier { amount: SOL, odds: 4 },
         IwTier { amount: SOL / 4, odds: 16 },
@@ -55,7 +83,7 @@ fn build() -> Value {
             "tiers": tiers_json(tiers),
             "roll": roll.to_string(),
             "x": uniform_index(roll, denom),
-            "tier": ticket_tier(&r, ticket, denom, tiers),
+            "tier": ticket_tier(&r, ticket, denom, &odds(tiers)),
         }));
     };
     add_ticket("ticket-a", 0, 1000, &demo);
@@ -65,7 +93,7 @@ fn build() -> Value {
     // A guaranteed winner for each demo tier: search tickets until each tier appears once.
     let r = rnd("ticket-search");
     for want in 1..=3u8 {
-        let t = (0u32..100_000).find(|&t| ticket_tier(&r, t, 1000, &demo) == want).unwrap();
+        let t = (0u32..100_000).find(|&t| ticket_tier(&r, t, 1000, &odds(&demo)) == want).unwrap();
         add_ticket("ticket-search", t, 1000, &demo);
     }
 
@@ -82,12 +110,13 @@ fn build() -> Value {
         }));
     }
 
-    // --- VRF seeds and ORAO request PDAs
+    // --- VRF seeds and ORAO request PDAs (v2: legacy draws)
+    let v2_draw_pda = |id: u64| legacy_pda(&[b"draw", &id.to_le_bytes()]);
     let mut entry_seeds = Vec::new();
     for (i, (seq, nonce)) in [(0u32, [0u8; 16]), (1, [0xAB; 16]), (4_000_000_000, *b"0123456789abcdef")].iter().enumerate() {
-        let draw = draw_pda(i as u64);
+        let draw = v2_draw_pda(i as u64);
         let buyer = key(&format!("buyer-{i}"));
-        let seed = entry_vrf_seed(&draw, &buyer, *seq, nonce);
+        let seed = entry_vrf_seed_v2(&draw, &buyer, *seq, nonce);
         entry_seeds.push(json!({
             "draw": draw.to_string(),
             "buyer": buyer.to_string(),
@@ -99,8 +128,8 @@ fn build() -> Value {
     }
     let mut draw_seeds = Vec::new();
     for (i, (n, nonce)) in [(1u32, [7u8; 16]), (150, *b"fedcba9876543210")].iter().enumerate() {
-        let draw = draw_pda(i as u64);
-        let seed = draw_vrf_seed(&draw, *n, nonce);
+        let draw = v2_draw_pda(i as u64);
+        let seed = draw_vrf_seed_v2(&draw, *n, nonce);
         draw_seeds.push(json!({
             "draw": draw.to_string(),
             "next_ticket": n,
@@ -110,17 +139,56 @@ fn build() -> Value {
         }));
     }
 
-    // --- program PDAs (for the frontend's address derivation)
-    let d0 = draw_pda(0);
+    // --- program PDAs (for the frontend's address derivation), v2 legacy seeds
+    let d0 = v2_draw_pda(0);
     let w = key("buyer-0");
     let pdas = json!({
         "config": config_pda().to_string(),
         "draw_0": d0.to_string(),
-        "draw_1": draw_pda(1).to_string(),
-        "vault_of_draw_0": vault_pda(&d0).to_string(),
-        "entry_0_of_draw_0": entry_pda(&d0, 0).to_string(),
-        "entry_7_of_draw_0": entry_pda(&d0, 7).to_string(),
-        "player_of_draw_0": { "wallet": w.to_string(), "player": player_pda(&d0, &w).to_string() },
+        "draw_1": v2_draw_pda(1).to_string(),
+        "vault_of_draw_0": legacy_pda(&[b"vault", d0.as_ref()]).to_string(),
+        "entry_0_of_draw_0": legacy_pda(&[b"entry", d0.as_ref(), &0u32.to_le_bytes()]).to_string(),
+        "entry_7_of_draw_0": legacy_pda(&[b"entry", d0.as_ref(), &7u32.to_le_bytes()]).to_string(),
+        "player_of_draw_0": { "wallet": w.to_string(), "player": legacy_pda(&[b"player", d0.as_ref(), w.as_ref()]).to_string() },
+    });
+
+    // --- v3: seeds with the v3 domains, v3 PDA seeds (draw ids continue at 2 on devnet)
+    let mut entry_seeds_v3 = Vec::new();
+    for (i, (seq, nonce)) in [(0u32, [0u8; 16]), (1, [0xAB; 16]), (4_000_000_000, *b"0123456789abcdef")].iter().enumerate() {
+        let draw = draw_pda(2 + i as u64);
+        let buyer = key(&format!("buyer-{i}"));
+        let seed = entry_vrf_seed(&draw, &buyer, *seq, nonce);
+        entry_seeds_v3.push(json!({
+            "draw": draw.to_string(),
+            "buyer": buyer.to_string(),
+            "seq": seq,
+            "client_nonce": hex(nonce),
+            "seed": hex(&seed),
+            "vrf_request": vrf_request_address(&seed).to_string(),
+        }));
+    }
+    let mut draw_seeds_v3 = Vec::new();
+    for (i, (n, nonce)) in [(1u32, [7u8; 16]), (300, *b"fedcba9876543210")].iter().enumerate() {
+        let draw = draw_pda(2 + i as u64);
+        let seed = draw_vrf_seed(&draw, *n, nonce);
+        draw_seeds_v3.push(json!({
+            "draw": draw.to_string(),
+            "next_ticket": n,
+            "client_nonce": hex(nonce),
+            "seed": hex(&seed),
+            "vrf_request": vrf_request_address(&seed).to_string(),
+        }));
+    }
+    let d2 = draw_pda(2);
+    let pdas_v3 = json!({
+        "config": config_pda().to_string(),
+        "draw_2": d2.to_string(),
+        "draw_3": draw_pda(3).to_string(),
+        "vault_of_draw_2": vault_pda(&d2).to_string(),
+        "entry_0_of_draw_2": entry_pda(&d2, 0).to_string(),
+        "entry_7_of_draw_2": entry_pda(&d2, 7).to_string(),
+        "player_of_draw_2": { "wallet": w.to_string(), "player": player_pda(&d2, &w).to_string() },
+        "profile": { "wallet": w.to_string(), "profile": profile_pda(&w).to_string() },
     });
 
     json!({
@@ -141,6 +209,15 @@ fn build() -> Value {
         "entry_seed": entry_seeds,
         "draw_seed": draw_seeds,
         "pdas": pdas,
+        "functions_v3": {
+            "entry_vrf_seed": "sha256('drawsol:v3:entry' || draw || buyer || seq_le_u32 || client_nonce[16])",
+            "draw_vrf_seed": "sha256('drawsol:v3:draw' || draw || next_ticket_le_u32 || client_nonce[16])",
+            "pdas": "config ['config']; draw ['draw3', id_le_u64]; vault ['vault3', draw]; entry ['entry3', draw, seq_le_u32]; player ['player3', draw, wallet]; profile ['profile', wallet]",
+            "ticket_roll / x / tier / winning_ticket": "unchanged from v2 (tier uses only each tier's odds)"
+        },
+        "entry_seed_v3": entry_seeds_v3,
+        "draw_seed_v3": draw_seeds_v3,
+        "pdas_v3": pdas_v3,
     })
 }
 
@@ -162,10 +239,14 @@ fn fairness_properties() {
     assert_eq!(uniform_index(u64::MAX, u32::MAX), u32::MAX - 1);
     assert_eq!(uniform_index(0, 150), 0);
     // empirical hit rate of the demo table ≈ 200/1000
-    let tiers = demo_params(T0).iw_tiers;
+    let tiers = odds(&demo_tiers());
     let r = rnd("hit-rate");
     let hits = (0..100_000u32).filter(|&t| ticket_tier(&r, t, 1000, &tiers) > 0).count();
     assert!((19_000..21_000).contains(&hits), "hits = {hits}");
     // denominator 0 never wins
     assert_eq!(ticket_tier(&r, 0, 0, &tiers), 0);
+    // v3 devnet nightly table (15 + 60 + 150 per 1000): any instant result ≈ 1 in 4.4
+    let v3 = pot_params(T0).iw_tiers.map(|t| t.odds);
+    let hits = (0..100_000u32).filter(|&t| ticket_tier(&r, t, 1000, &v3) > 0).count();
+    assert!((21_500..23_500).contains(&hits), "v3 hits = {hits}");
 }

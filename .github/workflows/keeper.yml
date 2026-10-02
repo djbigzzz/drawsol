@@ -1,0 +1,35 @@
+# DrawSol v3 keeper (SPEC-v3 §4): one pass every 10 minutes — reveal entries, request / settle / cancel draws,
+# create tonight's pot draw. Signs with the dedicated low-balance keeper key, never the admin key.
+#
+# Setup: repo secret KEEPER_SECRET = the keeper keypair's JSON array (`cat keeper.json`);
+#        repo variable RPC_URL = devnet RPC endpoint (defaults to https://api.devnet.solana.com when unset).
+name: keeper
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: keeper
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  keeper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Keeper pass
+        run: npx tsx keeper/index.ts --once
+        env:
+          KEEPER_SECRET: ${{ secrets.KEEPER_SECRET }}
+          RPC_URL: ${{ vars.RPC_URL }}
