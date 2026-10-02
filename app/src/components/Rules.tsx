@@ -143,7 +143,7 @@ export function Rules() {
             <span className="dbl" aria-hidden="true" />
             <ul className="house-list t-small">
               <li>18+ only. You confirm it once on each device.</li>
-              <li>A prize draw: every result is decided by chance, and you can enter free instead of buying.</li>
+              <li>A prize draw concept with a free entry route: every result is decided by chance, and you can enter free instead of buying.</li>
               <li>
                 Up to {d.maxPerTx} tickets per purchase and {d.maxPerWallet} per wallet per draw, enforced on-chain.
               </li>

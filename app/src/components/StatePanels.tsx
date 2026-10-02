@@ -105,3 +105,34 @@ export function NoDraw({ reason }: { reason: "no-program" | "no-config" | "no-dr
     </div>
   );
 }
+
+/**
+ * Polls of the current draw keep failing after a good read: keep what was read, say when, and say the page
+ * is trying again. No box: ink rules above and below, like the error note, but no red (nothing failed that
+ * you did).
+ */
+export function StaleNote() {
+  const { staleSince, retryIn, refresh } = useDrawSol();
+  if (staleSince === null) return null;
+  const d = new Date(staleSince * 1000);
+  const hhmm = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  return (
+    <div className="stale" role="status">
+      <p className="stale-top">
+        <span className="stale-lead">Devnet isn’t answering.</span>
+        <button type="button" className="tbtn" onClick={refresh}>
+          Try now
+        </button>
+      </p>
+      <p className="stale-msg">
+        Everything below was read at <span className="nw">{hhmm} UTC</span> and may be out of date.
+        {retryIn !== null ? (
+          <>
+            {" "}
+            Trying again in <span className="nw">{retryIn} s</span>.
+          </>
+        ) : null}
+      </p>
+    </div>
+  );
+}

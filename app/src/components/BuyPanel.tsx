@@ -14,9 +14,9 @@ import { AdultRow, ConfirmStep, Guarantee } from "./ConfirmStep";
 import { FeeLine, useFees } from "./Fee";
 import { plural, solRound, stampDay } from "./fmt";
 import { Stamp } from "./print/Stamp";
+import { PenLoop, PICKS } from "./Picks";
 import { CarbonSlip } from "./print/CarbonSlip";
 
-const PICKS = [1, 5, 10, 25];
 const AIRDROP_SOL = sol(BigInt(AIRDROP_LAMPORTS), 0, 2);
 
 /** Which buy button the stub and the bar show, in priority order (DESIGN.md §5.5). */
@@ -113,7 +113,7 @@ function Selling({ d }: { d: DrawView }) {
   return (
     <>
       {/* one head slot: the tabs swap to "Check and pay" in place (160ms crossfade) */}
-      <div className={`stub-head ${confirm ? "" : "has-tabs"}`} key={confirm ? "confirm" : "pick"}>
+      <div className={`stub-head ${confirm || barMode ? "" : "has-tabs"}`} key={confirm ? "confirm" : "pick"}>
         {confirm ? (
           <>
             <h2 className="t-stub-head stub-in" id="confirm-h" tabIndex={-1}>
@@ -124,18 +124,27 @@ function Selling({ d }: { d: DrawView }) {
             </button>
           </>
         ) : (
-          <>
-            <h2 className="sr-only">Enter Draw Nº {d.id}</h2>
-            <EntryTabs prefix="tab" panel="stub-panel" />
-          </>
+          barMode ? (
+            // below 1024px the sticky bar holds the one interactive tablist; the info-only stub names the mode
+            <h2 className="t-stub-head stub-mode">{mode === "free" ? "Free entry" : "Buy tickets"}</h2>
+          ) : (
+            <>
+              <h2 className="sr-only">Enter Draw Nº {d.id}</h2>
+              <EntryTabs prefix="tab" panel="stub-panel" />
+            </>
+          )
         )}
       </div>
       <span className="dbl" aria-hidden="true" />
       {confirm ? (
         <ConfirmStep headingId="confirm-h" inStub />
+      ) : barMode ? (
+        <div key={mode} className="stub-in">
+          {mode === "free" ? <FreeEntry d={d} controls={false} /> : <Pick d={d} controls={false} />}
+        </div>
       ) : (
         <div id="stub-panel" role="tabpanel" aria-labelledby={`tab-${mode}`} key={mode} className="stub-in">
-          {mode === "free" ? <FreeEntry d={d} controls={!barMode} /> : <Pick d={d} controls={!barMode} />}
+          {mode === "free" ? <FreeEntry d={d} controls /> : <Pick d={d} controls />}
         </div>
       )}
     </>
@@ -525,22 +534,17 @@ function FreeEntry({ d, controls, sheet = false, headingId }: { d: DrawView; con
           <dd>{status}</dd>
         </div>
       </dl>
-      <ul className="free-rules t-small">
-        <li>One per wallet while sales are open. No purchase needed.</li>
-        <li>
-          It’s one ticket in the grand draw, numbered like any other, and counts toward the <span className="nw">{d.maxPerWallet}-ticket</span> wallet limit.
-        </li>
-        <li>
-          {rent !== null ? (
-            <>
-              There’s no ticket price. Your wallet pays only Solana rent for the entry record, <span className="nw">≈{solRound(rent, 4, 1)} SOL</span>, plus the network
-              fee.
-            </>
-          ) : (
-            <>There’s no ticket price. Your wallet pays only Solana rent for the entry record and the network fee, shown before you sign.</>
-          )}
-        </li>
-      </ul>
+      <p className="free-rules t-small">
+        One per wallet while sales are open, no purchase needed. It’s one ticket in the grand draw, numbered like any other, and counts toward the{" "}
+        <span className="nw">{d.maxPerWallet}-ticket</span> wallet limit.{" "}
+        {rent !== null ? (
+          <>
+            There’s no ticket price: your wallet pays only Solana rent for the entry record, <span className="nw">≈{solRound(rent, 4, 1)} SOL</span>, plus the network fee.
+          </>
+        ) : (
+          <>There’s no ticket price: your wallet pays only Solana rent for the entry record and the network fee, shown before you sign.</>
+        )}
+      </p>
       {action}
       {low && !claimed && freeLeft > 0 && <DevnetSol low={low.balance} action />}
       {errors.free && (
@@ -549,21 +553,6 @@ function FreeEntry({ d, controls, sheet = false, headingId }: { d: DrawView; con
         </div>
       )}
     </div>
-  );
-}
-
-/**
- * A ballpoint loop around the chosen quick pick: open, overshooting and crossing itself at the
- * top right, heavier where the pen pressed (1.5 → 2.2px), and turned a few degrees per pick so it
- * never reads as a border. Draws on only when you choose (not on load).
- */
-function PenLoop({ pick, inked }: { pick: number; inked: boolean }) {
-  const turn = ((pick * 37) % 17) - 8; // −8…+8°, fixed per pick
-  return (
-    <svg className={`pen ${inked ? "anim" : ""}`} style={{ transform: `rotate(${turn}deg)` }} viewBox="0 0 60 40" preserveAspectRatio="none" aria-hidden="true">
-      <path className="p1" d="M50 11C40 3 14 4 6 15C0 25 12 37 30 37C47 37 58 29 56 18C55 11 49 5 38 3" vectorEffect="non-scaling-stroke" />
-      <path className="p2" d="M6 15C0 25 12 37 30 37C47 37 58 29 56 18" vectorEffect="non-scaling-stroke" />
-    </svg>
   );
 }
 
@@ -988,7 +977,7 @@ function SellBar({ d }: { d: DrawView }) {
 /** The bar on the "Free entry" tab: what's left (or this wallet's claim) and the claim, which opens the sheet. */
 function FreeBarRow({ d }: { d: DrawView }) {
   const { wallet, myEntries, myState, player } = useDrawSol();
-  const { phase } = useActions();
+  const { phase, errors } = useActions();
   const { openConfirm, connectThenConfirm } = useBuy();
   const freeLeft = Math.max(0, d.freeCap - d.freeTickets);
   const read = myState === "ready";
@@ -1015,12 +1004,21 @@ function FreeBarRow({ d }: { d: DrawView }) {
     );
   return (
     <>
-      <span className="bar-note t-small">
-        <span className="nw">
-          {freeLeft} of {d.freeCap}
-        </span>{" "}
-        left
-      </span>
+      {errors.free ? (
+        <span className="bar-note t-small c-red">
+          Didn’t go through.{" "}
+          <button type="button" className="tbtn" onClick={openConfirm}>
+            Details
+          </button>
+        </span>
+      ) : (
+        <span className="bar-note t-small">
+          <span className="nw">
+            {freeLeft} of {d.freeCap}
+          </span>{" "}
+          free left
+        </span>
+      )}
       {wallet ? (
         <button type="button" id="bar-buy" className="btn" onClick={openConfirm} disabled={inFlight(fp)}>
           {inFlight(fp) && <Busy />}

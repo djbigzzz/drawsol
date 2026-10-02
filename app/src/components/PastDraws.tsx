@@ -4,9 +4,11 @@ import { useState } from "react";
 import { useDrawSol } from "@/hooks/context";
 import { shortDate, sol, ticketNo } from "@/lib/format";
 import type { DrawView } from "@/lib/types";
-import { Addr, Busy, ProofLink, SectionGrid } from "./bits";
+import { Addr, ProofLink, SectionGrid } from "./bits";
 import { CarbonSlip } from "./print/CarbonSlip";
-import { SettledTicket, useSettleTx } from "./SettledTicket";
+import { SettledTicket, SettleTxLine, useSettleTx } from "./SettledTicket";
+import { plural } from "./fmt";
+import Link from "next/link";
 
 export function PastDraws() {
   const { draws, current } = useDrawSol();
@@ -40,7 +42,11 @@ export function PastDraws() {
             return (
               <div key={k}>
                 <div className="older-row">
-                  <b>Draw Nº {d.id}</b>
+                  <b>
+                    <Link className="rowlink" href={`/draw/?n=${d.id}`}>
+                      Draw Nº {d.id}
+                    </Link>
+                  </b>
                   <span className="d nw">
                     {d.status === "settled" ? `settled ${shortDate(d.settledAt)}` : `closed ${shortDate(d.closesAt)}`}
                   </span>
@@ -111,15 +117,12 @@ function LeadLedger({ d }: { d: DrawView }) {
         </div>
       </dl>
       <p className="ledger-link t-small">
-        {tx ? (
-          <ProofLink tx={tx}>Settlement transaction</ProofLink>
-        ) : tx === null ? (
-          <span className="c-ink-3">Settlement transaction not indexed.</span>
-        ) : (
-          <>
-            <Busy /> <span className="c-ink-3">Finding the settlement transaction…</span>
-          </>
-        )}
+        <SettleTxLine tx={tx} />
+      </p>
+      <p className="sec-link">
+        <Link className="tbtn" href={`/draw/?n=${d.id}`}>
+          Draw Nº {d.id}’s record and all {d.nextTicket} {plural(d.nextTicket, "ticket", "tickets")}
+        </Link>
       </p>
     </>
   );

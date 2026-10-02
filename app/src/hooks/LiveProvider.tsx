@@ -33,7 +33,7 @@ import {
 import { useProgram } from "./useProgram";
 import { pickCurrent, useDraws } from "./useDraws";
 import { useDraw } from "./useDraw";
-import { useEntries, useMyEntries } from "./useEntries";
+import { useAllEntries, useEntries, useMyEntries } from "./useEntries";
 import { useBalance } from "./useBalance";
 import { useNow } from "./useNow";
 import { useRandomness, waitForRandomness } from "./useRandomness";
@@ -48,7 +48,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   const { load, config, draws, refresh: refreshDraws } = useDraws(program);
   const listed = useMemo(() => pickCurrent(draws), [draws]);
-  const { draw: current, vault, failures } = useDraw(program, listed);
+  const { draw: current, vault, failures, lastOk, nextAt, pollNow } = useDraw(program, listed);
   const { entries, state: entriesState } = useEntries(program, current, nonce);
   const pk = walletCtx.publicKey;
   const { myEntries, player, state: myState } = useMyEntries(program, current, pk, nonce);
@@ -81,19 +81,33 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(() => {
     refreshDraws();
+    pollNow();
     setNonce((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshDraws]);
 
-  const effectiveLoad = failures >= 2 ? { kind: "error" as const, message: "Lost connection to devnet" } : load;
+  // After two failed polls the page keeps the draw it last read, marked stale with that time, instead of
+  // blanking; the load itself failing (nothing read yet) is still the error state.
+  const staleSince = load.kind === "ready" && failures >= 2 && lastOk !== null ? lastOk : null;
+  const retryIn = staleSince !== null && nextAt !== null ? Math.max(0, Math.ceil(nextAt / 1000 - now)) : null;
+  const all = useAllEntries(program, draws, nonce);
+  const fetchDrawEntries = useCallback((draw: PublicKey) => fetchEntries(program, draw), [program]);
 
   const findSettleTx = useCallback(
     async (draw: { address: PublicKey; settledAt: number }) => {
       // The settle tx touches the draw account and lands in the block whose time the program stored.
-      const sigs = await connection.getSignaturesForAddress(draw.address, { limit: 100 }, "confirmed");
-      const near = sigs.filter((s) => !s.err && s.blockTime !== null && Math.abs((s.blockTime ?? 0) - draw.settledAt) <= 2);
-      for (const s of near) {
-        const tx = await connection.getTransaction(s.signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
-        if (tx?.meta?.logMessages?.some((l) => l.includes("Instruction: SettleDraw"))) return s.signature;
+      // Page back through the draw account's history (newest first) until it is older than settledAt.
+      let before: string | undefined;
+      for (let page = 0; page < 20; page++) {
+        const sigs = await connection.getSignaturesForAddress(draw.address, { limit: 100, before }, "confirmed");
+        const near = sigs.filter((s) => !s.err && s.blockTime !== null && Math.abs((s.blockTime ?? 0) - draw.settledAt) <= 2);
+        for (const s of near) {
+          const tx = await connection.getTransaction(s.signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
+          if (tx?.meta?.logMessages?.some((l) => l.includes("Instruction: SettleDraw"))) return s.signature;
+        }
+        const last = sigs[sigs.length - 1];
+        if (sigs.length < 100 || !last || (last.blockTime !== null && last.blockTime !== undefined && last.blockTime < draw.settledAt - 2)) return null;
+        before = last.signature;
       }
       return null;
     },
@@ -105,7 +119,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   );
 
   const data: DrawSolData = {
-    load: effectiveLoad,
+    load,
     config,
     draws: current ? draws.map((d) => (d.address.equals(current.address) ? current : d)) : draws,
     current,
@@ -120,6 +134,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     costs,
     now,
     refresh,
+    staleSince,
+    retryIn,
+    allEntries: all.entries,
+    allEntriesState: all.state,
+    fetchDrawEntries,
     findSettleTx,
     readOrao,
   };

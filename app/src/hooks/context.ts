@@ -44,7 +44,22 @@ export interface DrawSolData {
   /** unix seconds, ticks every second */
   now: number;
   refresh: () => void;
-  /** finds the settle_draw transaction of a settled draw (signature) */
+  /**
+   * Set while polls of the current draw keep failing after a good read: the unix time of the last good
+   * read. The page keeps what it read, marked stale; it never invents a newer number.
+   */
+  staleSince: number | null;
+  /** seconds until the next poll while stale (backing off 15 → 30 → 60 s) */
+  retryIn: number | null;
+  /** every Entry account of the program, all draws (winners feed and counters) */
+  allEntries: EntryView[];
+  allEntriesState: "loading" | "error" | "ready";
+  /** every Entry account of one draw (the per-draw page) */
+  fetchDrawEntries: (draw: PublicKey) => Promise<EntryView[]>;
+  /**
+   * finds the settle_draw transaction of a settled draw (signature); null when the RPC has no such
+   * transaction indexed. Throws when the search itself fails, so the UI can say so instead.
+   */
   findSettleTx: (draw: DrawView) => Promise<string | null>;
   /** reads an ORAO request account's randomness (for recompute) */
   readOrao: (address: PublicKey) => Promise<Uint8Array | null>;

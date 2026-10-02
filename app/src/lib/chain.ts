@@ -151,6 +151,12 @@ export async function fetchEntries(
   return (all as any[]).map((e) => decodeEntry(e.publicKey, e.account)).sort((a, b) => b.seq - a.seq);
 }
 
+/** Every Entry account of the program (all draws), newest first by creation time. */
+export async function fetchAllEntries(p: AnyProgram): Promise<EntryView[]> {
+  const all = await acc(p).entry.all();
+  return (all as any[]).map((e) => decodeEntry(e.publicKey, e.account)).sort((a, b) => b.createdAt - a.createdAt || b.seq - a.seq);
+}
+
 export async function fetchEntry(p: AnyProgram, address: PublicKey): Promise<EntryView | null> {
   const e = await acc(p).entry.fetchNullable(address);
   return e ? decodeEntry(address, e) : null;

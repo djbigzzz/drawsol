@@ -8,39 +8,56 @@ import type { DrawView } from "@/lib/types";
 const POLL_MS = 15_000;
 
 /**
- * One Draw + its Vault balance, kept live with onAccountChange and a 15 s poll fallback.
- * `failures` counts consecutive failed polls so the UI can drop to the error state.
+ * One Draw + its Vault balance, kept live with onAccountChange and a poll fallback (15 s while healthy).
+ * After a failed poll the next one waits longer (30 s, then 60 s), so a rate-limited RPC isn't pushed
+ * harder. `failures` counts consecutive failed polls; `lastOk` is when the draw was last read.
  */
 export function useDraw(program: AnyProgram, initial: DrawView | null) {
   const [draw, setDraw] = useState<DrawView | null>(initial);
   const [vault, setVault] = useState<bigint | null>(null);
   const [failures, setFailures] = useState(0);
+  const [lastOk, setLastOk] = useState<number | null>(null);
+  const [nextAt, setNextAt] = useState<number | null>(null);
   const addr = initial?.address.toBase58() ?? null;
   const initialRef = useRef(initial);
   initialRef.current = initial;
+  const kick = useRef<() => void>(() => {});
 
   useEffect(() => {
     setDraw(initialRef.current);
     setVault(null);
+    setFailures(0);
+    setLastOk(initialRef.current ? Math.floor(Date.now() / 1000) : null);
     if (!addr) return;
     const conn = program.provider.connection;
     const drawKey = new PublicKey(addr);
     const vaultKey = vaultPda(drawKey);
     let alive = true;
+    let fails = 0;
+    let t: ReturnType<typeof setTimeout> | undefined;
 
     const poll = async () => {
+      clearTimeout(t);
       try {
         const [d, v] = await Promise.all([fetchDraw(program, drawKey), conn.getBalance(vaultKey, "confirmed")]);
         if (!alive) return;
         if (d) setDraw(d);
         setVault(BigInt(v));
+        fails = 0;
         setFailures(0);
+        setLastOk(Math.floor(Date.now() / 1000));
       } catch {
-        if (alive) setFailures((f) => f + 1);
+        if (!alive) return;
+        fails += 1;
+        setFailures(fails);
       }
+      // 15 s, then 30 s and 60 s after consecutive failures
+      const delay = POLL_MS * 2 ** Math.min(fails, 2);
+      setNextAt(Date.now() + delay);
+      t = setTimeout(poll, delay);
     };
+    kick.current = () => void poll();
     poll();
-    const t = setInterval(poll, POLL_MS);
 
     const subs: number[] = [];
     try {
@@ -64,10 +81,11 @@ export function useDraw(program: AnyProgram, initial: DrawView | null) {
 
     return () => {
       alive = false;
-      clearInterval(t);
+      clearTimeout(t);
+      kick.current = () => {};
       subs.forEach((s) => conn.removeAccountChangeListener(s).catch(() => {}));
     };
   }, [program, addr]);
 
-  return { draw, vault, failures };
+  return { draw, vault, failures, lastOk, nextAt, pollNow: () => kick.current() };
 }

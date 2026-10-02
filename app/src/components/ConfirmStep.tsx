@@ -3,12 +3,12 @@
 import { useEffect, useId, useState } from "react";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { sol, ticketNo, utcLabel } from "@/lib/format";
-import { vaultPda } from "@/lib/chain";
 import type { DrawView } from "@/lib/types";
-import { Busy, ErrorNote, inFlight, ProofLink } from "./bits";
+import { Busy, ErrorNote, inFlight } from "./bits";
 import { useBuy } from "./BuyContext";
 import { FeeLine } from "./Fee";
 import { plural } from "./fmt";
+import { SheetPicks } from "./Picks";
 
 /**
  * Check and pay: summary, one-line fee, 18+ once, Pay, and the draw guarantee.
@@ -68,6 +68,7 @@ export function ConfirmStep({ headingId, inStub = false }: { headingId: string; 
         </span>
         <b className="t-rowtotal">{sol(subtotal, 2, 4)} SOL</b>
       </div>
+      {!inStub && !busy && <SheetPicks />}
       <FeeLine />
       <p className="c-num t-fine-g">Numbered from {ticketNo(d.nextTicket)}, unless someone buys first.</p>
 
@@ -132,19 +133,15 @@ export function AdultRow({
 }
 
 /**
- * The draw guarantee, scoped to the grand prize (research P0-4). Every figure is the draw account's;
- * the link is the vault that holds the prize. "Never reduced" covers the grand prize only: instant wins
- * are paid up to what is left in the reserve.
+ * The draw guarantee, scoped to the grand prize (research P0-4). Every figure is the draw account's. It is
+ * plain text: the ticket face already carries its one proof link, the vault, right above (DESIGN.md §8.1).
+ * "Never reduced" covers the grand prize only: instant wins are paid up to what is left in the reserve.
  */
 export function Guarantee({ d, className = "" }: { d: DrawView; className?: string }) {
   return (
     <p className={`guarantee t-small ${className}`}>
       Drawn at <span className="nw">{utcLabel(d.closesAt)}</span> or when all {d.ticketCap} tickets sell, whichever comes first. Grand prize already locked:{" "}
-      <ProofLink account={vaultPda(d.address)}>
-        {sol(d.prizeLamports, 0, 4)} SOL
-        <span className="sr-only"> in the vault</span>
-      </ProofLink>
-      . Never extended; the grand prize is never reduced.
+      <span className="nw">{sol(d.prizeLamports, 0, 4)} SOL</span>, in the program vault. The draw is never extended and the grand prize is never reduced.
     </p>
   );
 }

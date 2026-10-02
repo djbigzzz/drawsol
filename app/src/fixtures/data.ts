@@ -237,7 +237,18 @@ export type Scenario =
   | "reveal-wait"
   | "reveal-approve"
   | "reveal-failed"
-  | "reveal-nowin";
+  | "reveal-nowin"
+  | "open-free-pending"
+  | "open-free-failed"
+  | "confirm-free-claimed"
+  | "confirm-max"
+  | "stale"
+  | "winners-empty"
+  | "settle-error"
+  | "draw-settled"
+  | "draw-open"
+  | "draw-empty"
+  | "draw-missing";
 
 /** Every scenario the fixture build understands (anything else falls back to "open"). */
 export const SCENARIOS: Scenario[] = [
@@ -245,6 +256,8 @@ export const SCENARIOS: Scenario[] = [
   "confirm-free", "open-lowish", "open-low-pending", "open-low-failed", "open-low-done", "empty", "due", "drawing", "drawing-wait", "settled",
   "cancelled", "nodraw", "loading", "error", "confirm", "reveal", "reveal-done", "reveal-5",
   "reveal-buying", "reveal-wait", "reveal-approve", "reveal-failed", "reveal-nowin",
+  "open-free-pending", "open-free-failed", "confirm-free-claimed", "confirm-max", "stale", "winners-empty", "settle-error",
+  "draw-settled", "draw-open", "draw-empty", "draw-missing",
 ];
 
 /** The first other wallet whose revealed, paid entry won nothing (computed by fairness.ts, not chosen). */
@@ -288,7 +301,16 @@ export interface FxState {
   drawRandomness: RandomnessView | null;
   session: RevealSession | null;
   settleTx: Map<string, string>;
+  /** settle-error: the settlement search itself fails (an RPC error), as opposed to finding nothing */
+  settleTxFails?: boolean;
   entryRandomness: Map<string, Uint8Array>;
+  /** every draw's Entry accounts, keyed by draw address (the per-draw page) */
+  entriesByDraw: Map<string, EntryView[]>;
+  /** every Entry account of every draw (winners feed) */
+  allEntries: EntryView[];
+  /** stale: unix time of the last good read while polls fail */
+  staleSince?: number;
+  nextDrawId: number;
   /** in-flight, failed or finished actions to start from (airdrop states) */
   phase?: Actions["phase"];
   errors?: Actions["errors"];
@@ -317,18 +339,30 @@ export function scenario(s: Scenario, now: number): FxState {
     session: null,
     settleTx,
     entryRandomness: new Map(),
+    entriesByDraw: new Map(),
+    allEntries: [],
+    nextDrawId: 4,
   };
   if (s === "loading" || s === "error" || s === "nodraw") return { ...fx, load: s, wallet: null };
 
   let w: FxWorld;
   // a purchase that won nothing: one of the scripted no-win entries is this wallet's
   const nowin = s === "reveal-nowin" ? noWinLabel(now) : null;
-  if (s === "empty") w = buildWorld(3, now, "open", 0);
+  if (s === "empty" || s === "winners-empty") w = buildWorld(3, now, "open", 0);
   else if (nowin) w = buildWorld(3, now, "open", 1, [nowin]);
   // wallet at its limit: three more of the scripted purchases are this wallet's, so it really holds 50
   else if (s === "open-cap") w = buildWorld(3, now, "open", 1, ["b", "c", "h"]);
   // the free-entry tab, claimable: this wallet's scripted free entry (#0059) belongs to someone else
-  else if (s === "open-free" || s === "open-free-out" || s === "confirm-free" || s === "open-free-guest" || s === "open-lowish") w = buildWorld(3, now, "open", 1, [], true);
+  else if (
+    s === "open-free" ||
+    s === "open-free-out" ||
+    s === "confirm-free" ||
+    s === "open-free-guest" ||
+    s === "open-lowish" ||
+    s === "open-free-pending" ||
+    s === "open-free-failed"
+  )
+    w = buildWorld(3, now, "open", 1, [], true);
   else w = buildWorld(3, now, "open");
 
   if (s === "due") {
@@ -376,6 +410,25 @@ export function scenario(s: Scenario, now: number): FxState {
   fx.vault = vaultOf(w.draw);
   fx.draws = [w.draw, past2.draw, past1.draw];
   fx.entryRandomness = w.entryRandomness;
+  fx.entriesByDraw = new Map([
+    [w.draw.address.toBase58(), w.entries],
+    [past2.draw.address.toBase58(), past2.entries],
+    [past1.draw.address.toBase58(), past1.entries],
+  ]);
+  // no winners anywhere yet: only the empty open draw and the cancelled one with no tickets
+  if (s === "winners-empty") {
+    fx.draws = [w.draw, past1.draw];
+    fx.entriesByDraw.delete(past2.draw.address.toBase58());
+  }
+  fx.allEntries = Array.from(fx.entriesByDraw.values())
+    .flat()
+    .sort((a, b) => b.createdAt - a.createdAt);
+  if (s === "settle-error") fx.settleTxFails = true;
+  // the last good read was four minutes ago; two polls since have failed
+  if (s === "stale") fx.staleSince = now - 4 * 60;
+  // a free claim in flight, and one the wallet declined
+  if (s === "open-free-pending") fx.phase = { free: "confirming" };
+  if (s === "open-free-failed") fx.errors = { free: { code: "Rejected", message: "You declined in your wallet. Nothing was sent." } };
 
   // free entries all claimed: the draw's cap is the two already taken (#0041 and #0059), none by this wallet
   if (s === "open-free-out") w.draw.freeCap = w.draw.freeTickets;

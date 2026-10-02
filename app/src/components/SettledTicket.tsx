@@ -5,29 +5,59 @@ import { useDrawSol } from "@/hooks/context";
 import { sol, ticketNo } from "@/lib/format";
 import { inkAt } from "@/lib/print";
 import type { DrawView } from "@/lib/types";
-import { Addr } from "./bits";
+import { Addr, Busy, ProofLink } from "./bits";
 import { stampDay, longDay } from "./fmt";
 import { Barcode } from "./print/Barcode";
 import { Stamp } from "./print/Stamp";
 
-/** The settle_draw transaction of a settled draw: undefined while searching, null when not indexed. */
-export function useSettleTx(d: DrawView | null) {
+export type SettleTx =
+  | { kind: "searching" }
+  | { kind: "found"; sig: string }
+  /** the RPC answered and has no settle transaction for this draw */
+  | { kind: "none" }
+  /** the search itself failed (RPC error or rate limit): say so, never "not indexed" */
+  | { kind: "error"; retry: () => void };
+
+/** The settle_draw transaction of a settled draw, searched once per draw; null for a draw that isn't settled. */
+export function useSettleTx(d: DrawView | null): SettleTx | null {
   const { findSettleTx } = useDrawSol();
-  const [tx, setTx] = useState<string | null | undefined>(undefined);
+  const [tx, setTx] = useState<SettleTx>({ kind: "searching" });
+  const [nonce, setNonce] = useState(0);
   const key = d && d.status === "settled" ? `${d.address.toBase58()}:${d.settledAt}` : null;
   useEffect(() => {
     if (!d || !key) return;
     let alive = true;
-    setTx(undefined);
+    setTx({ kind: "searching" });
     findSettleTx(d)
-      .then((s) => alive && setTx(s))
-      .catch(() => alive && setTx(null));
+      .then((s) => alive && setTx(s ? { kind: "found", sig: s } : { kind: "none" }))
+      .catch(() => alive && setTx({ kind: "error", retry: () => setNonce((n) => n + 1) }));
     return () => {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, findSettleTx]);
-  return tx;
+  }, [key, findSettleTx, nonce]);
+  return key ? tx : null;
+}
+
+/** One line for the settlement transaction: its link, the search, an honest "not found" or a retry. */
+export function SettleTxLine({ tx, label = "Settlement transaction" }: { tx: SettleTx | null; label?: string }) {
+  if (!tx) return null;
+  if (tx.kind === "found") return <ProofLink tx={tx.sig}>{label}</ProofLink>;
+  if (tx.kind === "none") return <span className="c-ink-3">{label}: the RPC has none indexed for this draw.</span>;
+  if (tx.kind === "error")
+    return (
+      <span className="c-ink-3">
+        Couldn’t search for the settlement transaction.{" "}
+        <button type="button" className="tbtn" onClick={tx.retry}>
+          Try again
+        </button>
+      </span>
+    );
+  return (
+    <>
+      <Busy /> <span className="c-ink-3">Finding the settlement transaction…</span>
+    </>
+  );
 }
 
 /** Three punched cancellation holes: this ticket has been drawn and paid. */

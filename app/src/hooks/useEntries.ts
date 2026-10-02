@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { PublicKey } from "@solana/web3.js";
-import { fetchEntries, fetchPlayer, type AnyProgram } from "@/lib/chain";
+import { fetchAllEntries, fetchEntries, fetchPlayer, type AnyProgram } from "@/lib/chain";
 import type { DrawView, EntryView, PlayerView } from "@/lib/types";
 
 /** Change-detector for a draw: refetch entries whenever any of these move. */
@@ -78,4 +78,33 @@ export function useMyEntries(
   }, [program, key, w, nonce]);
 
   return { myEntries, player, state };
+}
+
+/**
+ * Every Entry account of the program (all draws), for the winners feed and its counters. Refetched when
+ * any draw's entry or reveal count moves. A failed refetch keeps the last good read; "error" only when
+ * nothing has been read yet, so the feed never shows a number it didn't read.
+ */
+export function useAllEntries(program: AnyProgram, draws: DrawView[], nonce = 0) {
+  const [entries, setEntries] = useState<EntryView[]>([]);
+  const [state, setState] = useState<"loading" | "error" | "ready">("loading");
+  const key = draws.map(drawKey).join("|");
+
+  useEffect(() => {
+    if (!key) return;
+    let alive = true;
+    fetchAllEntries(program)
+      .then((e) => {
+        if (!alive) return;
+        setEntries(e);
+        setState("ready");
+      })
+      .catch(() => alive && setState((s) => (s === "ready" ? s : "error")));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [program, key, nonce]);
+
+  return { entries, state };
 }

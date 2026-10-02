@@ -2,8 +2,9 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useDrawSol } from "@/hooks/context";
-import { activeTiers, instantNumer, phaseOf, remaining, type Phase } from "@/lib/derive";
-import { clock, oneIn, shortDate, sol, ticketNo, utcLabel } from "@/lib/format";
+import { phaseOf, remaining, type Phase } from "@/lib/derive";
+import { InstantTable } from "./InstantWins";
+import { clock, shortDate, sol, ticketNo, utcLabel } from "@/lib/format";
 import { winningTicket } from "@/lib/fairness";
 import { vaultPda } from "@/lib/chain";
 import { inkAt } from "@/lib/print";
@@ -32,7 +33,7 @@ export function Hero() {
 /* ------------------------------------------------------------------ lede */
 
 export function Lede() {
-  const { current: d, now, drawRandomness: r } = useDrawSol();
+  const { current: d, now, drawRandomness: r, entries, entriesState } = useDrawSol();
   if (!d) return null;
   const ph = phaseOf(d, now);
   const n = `Draw Nº ${d.id}`;
@@ -74,38 +75,14 @@ export function Lede() {
     cancelled: [`${n} was cancelled.`, <>The randomness never arrived in time, so every paid ticket can be refunded in full.</>],
   };
   const [h, s] = copy[ph];
-  // the instant-win odds only matter while tickets can be bought
-  const showOdds = ph === "selling";
-  const tiers = activeTiers(d);
   return (
     <aside className="lede">
       <div>
         <h1 className="t-lede-h">{h}</h1>
         <p className="t-lede">{s}</p>
       </div>
-      {showOdds && tiers.length > 0 && (
-        <div className="odds">
-          <p className="odds-head">
-            <b>Instant wins</b>
-            <i>demo odds, boosted</i>
-          </p>
-          <table>
-            <tbody>
-              {tiers.map((t) => (
-                <tr key={t.index}>
-                  <td className="nw">{sol(t.amount, 2, 4)} SOL</td>
-                  <td>{oneIn(t.odds, d.iwDenominator)}</td>
-                </tr>
-              ))}
-              <tr className="sum">
-                <td>Any instant win</td>
-                <td>{oneIn(instantNumer(d), d.iwDenominator)}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p className="cap t-small">Decided by ORAO randomness about <span className="nw">2 s</span> after you pay. Wins are paid in the reveal transaction.</p>
-        </div>
-      )}
+      {/* the honest table: odds, wins so far against expected, the reserve and its rule (not after a cancel) */}
+      {ph !== "cancelled" && <InstantTable d={d} entries={entries} state={entriesState} selling={ph === "selling"} />}
     </aside>
   );
 }
@@ -185,7 +162,18 @@ export function DrawTicket() {
                 .
               </strong>{" "}
               <br />
-              {settleTx ? <ProofLink tx={settleTx}>Prize transaction</ProofLink> : settleTx === null ? <span className="c-ink-3">Transaction not indexed.</span> : null}
+              {settleTx?.kind === "found" ? (
+                <ProofLink tx={settleTx.sig}>Prize transaction</ProofLink>
+              ) : settleTx?.kind === "none" ? (
+                <span className="c-ink-3">The RPC has no settle transaction indexed for this draw.</span>
+              ) : settleTx?.kind === "error" ? (
+                <span className="c-ink-3">
+                  Couldn’t search for the prize transaction.{" "}
+                  <button type="button" className="tbtn" onClick={settleTx.retry}>
+                    Try again
+                  </button>
+                </span>
+              ) : null}
             </>
           ) : cancelled ? (
             <>

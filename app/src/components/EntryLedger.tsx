@@ -1,0 +1,232 @@
+"use client";
+
+import { useId, useMemo, useState } from "react";
+import type { PublicKey } from "@solana/web3.js";
+import { useDrawSol } from "@/hooks/context";
+import { entryWins } from "@/lib/derive";
+import { clock, short, shortDate, sol, ticketNo, ticketRange } from "@/lib/format";
+import { solscanAccount } from "@/lib/config";
+import type { DrawView, EntryView } from "@/lib/types";
+import { plural } from "./fmt";
+
+const PAGE = 12;
+
+/** "#0034", "0034", "34" → 34; anything else → null */
+function ticketQuery(q: string): number | null {
+  const m = q.trim().match(/^(?:#|no\.?\s*|nº\s*)?(\d{1,6})$/i);
+  return m ? Number(m[1]) : null;
+}
+
+export function matchEntry(e: EntryView, q: string): boolean {
+  const s = q.trim();
+  if (!s) return true;
+  const t = ticketQuery(s);
+  if (t !== null && t >= e.firstTicket && t < e.firstTicket + e.count) return true;
+  // wallet or entry address, any part of it (base58 is case-sensitive, but people type in any case)
+  const lo = s.toLowerCase();
+  return e.owner.toBase58().toLowerCase().includes(lo) || e.address.toBase58().toLowerCase().includes(lo);
+}
+
+const iso = (unix: number) => new Date(unix * 1000).toISOString().replace(".000Z", "Z");
+const lamportsToSol = (l: bigint) => sol(l, 1, 9);
+
+/** One CSV row per Entry account, straight from the decoded accounts (nothing derived but the last ticket). */
+export function entriesCsv(d: DrawView, entries: EntryView[]): string {
+  const head = [
+    "draw",
+    "entry_account",
+    "seq",
+    "owner",
+    "first_ticket",
+    "last_ticket",
+    "count",
+    "kind",
+    "paid_sol",
+    "created_at_utc",
+    "revealed",
+    "instant_wins",
+    "instant_paid_sol",
+    "refunded",
+    "vrf_request",
+  ];
+  const rows = entries
+    .slice()
+    .sort((a, b) => a.seq - b.seq)
+    .map((e) => [
+      d.id,
+      e.address.toBase58(),
+      e.seq,
+      e.owner.toBase58(),
+      e.firstTicket,
+      e.firstTicket + e.count - 1,
+      e.count,
+      e.isFree ? "free" : "paid",
+      lamportsToSol(e.paidLamports),
+      iso(e.createdAt),
+      e.isFree ? "" : e.revealed ? "yes" : "no",
+      e.isFree || !e.revealed ? "" : entryWins(e),
+      e.isFree || !e.revealed ? "" : lamportsToSol(e.instantPaid),
+      e.refunded ? "yes" : "no",
+      e.isFree ? "" : e.vrfRequest.toBase58(),
+    ]);
+  return [head, ...rows].map((r) => r.join(",")).join("\r\n") + "\r\n";
+}
+
+function download(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Every Entry account of a draw as a ruled ledger: a search line (wallet or ticket number) and a CSV of
+ * the accounts as read. Each row links to its Entry on Solscan; your rows carry "you".
+ */
+export function EntryLedger({
+  d,
+  entries,
+  state,
+  onRetry,
+  paged = true,
+  me,
+}: {
+  d: DrawView;
+  entries: EntryView[];
+  state: "loading" | "error" | "ready";
+  onRetry: () => void;
+  /** show the latest 12 first, with "Show all" (home); the per-draw page lists every entry */
+  paged?: boolean;
+  me?: PublicKey | null;
+}) {
+  const { now } = useDrawSol();
+  const [all, setAll] = useState(false);
+  const [q, setQ] = useState("");
+  const qid = useId();
+  const found = useMemo(() => entries.filter((e) => matchEntry(e, q)), [entries, q]);
+  const searching = q.trim() !== "";
+  const rows = searching || all || !paged ? found : found.slice(0, PAGE);
+  const sameDay = (t: number) => now - t < 86400;
+  const ready = state === "ready";
+  const tickets = entries.reduce((n, e) => n + e.count, 0);
+
+  return (
+    <>
+      {ready && entries.length > 0 && (
+        <div className="etools">
+          <div className="esearch">
+            <label htmlFor={qid} className="t-label">
+              Find a wallet or ticket
+            </label>
+            <input
+              id={qid}
+              type="search"
+              inputMode="search"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="5zXY… or #0034"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+            />
+          </div>
+          <button
+            type="button"
+            className="tbtn"
+            onClick={() => download(`drawsol-draw-${d.id}-entries.csv`, entriesCsv(d, entries))}
+            aria-label={`Download all ${entries.length} entries of Draw Nº ${d.id} as CSV`}
+          >
+            Download CSV
+          </button>
+        </div>
+      )}
+      {ready && searching && (
+        <p className="ematch t-small" role="status">
+          {found.length === 0
+            ? `No entry matches “${q.trim()}”.`
+            : `${found.length} of ${entries.length} ${plural(entries.length, "entry", "entries")} ${plural(found.length, "matches", "match")}.`}
+        </p>
+      )}
+      <div className="eledger">
+        {!(ready && entries.length === 0) && (
+          <div className="erow head" aria-hidden="true">
+            <span>Time (UTC)</span>
+            <span>Wallet</span>
+            <span className="tix">Tickets</span>
+            <span className="r">Instant result</span>
+          </div>
+        )}
+        {state === "loading" && entries.length === 0 ? (
+          Array.from({ length: 4 }, (_, i) => (
+            <div key={i} className="erow c-ink-3" aria-hidden="true">
+              <span>…</span>
+              <span>…</span>
+              <span className="tix">…</span>
+              <span className="r">…</span>
+            </div>
+          ))
+        ) : state === "error" ? (
+          <p className="t-body" style={{ padding: "16px 0" }}>
+            Can’t load entries from devnet right now.{" "}
+            <button type="button" className="tbtn" onClick={onRetry}>
+              Try again
+            </button>
+          </p>
+        ) : entries.length === 0 ? (
+          <p className="t-body c-ink-2" style={{ padding: "16px 0" }}>
+            {d.status === "open" ? <>No tickets yet. The first entry gets ticket {ticketNo(0)}.</> : <>No tickets were sold or claimed in Draw Nº {d.id}.</>}
+          </p>
+        ) : (
+          <div role="list" aria-label={`Entries of Draw Nº ${d.id}`}>
+            {rows.map((e) => {
+              const wins = entryWins(e);
+              const mine = !!me && e.owner.equals(me);
+              const result = e.isFree ? "free entry" : !e.revealed ? "sealed" : wins > 0 ? `+${sol(e.instantPaid, 2, 3)} SOL` : "no win";
+              const drawn = d.status === "settled" && d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count;
+              return (
+                <a
+                  role="listitem"
+                  key={e.address.toBase58()}
+                  href={solscanAccount(e.address.toBase58())}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="erow"
+                  aria-label={`${short(e.owner.toBase58())}${mine ? " (you)" : ""}, ${ticketRange(e.firstTicket, e.count)}, ${result}${drawn ? `, holds the winning ticket ${ticketNo(d.winningTicket)}` : ""}. Entry account on Solscan.`}
+                >
+                  <span className="t">{sameDay(e.createdAt) ? clock(e.createdAt) : shortDate(e.createdAt)}</span>
+                  <span className="nw" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {short(e.owner.toBase58())}
+                    {mine && <span className="you">you</span>}
+                    <span className="x x-m">×{e.count}</span>
+                  </span>
+                  <span className="tix nw">
+                    {ticketRange(e.firstTicket, e.count)} <span className="x">×{e.count}</span>
+                  </span>
+                  <span className="r">
+                    {e.isFree ? <i className="free">free entry</i> : !e.revealed ? <i>sealed</i> : wins > 0 ? <span className="w">+{sol(e.instantPaid, 2, 3)} SOL</span> : <i>no win</i>}
+                    {drawn && <span className="w drawn nw"> · {ticketNo(d.winningTicket)} drawn</span>}
+                  </span>
+                </a>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      {paged && !searching && found.length > PAGE && (
+        <p className="emore">
+          <button type="button" className="tbtn" onClick={() => setAll((a) => !a)} aria-expanded={all}>
+            {all ? `Show the latest ${PAGE}` : `Show all ${found.length} entries`}
+          </button>
+        </p>
+      )}
+      {ready && entries.length > 0 && !paged && (
+        <p className="emore t-small c-ink-2">
+          {entries.length} {plural(entries.length, "entry", "entries")}, {tickets} {plural(tickets, "ticket", "tickets")}, all listed.
+        </p>
+      )}
+    </>
+  );
+}

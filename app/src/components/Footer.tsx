@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useDrawSol } from "@/hooks/context";
 import { PROGRAM_ID, SOURCE_URL, solscanAccount } from "@/lib/config";
 import { short } from "@/lib/format";
 import { Mark } from "./print/Mark";
 
 /** A colophon, not a billboard. */
-export function Footer() {
+export function Footer({ away = false }: { away?: boolean }) {
   const { load } = useDrawSol();
   const id = PROGRAM_ID.toBase58();
   return (
@@ -17,7 +18,7 @@ export function Footer() {
           <b>DrawSol</b>
         </div>
         <p className="t-small">
-          A prize draw on Solana, built for the Colosseum hackathon. Devnet demo · play money. Every number on this page is read from Solana devnet; when it
+          A prize draw concept with a free entry route, on Solana, built for the Colosseum hackathon. Devnet demo · play money. Every number on this page is read from Solana devnet; when it
           can’t be read, it isn’t shown.
         </p>
         <ul>
@@ -35,9 +36,15 @@ export function Footer() {
           {/* the back of the ticket (#rules) is only printed once a draw has loaded, as in the header nav */}
           {load.kind === "ready" && (
             <li>
-              <a className="nav-link" href="#rules">
-                How it works
-              </a>
+              {away ? (
+                <Link className="nav-link" href="/#rules">
+                  How it works
+                </Link>
+              ) : (
+                <a className="nav-link" href="#rules">
+                  How it works
+                </a>
+              )}
             </li>
           )}
         </ul>

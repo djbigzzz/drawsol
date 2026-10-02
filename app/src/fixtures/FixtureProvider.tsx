@@ -50,7 +50,7 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
           : fx.load === "error"
             ? { kind: "error", message: "fixture" }
             : { kind: "nodraw", reason: "no-program" },
-    config: null,
+    config: fx.load === "ready" ? { admin: fx.draws[0]?.authority ?? PublicKey.default, nextDrawId: fx.nextDrawId } : null,
     draws: fx.draws,
     current: fx.current,
     vaultLamports: fx.vault,
@@ -64,7 +64,15 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
     costs: { oraoFee: BigInt(500_000), entryRent: BigInt(2_276_160), playerRent: BigInt(1_545_600) },
     now,
     refresh: () => {},
-    findSettleTx: async (d) => fx.settleTx.get(d.address.toBase58()) ?? null,
+    staleSince: fx.staleSince ?? null,
+    retryIn: fx.staleSince ? 60 - ((now - FIXED_NOW) % 60) : null,
+    allEntries: fx.allEntries,
+    allEntriesState: "ready",
+    fetchDrawEntries: async (addr: PublicKey) => fx.entriesByDraw.get(addr.toBase58()) ?? [],
+    findSettleTx: async (d) => {
+      if (fx.settleTxFails) throw new Error("429 Too Many Requests");
+      return fx.settleTx.get(d.address.toBase58()) ?? null;
+    },
     readOrao: async (addr: PublicKey) =>
       fx.current && addr.equals(fx.current.drawVrfRequest)
         ? fx.current.randomness
@@ -108,6 +116,7 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
 const CODES: Record<string, string> = {
   open: "op",
   confirm: "cf",
+  stale: "sl",
   due: "du",
   drawing: "dr",
   settled: "st",
@@ -147,7 +156,7 @@ function FxBadge({ name }: { name: string }) {
       }}
     >
       <span className="fxb-long">Fixture data · ?fx={name}</span>
-      <span className="fxb-short">Fixture · {name}</span>
+      <span className="fxb-short">Fx · {name}</span>
       <span className="fxb-tiny" aria-label={`Fixture ${name}`}>
         Fx {code}
       </span>

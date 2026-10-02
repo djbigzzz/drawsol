@@ -41,6 +41,9 @@ export const GAMBLE_AWARE_URL = "https://www.begambleaware.org";
 
 export const MAX_PER_TX = 25;
 export const CANCEL_GRACE_SECS = 48 * 3600;
+/** The program's RESERVE_UNLOCK_SECS: from close + 7 days the operator may withdraw the unwon reserve of a settled
+ * or cancelled draw even if paid entries are still unrevealed; after that withdrawal they can't be revealed. */
+export const RESERVE_UNLOCK_SECS = 7 * 86400;
 
 /** Account sizes (8-byte discriminator + InitSpace) for rent estimates. */
 export const ENTRY_SPACE = 8 + 32 + 32 + 4 + 4 + 2 + 1 + 8 + 8 + 32 + 32 + 1 + 25 + 8 + 1 + 1;

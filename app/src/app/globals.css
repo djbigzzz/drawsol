@@ -196,7 +196,7 @@ p { margin: 0; }
 .strip-in { display: flex; align-items: center; gap: 16px; width: 100%; font-family: var(--grot); white-space: nowrap; overflow: hidden; }
 .strip b { font-weight: 800; font-stretch: 112%; font-size: 13px; }
 .strip-more { display: none; font-stretch: 88%; font-weight: 500; font-size: 13px; opacity: .86; }
-@media (min-width: 761px) { .strip b { font-size: 13px; } .strip-more { display: inline; } }
+@media (min-width: 761px) { .strip b { font-size: 13px; } .strip-more { display: inline; } .strip-q { display: none; } }
 
 .mast { height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 @media (min-width: 761px) { .mast { height: 72px; gap: 32px; } }
@@ -236,7 +236,7 @@ p { margin: 0; }
 .ticket, .oldticket, .back, .slip, .rstub, .stubby, .sheet, .buybar, .wmenu { background-color: var(--stock); background-image: var(--grain-stock); background-size: 180px 180px; }
 
 /* ---------- 4.1 the draw ticket ---------- */
-.hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; }
+.hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; align-items: start; }
 .hero > * { min-width: 0; }
 .hero .ticket, .hero .blank { order: 1; }
 .hero .lede { order: 2; }
@@ -467,10 +467,7 @@ p { margin: 0; }
 /* the free-entry tab */
 .free-lead { margin-top: 24px; color: var(--ink); text-wrap: pretty; }
 .free .ledger { margin-top: 16px; }
-.free-rules { list-style: none; margin: 8px 0 0; padding: 0; color: var(--ink-2); }
-.free-rules li { padding: 8px 0; border-bottom: 1px solid var(--rule); text-wrap: pretty; }
-.free-rules li:last-child { border-bottom: 0; }
-.free-done { margin-top: 8px; color: var(--ink); text-wrap: pretty; }
+.free-done { margin-top: 16px; color: var(--ink); text-wrap: pretty; }
 .free .age, .free .age-ok { margin-top: 8px; }
 .claim { margin-top: 8px; }
 .sheet .free-lead { margin-top: 16px; }
@@ -599,12 +596,22 @@ p { margin: 0; }
 .odds-head b { font-family: var(--grot); font-stretch: 88%; font-weight: 700; font-size: 14px; }
 .odds-head i { font-family: var(--serif); font-size: 14px; color: var(--ink-3); }
 .odds table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums lining-nums; }
-.odds td { height: 36px; padding: 0; border-bottom: 1px solid var(--rule); font-family: var(--grot); font-stretch: 85%; font-size: 16px; }
+.odds th { height: 32px; padding: 0; text-align: left; vertical-align: bottom; padding-bottom: 6px; border-bottom: 1px solid var(--ink); font-family: var(--grot); font-stretch: 88%; font-weight: 600; font-size: 14px; color: var(--ink-2); white-space: nowrap; }
+.odds th:last-child, .odds td:last-child { text-align: right; }
+.odds td { height: 36px; padding: 0 8px 0 0; border-bottom: 1px solid var(--rule); font-family: var(--grot); font-stretch: 85%; font-size: 16px; }
+.odds td:last-child { padding-right: 0; }
 .odds td:first-child { font-weight: 700; }
-.odds td:last-child { text-align: right; color: var(--ink-2); font-stretch: 88%; }
+.odds td:nth-child(2) { color: var(--ink-2); font-stretch: 88%; }
+.odds td:last-child { font-stretch: 88%; font-weight: 700; }
+.odds .exp { font-weight: 500; color: var(--ink-3); }
 .odds tr.sum td { border-bottom: 0; }
 .odds tr.sum td:first-child { font-family: var(--serif); font-style: italic; font-weight: 400; font-stretch: normal; color: var(--ink-2); }
-.odds tr.sum td:last-child { font-weight: 700; color: var(--ink); }
+.odds tr.sum td:nth-child(2) { font-weight: 700; color: var(--ink); }
+.odds-reserve { margin-top: 0; }
+.odds-reserve > div:first-child { border-top: 1px solid var(--ink); }
+.odds-notes { margin-top: 8px; color: var(--ink-2); }
+.odds-notes p + p { margin-top: 8px; }
+.odds-notes p { text-wrap: pretty; }
 .odds .cap { margin-top: 8px; color: var(--ink-2); }
 
 /* ---------- 4.4 barcode in past ticket etc. ---------- */
@@ -1182,4 +1189,72 @@ a.erow:hover { background: var(--stock-2); box-shadow: -8px 0 0 var(--stock-2), 
   .rstub.win.shown, .rstub.win.shown.even, .rstub.win.shown:nth-child(even) { transform: none !important; }
   .rstub.shown .cover { display: none; }
   .wheel .ch .out { display: none; }
+}
+
+/* ---------- stale data: polls failing after a good read ---------- */
+.stale { border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); padding: 16px 0; margin-bottom: 24px; }
+.stale-top { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
+.stale-lead { font-family: var(--grot); font-stretch: 88%; font-weight: 800; font-size: 15px; }
+.stale-msg { font-family: var(--serif); font-size: 16px; line-height: 1.4; margin-top: 8px; color: var(--ink-2); text-wrap: pretty; }
+.stale-top .tbtn { margin: -12px -10px; }
+
+/* sealed tickets: the date to reveal by */
+.roll-due { margin-top: 8px; color: var(--ink); }
+
+/* ---------- entry ledger tools: search and CSV ---------- */
+.etools { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 24px; margin-bottom: 16px; }
+@media (min-width: 761px) { .etools { max-width: 760px; } }
+.esearch { display: flex; flex-direction: column; gap: 4px; flex: 1 1 240px; max-width: 360px; }
+.esearch .t-label { font-size: 17px; color: var(--ink-2); }
+.esearch input {
+  appearance: none; -webkit-appearance: none; min-height: 44px; padding: 0; border: 0; border-bottom: 1px solid var(--ink); border-radius: 0; background: transparent;
+  font-family: var(--grot); font-stretch: 88%; font-weight: 600; font-size: 17px; color: var(--ink); font-variant-numeric: tabular-nums lining-nums;
+}
+.esearch input::placeholder { color: var(--ink-3); font-weight: 500; }
+.esearch input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.etools > .tbtn { margin-bottom: -2px; }
+.ematch { margin: -8px 0 8px; color: var(--ink-2); }
+.erow .r .w.drawn { font-weight: 800; }
+.wledger .wwhat { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (min-width: 761px) { .wledger .erow { grid-template-columns: 96px 176px minmax(0, 1fr) auto; } .wledger .erow .r { text-align: right; } }
+.sec-link { margin-top: 16px; }
+.sec-link .tbtn { margin-left: -10px; }
+.sec-link + .sec-link { margin-top: 0; }
+.rowlink { color: inherit; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; text-decoration-color: var(--rule-2); display: inline-flex; align-items: center; min-height: 44px; margin: -12px 0; }
+.rowlink:hover { text-decoration-color: currentColor; }
+
+/* ---------- the per-draw page ---------- */
+.ledger.record { margin-top: 0; border-top: 2px solid var(--ink); }
+.ledger.record > div:first-child { border-top: 0; }
+.ledger.record > div { min-height: 44px; padding: 8px 0; }
+.ledger.record dt { font-size: 16px; }
+.ledger.record dd { white-space: normal; font-size: 16px; text-wrap: pretty; }
+.ledger.record dd code { font-family: var(--grot); font-stretch: 85%; font-weight: 600; }
+.ledger.record .proof { font-size: 15px; }
+@media (min-width: 761px) { .ledger.record { max-width: 760px; } .ledger.record > div { grid-template-columns: 200px minmax(0, 1fr); } .ledger.record dd { text-align: left; } }
+.drec-past { margin-top: 48px; }
+.dindex { margin-top: 0; }
+@media (min-width: 761px) { .dindex { max-width: 760px; } }
+.sgrid > div:first-child > .odds { margin-top: 40px; }
+
+/* the info-only stub below 1024px names the mode the bar is in (the bar holds the one tablist) */
+.stub-mode { padding-bottom: 12px; }
+
+/* one quick-pick row in the confirm sheet (the bar has room only for the stepper) */
+.sheet-picks { margin-top: 8px; }
+/* both sheets: the head, then a dashed rule, then the content */
+.sheet .free .c-head + .free-lead { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--rule-2); }
+.free-rules { margin-top: 16px; color: var(--ink-2); text-wrap: pretty; }
+
+/* phones: the strip carries "(not real)" too (P0-8); below 361px "Devnet" stands for "Devnet demo" */
+.strip-n { display: none; }
+@media (max-width: 760px) { .strip b { font-size: 12px; } }
+@media (max-width: 360px) { .strip-w { display: none; } .strip-n { display: inline; } }
+/* a page of its own (the per-draw page) starts under the masthead, not a section gap below it */
+.main.record-page > .sec:first-of-type { padding-top: 24px; }
+/* phones: 24px won back above the barcode, so its key ends clear of the sticky bar's double rule */
+@media (max-width: 760px) {
+  .tk-prize { padding-top: 8px; }
+  .fact-sold { margin-top: 8px; }
+  .tk-bar { margin-top: 8px; }
 }

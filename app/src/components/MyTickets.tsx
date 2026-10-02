@@ -4,7 +4,8 @@ import type { ReactNode } from "react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { tierAmount } from "@/lib/derive";
-import { clock, shortDate, sol, ticketNo, ticketRange } from "@/lib/format";
+import { clock, shortDate, sol, ticketNo, ticketRange, utcLabel } from "@/lib/format";
+import { reserveUnlockAt } from "./InstantWins";
 import { inkAt, ticketInk } from "@/lib/print";
 import type { DrawView, EntryView } from "@/lib/types";
 import { Addr, Busy, ErrorNote, inFlight, ProofLink, SectionGrid } from "./bits";
@@ -213,12 +214,22 @@ function Roll({ e, d }: { e: EntryView; d: DrawView }) {
             <p className="roll-note t-small">
               The reveal transaction wasn’t sent after this purchase, so these results are still sealed. Anyone can send it; any wins are paid to you.
             </p>
+            <p className="roll-note roll-due t-small">
+              Reveal by <span className="nw">{utcLabel(reserveUnlockAt(d))}</span>. From then the operator can withdraw the unwon reserve, and after that these
+              tickets can’t be paid.
+            </p>
             <div className="roll-act">
               <button type="button" className="btn" onClick={() => reveal(e)} disabled={!!disabledReason}>
                 Reveal {e.count} {plural(e.count, "ticket", "tickets")}
               </button>
             </div>
           </>
+        )}
+
+        {sealed && d.reserveWithdrawn && d.status !== "cancelled" && (
+          <p className="roll-note t-small">
+            The operator has withdrawn the reserve nobody won, so these sealed tickets can no longer be revealed or paid. They were still in the grand draw.
+          </p>
         )}
 
         {d.status === "cancelled" &&

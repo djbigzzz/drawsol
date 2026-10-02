@@ -40,14 +40,30 @@ export function Addr({ k, head = 4, tail = 4, link = false, className = "" }: { 
 }
 
 /** Section grid: narrow voice on the left (248), wide paper on the right. */
-export function SectionGrid({ id, title, sub, aside, children }: { id: string; title: string; sub?: ReactNode; aside?: ReactNode; children: ReactNode }) {
+export function SectionGrid({
+  id,
+  title,
+  sub,
+  aside,
+  children,
+  level = 2,
+}: {
+  id: string;
+  title: string;
+  sub?: ReactNode;
+  aside?: ReactNode;
+  children: ReactNode;
+  /** 1 on a page of its own (the per-draw page), 2 for sections of the ticket office */
+  level?: 1 | 2;
+}) {
+  const H = level === 1 ? "h1" : "h2";
   return (
     <section className="sec" id={id} aria-labelledby={`${id}-h`}>
       <div className="sgrid">
         <div>
-          <h2 className="t-sec" id={`${id}-h`}>
+          <H className="t-sec" id={`${id}-h`}>
             {title}
-          </h2>
+          </H>
           {sub && <p className="t-small sec-sub">{sub}</p>}
           {aside}
         </div>
