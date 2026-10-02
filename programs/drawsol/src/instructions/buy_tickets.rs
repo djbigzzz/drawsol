@@ -1,167 +1,150 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use orao_solana_vrf::cpi::accounts::RequestV2;
+use orao_solana_vrf::program::OraoVrf;
+use orao_solana_vrf::state::NetworkState;
+use orao_solana_vrf::CONFIG_ACCOUNT_SEED;
 
-use crate::state::*;
-use crate::constants::*;
+use crate::constants::{DRAW_SEED, ENTRY_SEED, PLAYER_SEED, VAULT_SEED};
 use crate::errors::DrawError;
+use crate::events::TicketsPurchased;
+use crate::fairness::{entry_vrf_seed, vrf_request_address};
+use crate::state::{Draw, DrawStatus, Entry, Player, Vault};
+use crate::utils::{deposit_to_vault, now};
 
 #[derive(Accounts)]
-#[instruction(quantity: u32)]
 pub struct BuyTickets<'info> {
-    #[account(
-        mut,
-        seeds = [DRAW_STATE_SEED, &[draw_state.draw_number]],
-        bump = draw_state.bump,
-    )]
-    pub draw_state: Account<'info, DrawState>,
+    #[account(mut, seeds = [DRAW_SEED, &draw.id.to_le_bytes()], bump = draw.bump)]
+    pub draw: Box<Account<'info, Draw>>,
 
-    #[account(
-        mut,
-        seeds = [VAULT_SEED, &[draw_state.draw_number]],
-        bump = draw_state.vault_bump,
-    )]
-    pub vault: Account<'info, TokenAccount>,
+    #[account(mut, seeds = [VAULT_SEED, draw.key().as_ref()], bump = draw.vault_bump)]
+    pub vault: Account<'info, Vault>,
 
-    /// The first ticket PDA — additional tickets are created via remaining_accounts
     #[account(
         init,
         payer = buyer,
-        space = Ticket::LEN,
-        seeds = [TICKET_SEED, &[draw_state.draw_number], &draw_state.tickets_sold.to_le_bytes()],
-        bump,
+        space = 8 + Entry::INIT_SPACE,
+        seeds = [ENTRY_SEED, draw.key().as_ref(), &draw.entry_count.to_le_bytes()],
+        bump
     )]
-    pub ticket: Account<'info, Ticket>,
+    pub entry: Box<Account<'info, Entry>>,
 
+    #[account(
+        init_if_needed,
+        payer = buyer,
+        space = 8 + Player::INIT_SPACE,
+        seeds = [PLAYER_SEED, draw.key().as_ref(), buyer.key().as_ref()],
+        bump
+    )]
+    pub player: Box<Account<'info, Player>>,
+
+    /// Pays the tickets, the ORAO fee and rent; becomes the entry owner.
     #[account(mut)]
     pub buyer: Signer<'info>,
 
-    #[account(
-        mut,
-        constraint = buyer_token_account.owner == buyer.key(),
-        constraint = buyer_token_account.mint == draw_state.usdc_mint,
-    )]
-    pub buyer_token_account: Account<'info, TokenAccount>,
+    /// CHECK: ORAO randomness PDA for the seed this handler derives; checked against
+    /// `vrf_request_address(seed)` in the handler and created by the ORAO CPI (`init`, so never reused).
+    #[account(mut)]
+    pub vrf_request: UncheckedAccount<'info>,
 
-    pub usdc_mint: Account<'info, Mint>,
+    #[account(mut, seeds = [CONFIG_ACCOUNT_SEED], bump, seeds::program = orao_solana_vrf::ID)]
+    pub vrf_config: Box<Account<'info, NetworkState>>,
 
+    /// CHECK: ORAO fee treasury, pinned to the one in ORAO's network state.
+    #[account(mut, address = vrf_config.config.treasury)]
+    pub vrf_treasury: UncheckedAccount<'info>,
+
+    pub vrf: Program<'info, OraoVrf>,
     pub system_program: Program<'info, System>,
-    pub token_program: Program<'info, Token>,
 }
 
-pub fn handler(
-    ctx: Context<BuyTickets>,
-    quantity: u32,
-    skill_answer_hash: [u8; 32],
-    sol_price_usd: u64,
-) -> Result<()> {
-    let draw_state = &mut ctx.accounts.draw_state;
+pub fn handler(ctx: Context<BuyTickets>, quantity: u16, client_nonce: [u8; 16]) -> Result<()> {
+    let now = now()?;
+    let draw_key = ctx.accounts.draw.key();
+    let buyer_key = ctx.accounts.buyer.key();
 
-    // Validate draw is open
-    require!(draw_state.status == DrawStatus::Open, DrawError::DrawNotOpen);
+    let (seq, first_ticket, cost) = {
+        let d = &ctx.accounts.draw;
+        require!(d.status == DrawStatus::Open, DrawError::WrongStatus);
+        require!(now < d.closes_at, DrawError::SalesClosed);
+        require!(quantity >= 1 && quantity <= d.max_per_tx, DrawError::ExceedsPerTx);
+        let new_paid = d.paid_tickets.checked_add(quantity as u32).ok_or(DrawError::MathOverflow)?;
+        require!(new_paid <= d.ticket_cap, DrawError::SoldOut);
+        let new_player = ctx.accounts.player.tickets
+            .checked_add(quantity as u32)
+            .ok_or(DrawError::MathOverflow)?;
+        require!(new_player <= d.max_per_wallet, DrawError::ExceedsWalletCap);
+        let cost = d.ticket_price.checked_mul(quantity as u64).ok_or(DrawError::MathOverflow)?;
+        (d.entry_count, d.next_ticket, cost)
+    };
 
-    // Validate quantity
-    require!(
-        quantity >= 1 && quantity <= MAX_TICKETS_PER_PURCHASE,
-        DrawError::InvalidQuantity
-    );
+    // Randomness seed is fixed by program state; the passed ORAO account must be its PDA.
+    let seed = entry_vrf_seed(&draw_key, &buyer_key, seq, &client_nonce);
+    let expected_req = vrf_request_address(&seed);
+    require_keys_eq!(ctx.accounts.vrf_request.key(), expected_req, DrawError::VrfWrongAccount);
 
-    // Check ticket cap
-    require!(
-        draw_state.tickets_sold.checked_add(quantity).ok_or(DrawError::ArithmeticOverflow)?
-            <= draw_state.ticket_cap,
-        DrawError::ExceedsTicketCap
-    );
+    deposit_to_vault(
+        &ctx.accounts.buyer.to_account_info(),
+        &ctx.accounts.vault.to_account_info(),
+        &ctx.accounts.system_program.to_account_info(),
+        cost,
+    )?;
 
-    // Validate skill answer
-    require!(
-        skill_answer_hash == draw_state.skill_answer_hash,
-        DrawError::IncorrectSkillAnswer
-    );
+    orao_solana_vrf::cpi::request_v2(
+        CpiContext::new(
+            ctx.accounts.vrf.to_account_info(),
+            RequestV2 {
+                payer: ctx.accounts.buyer.to_account_info(),
+                network_state: ctx.accounts.vrf_config.to_account_info(),
+                treasury: ctx.accounts.vrf_treasury.to_account_info(),
+                request: ctx.accounts.vrf_request.to_account_info(),
+                system_program: ctx.accounts.system_program.to_account_info(),
+            },
+        ),
+        seed,
+    )?;
 
-    // Calculate price with bulk discount
-    let discount_bps = get_discount_bps(quantity);
-    let base_price = TICKET_PRICE_USDC
-        .checked_mul(quantity as u64)
-        .ok_or(DrawError::ArithmeticOverflow)?;
-    let discount = base_price
-        .checked_mul(discount_bps)
-        .ok_or(DrawError::ArithmeticOverflow)?
-        .checked_div(10_000)
-        .ok_or(DrawError::ArithmeticOverflow)?;
-    let total_price = base_price
-        .checked_sub(discount)
-        .ok_or(DrawError::ArithmeticOverflow)?;
-
-    // Transfer USDC from buyer to vault
-    let transfer_ctx = CpiContext::new(
-        ctx.accounts.token_program.to_account_info(),
-        Transfer {
-            from: ctx.accounts.buyer_token_account.to_account_info(),
-            to: ctx.accounts.vault.to_account_info(),
-            authority: ctx.accounts.buyer.to_account_info(),
-        },
-    );
-    token::transfer(transfer_ctx, total_price)?;
-
-    // Initialize first ticket
-    let ticket = &mut ctx.accounts.ticket;
-    let clock = Clock::get()?;
-    ticket.owner = ctx.accounts.buyer.key();
-    ticket.slot_number = draw_state.tickets_sold;
-    ticket.timestamp = clock.unix_timestamp;
-    ticket.free_entry = false;
-    ticket.instant_win_amount = 0;
-    ticket.instant_win_resolved = false;
-    ticket.draw_number = draw_state.draw_number;
-    ticket.bump = ctx.bumps.ticket;
-
-    // Update draw state
-    draw_state.tickets_sold = draw_state
-        .tickets_sold
-        .checked_add(quantity)
-        .ok_or(DrawError::ArithmeticOverflow)?;
-    draw_state.usdc_collected = draw_state
-        .usdc_collected
-        .checked_add(total_price)
-        .ok_or(DrawError::ArithmeticOverflow)?;
-
-    // Update SOL price and threshold
-    draw_state.sol_price_usd = sol_price_usd;
-    // threshold = sol_price * 100 * 1.5 = sol_price * 150
-    // sol_price_usd is in 6 decimals (e.g., 126_000_000 = $126)
-    // threshold in USDC lamports (6 decimals)
-    draw_state.threshold_usdc = sol_price_usd
-        .checked_mul(SOL_PURCHASE_AMOUNT)
-        .ok_or(DrawError::ArithmeticOverflow)?
-        .checked_mul(THRESHOLD_NUMERATOR)
-        .ok_or(DrawError::ArithmeticOverflow)?
-        .checked_div(THRESHOLD_DENOMINATOR)
-        .ok_or(DrawError::ArithmeticOverflow)?;
-
-    // Check if threshold is met
-    if draw_state.usdc_collected >= draw_state.threshold_usdc && draw_state.threshold_usdc > 0 {
-        draw_state.status = DrawStatus::ThresholdMet;
-        msg!("DrawSol: Threshold met! USDC collected: {}", draw_state.usdc_collected);
+    let player = &mut ctx.accounts.player;
+    if player.wallet == Pubkey::default() {
+        player.draw = draw_key;
+        player.wallet = buyer_key;
+        player.bump = ctx.bumps.player;
     }
+    player.tickets = player.tickets.checked_add(quantity as u32).ok_or(DrawError::MathOverflow)?;
+    player.spent = player.spent.checked_add(cost).ok_or(DrawError::MathOverflow)?;
 
-    msg!(
-        "DrawSol: {} tickets purchased by {}. Total sold: {}",
-        quantity,
-        ctx.accounts.buyer.key(),
-        draw_state.tickets_sold,
-    );
+    let entry_key = ctx.accounts.entry.key();
+    let e = &mut ctx.accounts.entry;
+    e.draw = draw_key;
+    e.owner = buyer_key;
+    e.seq = seq;
+    e.first_ticket = first_ticket;
+    e.count = quantity;
+    e.is_free = false;
+    e.paid_lamports = cost;
+    e.created_at = now;
+    e.vrf_request = expected_req;
+    e.vrf_seed = seed;
+    e.revealed = false;
+    e.tiers = [0u8; 25];
+    e.instant_paid = 0;
+    e.refunded = false;
+    e.bump = ctx.bumps.entry;
 
+    let d = &mut ctx.accounts.draw;
+    d.paid_tickets = d.paid_tickets.checked_add(quantity as u32).ok_or(DrawError::MathOverflow)?;
+    d.next_ticket = d.next_ticket.checked_add(quantity as u32).ok_or(DrawError::MathOverflow)?;
+    d.entry_count = d.entry_count.checked_add(1).ok_or(DrawError::MathOverflow)?;
+    d.paid_entries = d.paid_entries.checked_add(1).ok_or(DrawError::MathOverflow)?;
+    d.proceeds_lamports = d.proceeds_lamports.checked_add(cost).ok_or(DrawError::MathOverflow)?;
+
+    emit!(TicketsPurchased {
+        draw: draw_key,
+        entry: entry_key,
+        owner: buyer_key,
+        seq,
+        first_ticket,
+        count: quantity,
+        paid_lamports: cost,
+    });
     Ok(())
-}
-
-fn get_discount_bps(quantity: u32) -> u64 {
-    if quantity >= DISCOUNT_TIER_3_MIN && quantity <= DISCOUNT_TIER_3_MAX {
-        DISCOUNT_TIER_3_BPS
-    } else if quantity >= DISCOUNT_TIER_2_MIN && quantity <= DISCOUNT_TIER_2_MAX {
-        DISCOUNT_TIER_2_BPS
-    } else if quantity >= DISCOUNT_TIER_1_MIN && quantity <= DISCOUNT_TIER_1_MAX {
-        DISCOUNT_TIER_1_BPS
-    } else {
-        0
-    }
 }

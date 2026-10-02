@@ -1,0 +1,78 @@
+import { idlErrorName } from "./chain";
+
+/** Human copy for every DrawSol program error (SPEC §2.6). */
+const COPY: Record<string, string> = {
+  Unauthorized: "Only the draw authority can do that.",
+  InvalidParams: "The program rejected these parameters.",
+  SalesClosed: "Sales have closed for this draw.",
+  SalesStillOpen: "The draw can't run yet — sales are still open and tickets remain.",
+  SoldOut: "Not enough tickets left for that quantity. Lower it and try again.",
+  ExceedsPerTx: "That's more than the per-purchase limit.",
+  ExceedsWalletCap: "That would take this wallet past its ticket limit for the draw.",
+  FreeCapReached: "All free entries for this draw have been claimed.",
+  FreeAlreadyClaimed: "This wallet has already claimed its free entry.",
+  WrongStatus: "The draw has moved on since this page loaded. It has refreshed — check the board.",
+  VrfWrongOwner: "The randomness account isn't owned by ORAO VRF.",
+  VrfWrongAccount: "That isn't the randomness account recorded for this draw.",
+  VrfSeedMismatch: "The randomness seed doesn't match. Someone may have bought at the same moment — try again.",
+  VrfNotFulfilled: "ORAO hasn't delivered the randomness yet. Give it a few seconds and retry.",
+  AlreadyRevealed: "These tickets are already revealed.",
+  FreeEntryNoReveal: "Free entries go straight into the grand draw; there's nothing to reveal.",
+  WrongWinningEntry: "That entry doesn't hold the winning ticket.",
+  NotCancellable: "The draw can only be cancelled 48 hours after closing if randomness never arrived.",
+  AlreadyRefunded: "This entry has already been refunded.",
+  NothingToWithdraw: "Nothing is withdrawable right now.",
+  MathOverflow: "The numbers overflowed — the program refused the transaction.",
+  // Anchor framework errors we can hit in practice
+  ConstraintSeeds: "Someone bought at the same moment and took this entry slot. Try again.",
+  AccountAlreadyInitialized: "Someone bought at the same moment and took this entry slot. Try again.",
+  ConstraintAddress: "An account didn't match what the program expected. Refresh and try again.",
+  AccountNotInitialized: "An account this needs doesn't exist yet. Refresh and try again.",
+};
+
+export interface HumanError {
+  message: string;
+  code?: string;
+  logs?: string[];
+}
+
+function fromLogs(logs: string[] | undefined | null): HumanError | null {
+  if (!logs) return null;
+  for (const l of logs) {
+    const m = l.match(/Error Code: (\w+)\. Error Number: (\d+)\. Error Message: (.*?)\.?$/);
+    if (m) return { code: m[1], message: COPY[m[1]] ?? m[3] };
+  }
+  if (logs.some((l) => /insufficient lamports|insufficient funds/i.test(l)))
+    return { code: "InsufficientFunds", message: "Not enough SOL in this wallet to cover tickets, rent and fees." };
+  if (logs.some((l) => /already in use/i.test(l)))
+    return { code: "AlreadyInUse", message: COPY.AccountAlreadyInitialized };
+  return null;
+}
+
+export function humanize(err: unknown, logs?: string[] | null): HumanError {
+  const fromLog = fromLogs(logs);
+  if (fromLog) return { ...fromLog, logs: logs ?? undefined };
+
+  const e = err as { message?: string; name?: string; logs?: string[]; error?: { code?: number } } | null;
+  const msg = e?.message ?? String(err);
+  const nested = fromLogs(e?.logs);
+  if (nested) return { ...nested, logs: e?.logs };
+
+  if (e?.name === "WalletSignTransactionError" || /reject|denied|cancel/i.test(msg))
+    return { code: "Rejected", message: "You declined in your wallet. Nothing was sent." };
+  if (/insufficient (lamports|funds)|Attempt to debit an account but found no record/i.test(msg))
+    return { code: "InsufficientFunds", message: "Not enough devnet SOL in this wallet." };
+  if (/blockhash not found|block height exceeded|expired/i.test(msg))
+    return { code: "Expired", message: "The network didn't confirm in time. Nothing was charged if it isn't in your wallet history — try again." };
+
+  const hex = msg.match(/custom program error: 0x([0-9a-f]+)/i);
+  if (hex) {
+    const code = parseInt(hex[1], 16);
+    const name = idlErrorName(code);
+    if (name) return { code: name, message: COPY[name] ?? name };
+    return { code: String(code), message: `Program error ${code}.` };
+  }
+  if (/failed to fetch|network|429|timeout/i.test(msg))
+    return { code: "Network", message: "Can't reach devnet. Check your connection and retry." };
+  return { message: msg.length > 160 ? msg.slice(0, 157) + "…" : msg };
+}

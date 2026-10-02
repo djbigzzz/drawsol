@@ -29,70 +29,103 @@ drawsol/
 │       ├── hooks/               # React hooks
 │       └── lib/                 # Anchor client, types
 ├── keeper/              # Keeper bot (TypeScript)
-├── tests/               # Anchor integration tests
+├── tests-svm/           # LiteSVM program tests (Rust) + fairness vectors
+├── scripts/             # Admin CLI, terms, shared TS helpers
 └── Anchor.toml          # Anchor config
 ```
 
 ## Smart Contract
 
-**Program ID:** `Ezd47gH9g4jheYrN8M7svheSszkjpPXXvW3NHc2V4Emg`
+**Program ID:** `FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb` (v2 — Anchor 0.31.1, ORAO VRF 0.6.1).
+Full interface: [`docs/SPEC.md` §2](docs/SPEC.md). Build notes: [`programs/drawsol/BUILD.md`](programs/drawsol/BUILD.md).
+
+Guarantees enforced on-chain:
+
+- **Prize locked before sales.** `create_draw` moves prize + instant-win reserve into the draw's program vault in the same instruction.
+- **Draw at sell-out or deadline.** `closes_at` is fixed at creation; anyone can run the draw once it is due.
+- **Nobody chooses the randomness.** Every ORAO VRF seed is derived by the program from on-chain state; the request account is re-derived and checked (owner, address, seed, fulfilled) before use.
+- **Anyone can settle.** The prize goes to the owner of the entry holding the winning ticket, whoever sends the transaction.
+- **No stuck money.** If randomness never arrives (48 h after close) anyone can cancel, and every paid entry is refundable.
 
 ### Instructions
 
-| Instruction | Description |
-|---|---|
-| `initialize_draw` | Create a new draw with ticket cap and skill answer |
-| `buy_tickets` | Purchase tickets with USDC, validates skill answer |
-| `vrf_callback` | Resolve instant win outcome from VRF randomness |
-| `trigger_grand_draw` | Lock 100 SOL when threshold met |
-| `settle_draw` | Select winner via VRF, transfer prize, sweep vault |
-| `process_payout` | Process due instant win payouts |
-| `claim_free_entry` | One free entry per wallet per draw |
+| Instruction | Who | Description |
+|---|---|---|
+| `init_config` | upgrade authority | Creates the Config; admin = the program's upgrade authority (checked via ProgramData) |
+| `create_draw` | admin | Creates Draw + Vault, escrows prize + instant-win reserve, validates params (EV per ticket < price) |
+| `buy_tickets(quantity, client_nonce)` | buyer | 1–25 tickets as one Entry (a ticket range); pays price × qty into the vault; requests ORAO randomness |
+| `reveal_entry` | anyone | Recomputes each ticket's instant tier from the fulfilled randomness and pays min(total, reserve left) to the owner |
+| `claim_free_entry` | wallet | One free grand-draw ticket per wallet, up to `free_cap` |
+| `request_draw(client_nonce)` | anyone | Once due: requests the grand-draw randomness (or, with zero tickets, cancels and returns the escrow) |
+| `settle_draw` | anyone | Computes the winning ticket and pays the prize to the owner of the entry that holds it |
+| `cancel_draw` | anyone | Cancels a draw stuck in `Drawing` 48 h after close |
+| `claim_refund` | anyone | Refunds a paid entry of a cancelled draw to its owner |
+| `withdraw` | draw authority | Proceeds after settlement; unspent reserve once all entries are revealed (or 7 days); never the refund liability |
 
 ### Accounts
 
-- **DrawState** — Global draw configuration and status
-- **Ticket** — One per ticket, tracks owner and instant win
-- **PendingPayout** — Pending instant win payouts
-- **Vault (PDA)** — USDC token account holding all revenue
-- **PrizeEscrow (PDA)** — Native SOL escrow for grand prize
+- **Config** `["config"]` — admin, next draw id
+- **Draw** `["draw", id]` — parameters, counters, VRF request, result, payout flags
+- **Vault** `["vault", draw]` — program-owned lamport escrow (prize + reserve + proceeds), always rent-exempt
+- **Entry** `["entry", draw, seq]` — one purchase: owner, ticket range, VRF request, per-ticket tiers, amount paid
+- **Player** `["player", draw, wallet]` — per-wallet totals (tickets, spent, won, free entry claimed)
 
 ### Economics
 
-- Ticket price: $1.99 USDC
-- Ticket cap: 25,000
-- Grand prize: 100 SOL
-- Bulk discounts: 10+ (10%), 30+ (20%), 70+ (30%)
-- Instant win pool: $5,000 across 730 winners
-- Draw trigger: vault >= SOL price × 100 × 1.5
+Everything is priced and paid in SOL; flat ticket price (every lamport buys the same odds).
+
+| | Production (mainnet target) | Devnet demo |
+|---|---|---|
+| Prize | 100 SOL | 1 SOL |
+| Ticket price | 0.015 SOL | 0.01 SOL |
+| Ticket cap | 10,000 (sell-out = 1.5× prize) | 150 |
+| Max per tx / wallet | 25 / 200 | 25 / 50 |
+| Free entries | 5% of cap, 1 per wallet | 15, 1 per wallet |
+| Instant tiers | 1 SOL 4, 0.25 SOL 16, 0.05 SOL 120, 0.015 SOL 400 (per 10,000) | 0.2 SOL 10, 0.05 SOL 40, 0.01 SOL 150 (per 1,000) |
+| Instant hit rate | 1 in 18.5 | 1 in 5 (boosted "demo odds") |
+| Instant-win reserve (escrowed) | 32 SOL | 2 SOL |
+
+Instant wins are paid from the escrowed reserve in the reveal transaction, capped by what is left of it, so the
+program is always solvent. Buyers also pay the ORAO VRF fee (0.0003 SOL on devnet) and rent for their Entry.
 
 ## Development
 
 ### Prerequisites
 
-- Rust 1.75+
-- Solana CLI 1.18+
-- Anchor CLI 0.30.1
-- Node.js 18+
-- Yarn
+- Agave / solana-cli 2.1.21 (platform-tools v1.43)
+- Anchor CLI 0.31.1
+- Rust stable (host, for tests)
+- Node.js 22
 
-### Build
+### Program
 
 ```bash
-# Install dependencies
-yarn install
-
-# Build smart contract
-anchor build
-# or: cargo build-sbf --manifest-path programs/drawsol/Cargo.toml
-
-# Run tests
-anchor test
-
-# Deploy to devnet
-solana config set --url devnet
-anchor deploy --provider.cluster devnet
+anchor build                                         # see programs/drawsol/BUILD.md for the lockfile recipe
+cp target/idl/drawsol.json app/src/idl/drawsol.json  # the frontend uses the generated IDL
+cp target/types/drawsol.ts  app/src/idl/drawsol.ts
+cargo test --manifest-path tests-svm/Cargo.toml      # LiteSVM tests with the real ORAO program
 ```
+
+### Admin CLI and keeper
+
+```bash
+npm install
+npx tsx scripts/admin.ts init-config                       # signer = program upgrade authority
+npx tsx scripts/admin.ts create-draw --preset demo         # [--prize SOL] [--reserve SOL] [--price SOL] [--cap N]
+                                                           # [--minutes M] [--per-wallet N] [--free-cap N] [--dry-run]
+npx tsx scripts/admin.ts status [--draw 0]
+npx tsx scripts/admin.ts reveal-all --draw 0
+npx tsx scripts/admin.ts run-draw --draw 0                 # request_draw, wait for ORAO, settle_draw
+npx tsx scripts/admin.ts withdraw --draw 0
+npx tsx keeper/index.ts                                    # loop: reveal, request when due, settle, cancel if stuck
+npx tsx scripts/check-vectors.ts                           # TS fairness port vs Rust-generated vectors
+```
+
+`create-draw` hashes `scripts/terms.md` plus the draw's parameters and odds into `terms_hash` and saves the
+rendered terms to `scripts/terms/draw-<id>.md` for publication.
+
+Environment: `RPC_URL` (default `https://api.devnet.solana.com`), `KEYPAIR_PATH` (default
+`~/.config/solana/id.json`); keeper also `POLL_MS`, `ONCE=1`.
 
 ### Frontend
 
@@ -101,18 +134,6 @@ cd app
 yarn install
 yarn dev
 ```
-
-### Keeper Bot
-
-```bash
-cd keeper
-yarn install
-yarn start
-```
-
-Set environment variables:
-- `RPC_URL` — Solana RPC endpoint (defaults to devnet)
-- `KEYPAIR_PATH` — Path to payer keypair
 
 ## Devnet Demo Flow
 

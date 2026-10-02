@@ -1,0 +1,2270 @@
+{
+  "address": "FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb",
+  "metadata": {
+    "name": "drawsol",
+    "version": "2.0.0",
+    "spec": "0.1.0",
+    "description": "DrawSol v2 - escrowed prize draw with ORAO VRF instant wins"
+  },
+  "instructions": [
+    {
+      "name": "buy_tickets",
+      "docs": [
+        "Buys `quantity` tickets as one Entry and requests its ORAO randomness."
+      ],
+      "discriminator": [
+        48,
+        16,
+        122,
+        137,
+        24,
+        214,
+        198,
+        58
+      ],
+      "accounts": [
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw.id",
+                "account": "Draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              },
+              {
+                "kind": "account",
+                "path": "draw.entry_count",
+                "account": "Draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer",
+          "docs": [
+            "Pays the tickets, the ORAO fee and rent; becomes the entry owner."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vrf_request",
+          "docs": [
+            "`vrf_request_address(seed)` in the handler and created by the ORAO CPI (`init`, so never reused)."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vrf_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  97,
+                  111,
+                  45,
+                  118,
+                  114,
+                  102,
+                  45,
+                  110,
+                  101,
+                  116,
+                  119,
+                  111,
+                  114,
+                  107,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103,
+                  117,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                7,
+                71,
+                177,
+                26,
+                250,
+                145,
+                180,
+                209,
+                249,
+                34,
+                242,
+                123,
+                14,
+                186,
+                193,
+                218,
+                178,
+                59,
+                33,
+                41,
+                164,
+                190,
+                243,
+                79,
+                50,
+                164,
+                123,
+                88,
+                245,
+                206,
+                252,
+                120
+              ]
+            }
+          }
+        },
+        {
+          "name": "vrf_treasury",
+          "writable": true
+        },
+        {
+          "name": "vrf",
+          "address": "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "quantity",
+          "type": "u16"
+        },
+        {
+          "name": "client_nonce",
+          "type": {
+            "array": [
+              "u8",
+              16
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "cancel_draw",
+      "docs": [
+        "Permissionless. Cancels a draw whose randomness never arrived (after the grace period)."
+      ],
+      "discriminator": [
+        105,
+        47,
+        245,
+        199,
+        42,
+        255,
+        88,
+        48
+      ],
+      "accounts": [
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw.id",
+                "account": "Draw"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_free_entry",
+      "docs": [
+        "One free grand-draw ticket per wallet, up to `free_cap`."
+      ],
+      "discriminator": [
+        201,
+        113,
+        129,
+        68,
+        22,
+        131,
+        119,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw.id",
+                "account": "Draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              },
+              {
+                "kind": "account",
+                "path": "draw.entry_count",
+                "account": "Draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer",
+          "docs": [
+            "The claiming wallet (pays rent; becomes the entry owner)."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claim_refund",
+      "docs": [
+        "Permissionless. Refunds a paid entry of a cancelled draw to its owner."
+      ],
+      "discriminator": [
+        15,
+        16,
+        30,
+        161,
+        255,
+        228,
+        97,
+        60
+      ],
+      "accounts": [
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw.id",
+                "account": "Draw"
+              }
+            ]
+          },
+          "relations": [
+            "entry"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              },
+              {
+                "kind": "account",
+                "path": "entry.seq",
+                "account": "Entry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "relations": [
+            "entry"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_draw",
+      "docs": [
+        "Admin only. Creates a Draw + Vault and escrows prize + instant-win reserve."
+      ],
+      "discriminator": [
+        107,
+        29,
+        230,
+        63,
+        112,
+        148,
+        0,
+        105
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config.next_draw_id",
+                "account": "Config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "CreateDrawParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "init_config",
+      "docs": [
+        "Creates the global Config. Signer must be the program's upgrade authority."
+      ],
+      "discriminator": [
+        23,
+        235,
+        115,
+        232,
+        168,
+        96,
+        1,
+        231
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "program",
+          "address": "FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb"
+        },
+        {
+          "name": "program_data"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "request_draw",
+      "docs": [
+        "Permissionless once due. Requests the grand-draw randomness (or cancels if nobody entered)."
+      ],
+      "discriminator": [
+        22,
+        180,
+        8,
+        81,
+        47,
+        21,
+        86,
+        159
+      ],
+      "accounts": [
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw.id",
+                "account": "Draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Pays the ORAO fee."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "vrf_request",
+          "writable": true
+        },
+        {
+          "name": "vrf_config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  97,
+                  111,
+                  45,
+                  118,
+                  114,
+                  102,
+                  45,
+                  110,
+                  101,
+                  116,
+                  119,
+                  111,
+                  114,
+                  107,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103,
+                  117,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                7,
+                71,
+                177,
+                26,
+                250,
+                145,
+                180,
+                209,
+                249,
+                34,
+                242,
+                123,
+                14,
+                186,
+                193,
+                218,
+                178,
+                59,
+                33,
+                41,
+                164,
+                190,
+                243,
+                79,
+                50,
+                164,
+                123,
+                88,
+                245,
+                206,
+                252,
+                120
+              ]
+            }
+          }
+        },
+        {
+          "name": "vrf_treasury",
+          "writable": true
+        },
+        {
+          "name": "vrf",
+          "address": "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "client_nonce",
+          "type": {
+            "array": [
+              "u8",
+              16
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "reveal_entry",
+      "docs": [
+        "Permissionless. Computes the entry's instant results from fulfilled randomness and pays them."
+      ],
+      "discriminator": [
+        55,
+        129,
+        203,
+        100,
+        95,
+        189,
+        241,
+        116
+      ],
+      "accounts": [
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw.id",
+                "account": "Draw"
+              }
+            ]
+          },
+          "relations": [
+            "entry"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              },
+              {
+                "kind": "account",
+                "path": "entry.seq",
+                "account": "Entry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "player",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  108,
+                  97,
+                  121,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              },
+              {
+                "kind": "account",
+                "path": "entry.owner",
+                "account": "Entry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "relations": [
+            "entry"
+          ]
+        },
+        {
+          "name": "vrf_request"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "settle_draw",
+      "docs": [
+        "Permissionless. Pays the prize to the owner of the entry holding the winning ticket."
+      ],
+      "discriminator": [
+        175,
+        154,
+        75,
+        30,
+        118,
+        117,
+        107,
+        194
+      ],
+      "accounts": [
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw.id",
+                "account": "Draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vrf_request"
+        },
+        {
+          "name": "winning_entry",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  101,
+                  110,
+                  116,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              },
+              {
+                "kind": "account",
+                "path": "winning_entry.seq",
+                "account": "Entry"
+              }
+            ]
+          }
+        },
+        {
+          "name": "winner",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw",
+      "docs": [
+        "Authority only. Withdraws proceeds / reserve leftovers / an unpaid prize when allowed."
+      ],
+      "discriminator": [
+        183,
+        18,
+        70,
+        156,
+        148,
+        109,
+        161,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw.id",
+                "account": "Draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "draw"
+          ]
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "Draw",
+      "discriminator": [
+        225,
+        131,
+        41,
+        222,
+        122,
+        20,
+        146,
+        202
+      ]
+    },
+    {
+      "name": "Entry",
+      "discriminator": [
+        63,
+        18,
+        152,
+        113,
+        215,
+        246,
+        221,
+        250
+      ]
+    },
+    {
+      "name": "NetworkState",
+      "discriminator": [
+        212,
+        237,
+        148,
+        56,
+        97,
+        245,
+        51,
+        169
+      ]
+    },
+    {
+      "name": "Player",
+      "discriminator": [
+        205,
+        222,
+        112,
+        7,
+        165,
+        155,
+        206,
+        218
+      ]
+    },
+    {
+      "name": "Vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "DrawCancelled",
+      "discriminator": [
+        102,
+        73,
+        15,
+        251,
+        79,
+        207,
+        0,
+        104
+      ]
+    },
+    {
+      "name": "DrawCreated",
+      "discriminator": [
+        198,
+        225,
+        129,
+        157,
+        178,
+        202,
+        47,
+        191
+      ]
+    },
+    {
+      "name": "DrawRequested",
+      "discriminator": [
+        59,
+        172,
+        219,
+        42,
+        28,
+        94,
+        93,
+        75
+      ]
+    },
+    {
+      "name": "DrawSettled",
+      "discriminator": [
+        137,
+        166,
+        132,
+        30,
+        8,
+        142,
+        219,
+        129
+      ]
+    },
+    {
+      "name": "EntryRevealed",
+      "discriminator": [
+        20,
+        92,
+        221,
+        89,
+        142,
+        166,
+        26,
+        59
+      ]
+    },
+    {
+      "name": "FreeEntryClaimed",
+      "discriminator": [
+        28,
+        147,
+        67,
+        112,
+        107,
+        161,
+        46,
+        242
+      ]
+    },
+    {
+      "name": "Refunded",
+      "discriminator": [
+        35,
+        103,
+        149,
+        246,
+        196,
+        123,
+        221,
+        99
+      ]
+    },
+    {
+      "name": "TicketsPurchased",
+      "discriminator": [
+        185,
+        114,
+        111,
+        225,
+        124,
+        92,
+        18,
+        143
+      ]
+    },
+    {
+      "name": "Withdrawn",
+      "discriminator": [
+        20,
+        89,
+        223,
+        198,
+        194,
+        124,
+        219,
+        13
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Unauthorized",
+      "msg": "Signer is not allowed to perform this action"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidParams",
+      "msg": "Invalid parameters"
+    },
+    {
+      "code": 6002,
+      "name": "SalesClosed",
+      "msg": "Sales for this draw are closed"
+    },
+    {
+      "code": 6003,
+      "name": "SalesStillOpen",
+      "msg": "Sales are still open: the draw is not due yet"
+    },
+    {
+      "code": 6004,
+      "name": "SoldOut",
+      "msg": "Not enough tickets left"
+    },
+    {
+      "code": 6005,
+      "name": "ExceedsPerTx",
+      "msg": "Quantity exceeds the per-transaction limit"
+    },
+    {
+      "code": 6006,
+      "name": "ExceedsWalletCap",
+      "msg": "Quantity exceeds the per-wallet limit"
+    },
+    {
+      "code": 6007,
+      "name": "FreeCapReached",
+      "msg": "All free entries have been claimed"
+    },
+    {
+      "code": 6008,
+      "name": "FreeAlreadyClaimed",
+      "msg": "This wallet already claimed its free entry"
+    },
+    {
+      "code": 6009,
+      "name": "WrongStatus",
+      "msg": "The draw is not in the right status for this action"
+    },
+    {
+      "code": 6010,
+      "name": "VrfWrongOwner",
+      "msg": "Randomness account is not owned by ORAO VRF"
+    },
+    {
+      "code": 6011,
+      "name": "VrfWrongAccount",
+      "msg": "Randomness account does not match the stored request"
+    },
+    {
+      "code": 6012,
+      "name": "VrfSeedMismatch",
+      "msg": "Randomness seed mismatch"
+    },
+    {
+      "code": 6013,
+      "name": "VrfNotFulfilled",
+      "msg": "Randomness has not been fulfilled yet"
+    },
+    {
+      "code": 6014,
+      "name": "AlreadyRevealed",
+      "msg": "Entry already revealed"
+    },
+    {
+      "code": 6015,
+      "name": "FreeEntryNoReveal",
+      "msg": "Free entries have no instant result or refund"
+    },
+    {
+      "code": 6016,
+      "name": "WrongWinningEntry",
+      "msg": "This entry does not hold the winning ticket"
+    },
+    {
+      "code": 6017,
+      "name": "NotCancellable",
+      "msg": "The draw cannot be cancelled yet"
+    },
+    {
+      "code": 6018,
+      "name": "AlreadyRefunded",
+      "msg": "Entry already refunded"
+    },
+    {
+      "code": 6019,
+      "name": "NothingToWithdraw",
+      "msg": "Nothing to withdraw right now"
+    },
+    {
+      "code": 6020,
+      "name": "MathOverflow",
+      "msg": "Arithmetic overflow"
+    }
+  ],
+  "types": [
+    {
+      "name": "Config",
+      "docs": [
+        "seeds = [b\"config\"]"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "next_draw_id",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CreateDrawParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket_price",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_cap",
+            "type": "u32"
+          },
+          {
+            "name": "max_per_tx",
+            "type": "u16"
+          },
+          {
+            "name": "max_per_wallet",
+            "type": "u32"
+          },
+          {
+            "name": "free_cap",
+            "type": "u32"
+          },
+          {
+            "name": "closes_at",
+            "type": "i64"
+          },
+          {
+            "name": "prize_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "iw_reserve_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "iw_denominator",
+            "type": "u32"
+          },
+          {
+            "name": "iw_tiers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "IwTier"
+                  }
+                },
+                4
+              ]
+            }
+          },
+          {
+            "name": "terms_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Draw",
+      "docs": [
+        "seeds = [b\"draw\", id.to_le_bytes()]"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "admin at creation; receives proceeds / leftovers"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "DrawStatus"
+              }
+            }
+          },
+          {
+            "name": "ticket_price",
+            "docs": [
+              "lamports"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "ticket_cap",
+            "docs": [
+              "paid tickets"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "max_per_tx",
+            "type": "u16"
+          },
+          {
+            "name": "max_per_wallet",
+            "docs": [
+              "includes the free entry"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "free_cap",
+            "docs": [
+              "max free tickets (separate from ticket_cap)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "closes_at",
+            "type": "i64"
+          },
+          {
+            "name": "prize_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "iw_reserve_lamports",
+            "docs": [
+              "escrowed instant-win budget"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "iw_paid_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "iw_denominator",
+            "type": "u32"
+          },
+          {
+            "name": "iw_tiers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "IwTier"
+                  }
+                },
+                4
+              ]
+            }
+          },
+          {
+            "name": "proceeds_lamports",
+            "docs": [
+              "sum of paid ticket revenue"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "refunded_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "paid_tickets",
+            "type": "u32"
+          },
+          {
+            "name": "free_tickets",
+            "type": "u32"
+          },
+          {
+            "name": "next_ticket",
+            "docs": [
+              "paid + free; ticket numbers are 0..next_ticket"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "entry_count",
+            "type": "u32"
+          },
+          {
+            "name": "paid_entries",
+            "type": "u32"
+          },
+          {
+            "name": "revealed_entries",
+            "docs": [
+              "paid entries revealed"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "draw_vrf_request",
+            "docs": [
+              "default until request_draw"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "draw_vrf_seed",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "randomness",
+            "docs": [
+              "copied at settlement for audit"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "winning_ticket",
+            "type": "u32"
+          },
+          {
+            "name": "winning_entry",
+            "type": "pubkey"
+          },
+          {
+            "name": "winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "settled_at",
+            "type": "i64"
+          },
+          {
+            "name": "prize_paid",
+            "type": "bool"
+          },
+          {
+            "name": "proceeds_withdrawn",
+            "type": "bool"
+          },
+          {
+            "name": "reserve_withdrawn",
+            "type": "bool"
+          },
+          {
+            "name": "terms_hash",
+            "docs": [
+              "sha256 of the published terms + skill question + odds"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DrawCancelled",
+      "docs": [
+        "reason: 0 = no tickets, 1 = randomness timeout"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "reason",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DrawCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "prize_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "iw_reserve_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_price",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_cap",
+            "type": "u32"
+          },
+          {
+            "name": "closes_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DrawRequested",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "vrf_request",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_tickets",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DrawSettled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "winning_ticket",
+            "type": "u32"
+          },
+          {
+            "name": "winning_entry",
+            "type": "pubkey"
+          },
+          {
+            "name": "winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "prize_lamports",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DrawStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Drawing"
+          },
+          {
+            "name": "Settled"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Entry",
+      "docs": [
+        "seeds = [b\"entry\", draw.key(), seq.to_le_bytes()] where seq = draw.entry_count at creation."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u32"
+          },
+          {
+            "name": "first_ticket",
+            "type": "u32"
+          },
+          {
+            "name": "count",
+            "type": "u16"
+          },
+          {
+            "name": "is_free",
+            "type": "bool"
+          },
+          {
+            "name": "paid_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "vrf_request",
+            "docs": [
+              "ORAO randomness request PDA (default for free entries)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "vrf_seed",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "revealed",
+            "docs": [
+              "free entries are created revealed (no instant roll)"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "tiers",
+            "docs": [
+              "per ticket: 0 = no win, 1..=4 = tier index + 1"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                25
+              ]
+            }
+          },
+          {
+            "name": "instant_paid",
+            "type": "u64"
+          },
+          {
+            "name": "refunded",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EntryRevealed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "entry",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "first_ticket",
+            "type": "u32"
+          },
+          {
+            "name": "count",
+            "type": "u16"
+          },
+          {
+            "name": "tiers",
+            "type": {
+              "array": [
+                "u8",
+                25
+              ]
+            }
+          },
+          {
+            "name": "paid",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FreeEntryClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "entry",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "ticket",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IwTier",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "lamports paid per winning ticket"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "odds",
+            "docs": [
+              "winning outcomes out of `iw_denominator`"
+            ],
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NetworkConfiguration",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "request_fee",
+            "type": "u64"
+          },
+          {
+            "name": "fulfillment_authorities",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "token_fee_config",
+            "type": {
+              "option": {
+                "defined": {
+                  "name": "OraoTokenFeeConfig"
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "NetworkState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": {
+              "defined": {
+                "name": "NetworkConfiguration"
+              }
+            }
+          },
+          {
+            "name": "num_received",
+            "docs": [
+              "Total number of received requests."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "OraoTokenFeeConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "docs": [
+              "ORAO token mint address."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "treasury",
+            "docs": [
+              "ORAO token treasury account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "fee",
+            "docs": [
+              "Fee in ORAO SPL token smallest units."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Player",
+      "docs": [
+        "seeds = [b\"player\", draw.key(), wallet]"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "tickets",
+            "docs": [
+              "paid + free"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "spent",
+            "type": "u64"
+          },
+          {
+            "name": "won",
+            "docs": [
+              "instant wins paid"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "free_claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Refunded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "entry",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TicketsPurchased",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "entry",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u32"
+          },
+          {
+            "name": "first_ticket",
+            "type": "u32"
+          },
+          {
+            "name": "count",
+            "type": "u16"
+          },
+          {
+            "name": "paid_lamports",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Vault",
+      "docs": [
+        "seeds = [b\"vault\", draw.key()]. Program-owned, no fields: its lamports are the escrow",
+        "(prize + instant-win reserve + ticket proceeds). Debited directly by the program; it must",
+        "always stay rent-exempt."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": []
+      }
+    },
+    {
+      "name": "Withdrawn",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

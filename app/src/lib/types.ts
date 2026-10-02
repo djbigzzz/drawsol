@@ -1,58 +1,89 @@
-import { PublicKey } from "@solana/web3.js";
-import { BN } from "@coral-xyz/anchor";
+import type { PublicKey } from "@solana/web3.js";
+import type { TierSpec } from "./fairness";
 
-export interface DrawState {
-  ticketCap: number;
-  ticketsSold: number;
-  usdcCollected: BN;
-  solPriceUsd: BN;
-  thresholdUsdc: BN;
+export type DrawStatus = "open" | "drawing" | "settled" | "cancelled";
+
+/** Plain view of an on-chain Draw account (u64 as bigint lamports). */
+export interface DrawView {
+  address: PublicKey;
+  id: number;
+  authority: PublicKey;
   status: DrawStatus;
-  operator: PublicKey;
-  winner: PublicKey | null;
-  drawNumber: number;
-  vaultBump: number;
-  escrowBump: number;
-  bump: number;
-  skillAnswerHash: number[];
-  usdcMint: PublicKey;
-}
-
-export type DrawStatus =
-  | { open: {} }
-  | { thresholdMet: {} }
-  | { drawing: {} }
-  | { settled: {} };
-
-export interface TicketData {
-  owner: PublicKey;
-  slotNumber: number;
-  timestamp: BN;
-  freeEntry: boolean;
-  instantWinAmount: BN;
-  instantWinResolved: boolean;
-  drawNumber: number;
-  bump: number;
-}
-
-export interface PendingPayoutData {
+  ticketPrice: bigint;
+  ticketCap: number;
+  maxPerTx: number;
+  maxPerWallet: number;
+  freeCap: number;
+  createdAt: number;
+  closesAt: number;
+  prizeLamports: bigint;
+  iwReserveLamports: bigint;
+  iwPaidLamports: bigint;
+  iwDenominator: number;
+  iwTiers: TierSpec[];
+  proceedsLamports: bigint;
+  refundedLamports: bigint;
+  paidTickets: number;
+  freeTickets: number;
+  nextTicket: number;
+  entryCount: number;
+  paidEntries: number;
+  revealedEntries: number;
+  drawVrfRequest: PublicKey;
+  drawVrfSeed: Uint8Array;
+  randomness: Uint8Array;
+  winningTicket: number;
+  winningEntry: PublicKey;
   winner: PublicKey;
-  amount: BN;
-  dueTimestamp: BN;
-  paid: boolean;
-  drawNumber: number;
-  slotNumber: number;
-  bump: number;
+  settledAt: number;
+  prizePaid: boolean;
+  proceedsWithdrawn: boolean;
+  reserveWithdrawn: boolean;
+  termsHash: Uint8Array;
 }
 
-export function getStatusString(status: DrawStatus): string {
-  if ("open" in status) return "Open";
-  if ("thresholdMet" in status) return "Threshold Met";
-  if ("drawing" in status) return "Drawing";
-  if ("settled" in status) return "Settled";
-  return "Unknown";
+export interface EntryView {
+  address: PublicKey;
+  draw: PublicKey;
+  owner: PublicKey;
+  seq: number;
+  firstTicket: number;
+  count: number;
+  isFree: boolean;
+  paidLamports: bigint;
+  createdAt: number;
+  vrfRequest: PublicKey;
+  vrfSeed: Uint8Array;
+  revealed: boolean;
+  /** length = count; 0 = no win, k = tier index + 1 */
+  tiers: number[];
+  instantPaid: bigint;
+  refunded: boolean;
 }
 
-export function isOpen(status: DrawStatus): boolean {
-  return "open" in status;
+export interface PlayerView {
+  address: PublicKey;
+  tickets: number;
+  spent: bigint;
+  won: bigint;
+  freeClaimed: boolean;
 }
+
+export interface ConfigView {
+  admin: PublicKey;
+  nextDrawId: number;
+}
+
+/** Fulfilled (or pending) ORAO RandomnessV2 request. */
+export interface RandomnessView {
+  address: PublicKey;
+  fulfilled: boolean;
+  randomness: Uint8Array | null;
+}
+
+export type LoadState =
+  | { kind: "loading" }
+  | { kind: "error"; message: string }
+  /** program or config account not found on chain */
+  | { kind: "nodraw"; reason: "no-program" | "no-config" | "no-draws" }
+  | { kind: "ready" };

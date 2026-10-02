@@ -1,7 +1,11 @@
-pub mod draw_state;
-pub mod ticket;
-pub mod pending_payout;
+pub mod config;
+pub mod draw;
+pub mod entry;
+pub mod player;
+pub mod vault;
 
-pub use draw_state::*;
-pub use ticket::*;
-pub use pending_payout::*;
+pub use config::*;
+pub use draw::*;
+pub use entry::*;
+pub use player::*;
+pub use vault::*;

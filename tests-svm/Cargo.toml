@@ -1,0 +1,23 @@
+# Rust LiteSVM integration tests for programs/drawsol.
+# Its own workspace (empty [workspace] table) so these host-only deps never enter the SBF lockfile.
+# Run `anchor build` first: the tests load target/deploy/drawsol.so.
+[package]
+name = "drawsol-svm-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dev-dependencies]
+drawsol = { path = "../programs/drawsol", features = ["no-entrypoint"] }
+anchor-lang = "=0.31.1"
+orao-solana-vrf = { version = "=0.6.1", default-features = false, features = ["cpi"] }
+litesvm = "=0.6.1"
+solana-keypair = "2.2"
+solana-signer = "2.2"
+solana-transaction = "2.2"
+solana-message = "2.2"
+solana-account = "2.2"
+solana-clock = "2.2"
+serde_json = "1"

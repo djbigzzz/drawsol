@@ -2,203 +2,716 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=satoshi@400,500,600,700&display=swap');
+/* ============================================================
+   Night Draw — a lottery-draw TV studio as an interface.
+   Palette is closed (SPEC §4.2): brass is the only gold,
+   red is only for live/urgent, green only for "verified".
+   ============================================================ */
+:root {
+  --black: #0b0a09;
+  --board: #151311;
+  --panel: #1c1a17;
+  --line: #2a2622;
+  --cream: #f3ead6;
+  --dim: #8a8174;
+  --brass: #d4a24c;
+  --red: #ff3b2f;
+  --green: #4fb286;
+  --brass-rule: rgba(212, 162, 76, 0.45);
+  --gutter: 16px;
+  --header-h: 56px;
+  color-scheme: dark;
+}
+@media (min-width: 768px) {
+  :root {
+    --gutter: 32px;
+    --header-h: 64px;
+  }
+}
 
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--header-h) + 16px);
+  background: var(--black);
 }
-
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
 body {
-  font-family: 'Satoshi', system-ui, -apple-system, sans-serif;
-  background-color: #080B12;
-  color: #F1F5F9;
+  background: var(--black);
+  color: var(--cream);
+  font-family: "IBM Plex Sans", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 24px;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+::selection {
+  background: var(--brass);
+  color: var(--black);
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+:focus-visible {
+  outline: 2px solid var(--cream);
+  outline-offset: 2px;
 }
 
-/* Noise grain */
-body::before {
+/* ---------- type ---------- */
+.eyebrow {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.display {
+  font-family: "Big Shoulders Display", Impact, sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+  line-height: 0.92;
+}
+.mono {
+  font-family: "IBM Plex Mono", monospace;
+  font-feature-settings: "zero" 1;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- layout ---------- */
+.page {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding-left: var(--gutter);
+  padding-right: var(--gutter);
+}
+
+/* Section header: index · title · brass hairline running to the edge */
+.sect-head {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.sect-head .idx {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  color: var(--brass);
+  letter-spacing: 0.08em;
+}
+.sect-head h2 {
+  font-family: "Big Shoulders Display", Impact, sans-serif;
+  font-weight: 800;
+  font-size: 32px;
+  line-height: 32px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.sect-head .rule {
+  flex: 1;
+  height: 1px;
+  background: var(--brass-rule);
+  transform: translateY(-6px);
+}
+.sect-head .aside {
+  font-size: 13px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+@media (min-width: 768px) {
+  .sect-head h2 {
+    font-size: 40px;
+    line-height: 40px;
+  }
+}
+
+.brass-rule {
+  height: 1px;
+  background: var(--brass-rule);
+  border: 0;
+}
+
+/* ---------- the board frame (broadcast corner brackets) ---------- */
+.frame {
+  position: relative;
+  background: var(--board);
+  border: 1px solid var(--line);
+}
+.frame::before,
+.frame::after {
   content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  border-color: var(--brass);
+  border-style: solid;
+}
+.frame::before {
+  top: -1px;
+  left: -1px;
+  border-width: 2px 0 0 2px;
+}
+.frame::after {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 2px 2px 0;
+}
+
+/* ---------- split-flap ---------- */
+.flaps {
+  display: inline-flex;
+  align-items: stretch;
+  gap: var(--flap-gap, 4px);
+}
+.flap {
+  --h: 1.16em;
+  position: relative;
+  display: inline-block;
+  width: var(--flap-w, 0.66em);
+  height: var(--h);
+  border-radius: 3px;
+  background: var(--panel);
+  perspective: 400px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.55);
+  flex: none;
+}
+.flap.sep {
+  width: auto;
+  background: none;
+  box-shadow: none;
+  padding: 0 0.02em;
+  line-height: var(--h);
+}
+.flap.sep::before,
+.flap.sep::after {
+  display: none;
+}
+.flap-half {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 50%;
+  overflow: hidden;
+  background: var(--panel);
+  backface-visibility: hidden;
+}
+.flap-half > span {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--h);
+  line-height: var(--h);
+  text-align: center;
+}
+.flap-half.top {
+  top: 0;
+  border-radius: 3px 3px 0 0;
+  transform-origin: 50% 100%;
+}
+.flap-half.top > span {
+  top: 0;
+}
+.flap-half.bot {
+  bottom: 0;
+  border-radius: 0 0 3px 3px;
+  transform-origin: 50% 0%;
+  background: #191714;
+}
+.flap-half.bot > span {
+  bottom: 0;
+}
+/* the seam + hinge pins */
+.flap::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(50% - 1px);
+  height: 2px;
+  background: var(--black);
+  z-index: 4;
+}
+.flap::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: calc(50% - 3px);
+  height: 6px;
+  z-index: 5;
+  background: linear-gradient(90deg, var(--line) 0 2px, transparent 2px calc(100% - 2px), var(--line) calc(100% - 2px));
+}
+.flap .leaf {
+  z-index: 3;
+  animation-duration: var(--flip-ms, 60ms);
+  animation-fill-mode: both;
+}
+.flap .leaf.top {
+  animation-name: leaf-top;
+  animation-timing-function: ease-in;
+}
+.flap .leaf.bot {
+  animation-name: leaf-bot;
+  animation-timing-function: ease-out;
+  animation-delay: var(--flip-ms, 60ms);
+}
+@keyframes leaf-top {
+  from {
+    transform: rotateX(0deg);
+  }
+  to {
+    transform: rotateX(-90deg);
+  }
+}
+@keyframes leaf-bot {
+  from {
+    transform: rotateX(90deg);
+  }
+  to {
+    transform: rotateX(0deg);
+  }
+}
+.flaps.skeleton .flap {
+  background: var(--panel);
+}
+.flaps.skeleton .flap-half {
+  display: none;
+}
+
+/* ---------- ON AIR lamp ---------- */
+.lamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: "Big Shoulders Display", Impact, sans-serif;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--dim);
+  background: var(--black);
+}
+.lamp .bulb {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.lamp.lit {
+  background: var(--red);
+  border-color: var(--red);
+  color: var(--black);
+}
+.lamp.lit .bulb {
+  background: var(--black);
+}
+
+/* ---------- verify chip ---------- */
+.verify {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  white-space: nowrap;
+  vertical-align: middle;
+  transition: color 0.15s, border-color 0.15s;
+}
+.verify:hover {
+  color: var(--green);
+  border-color: var(--green);
+}
+.verify.ok {
+  color: var(--green);
+  border-color: rgba(79, 178, 134, 0.5);
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 48px;
+  padding: 0 24px;
+  border-radius: 2px;
+  font-family: "IBM Plex Sans", sans-serif;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  background: var(--cream);
+  color: var(--black);
+  border: 1px solid var(--cream);
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) {
+  background: #fffaf0;
+}
+.btn:disabled {
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--dim);
+  cursor: not-allowed;
+}
+.btn.ghost {
+  background: transparent;
+  color: var(--cream);
+  border-color: var(--line);
+}
+.btn.ghost:hover:not(:disabled) {
+  border-color: var(--cream);
+  background: transparent;
+}
+.btn.small {
+  height: 36px;
+  padding: 0 16px;
+  font-size: 13px;
+}
+.btn.block {
+  width: 100%;
+}
+.link {
+  color: var(--cream);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+.link:hover {
+  text-decoration-color: var(--cream);
+}
+
+/* ---------- ticket stub (perforated) ---------- */
+.stub {
+  --notch: var(--black);
+  --stub-w: 88px;
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--stub-w) 1fr;
+  background: var(--cream);
+  color: var(--black);
+  border-radius: 3px;
+  min-height: 72px;
+}
+.stub.dark {
+  /* board, not panel: keeps dim text at WCAG AA (4.7:1) */
+  background: var(--board);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--cream);
+}
+.stub .stub-l {
+  position: relative;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 6px;
+}
+/* perforation: a column of punched dots */
+.stub .stub-l::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  right: -2px;
+  width: 4px;
+  background: radial-gradient(circle, var(--notch) 1.4px, transparent 1.6px) 0 0 / 4px 7px repeat-y;
+}
+/* notches top and bottom at the perforation */
+.stub::before,
+.stub::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--stub-w) - 7px);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--notch);
+}
+.stub::before {
+  top: -7px;
+}
+.stub::after {
+  bottom: -7px;
+}
+.stub .stub-r {
+  padding: 10px 14px 10px 16px;
+  min-width: 0;
+}
+.stub .serial {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+.stub .tag {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+@media (max-width: 639px) {
+  .stub.entry-stub {
+    --stub-w: 100px !important;
+  }
+  .stub.entry-stub .serial {
+    font-size: 13px;
+  }
+}
+.stub.won {
+  background: var(--brass);
+}
+.stub .flap {
+  color: var(--cream);
+  background: var(--black);
+}
+.stub .flap::before {
+  display: none;
+}
+.stub .flap::after {
+  height: 1px;
+  top: 50%;
+  background: rgba(0, 0, 0, 0.7);
+}
+.stub .flap-half {
+  background: var(--black);
+}
+.stub .flap-half.bot {
+  background: #121110;
+}
+
+/* ---------- departures board rows ---------- */
+.dep-row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--line);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+}
+.dep-head {
+  min-height: 36px;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--brass);
+  border-bottom: 1px solid var(--brass-rule);
+}
+
+/* ---------- inputs ---------- */
+.stepper {
+  display: grid;
+  grid-template-columns: 48px 1fr 48px;
+  height: 56px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--black);
+}
+.stepper button {
+  font-size: 22px;
+  color: var(--cream);
+}
+.stepper button:disabled {
+  color: var(--line);
+}
+.stepper input {
+  width: 100%;
+  background: transparent;
+  text-align: center;
+  font-family: "Big Shoulders Display", sans-serif;
+  font-weight: 800;
+  font-size: 32px;
+  color: var(--cream);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  -moz-appearance: textfield;
+}
+.stepper input::-webkit-outer-spin-button,
+.stepper input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.preset {
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+  color: var(--cream);
+}
+.preset[aria-pressed="true"] {
+  border-color: var(--cream);
+  background: var(--panel);
+}
+.preset:disabled {
+  color: var(--line);
+  border-color: var(--line);
+  cursor: not-allowed;
+}
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.choice:has(input:checked) {
+  border-color: var(--cream);
+  background: var(--panel);
+}
+.choice input {
+  accent-color: var(--cream);
+}
+
+/* ---------- sheet ---------- */
+.scrim {
   position: fixed;
   inset: 0;
-  opacity: 0.015;
-  pointer-events: none;
-  z-index: 50;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background: rgba(11, 10, 9, 0.82);
+  z-index: 60;
 }
-
-/* Wallet adapter — violet gradient */
-.wallet-adapter-button {
-  background: linear-gradient(135deg, #7C3AED 0%, #8B5CF6 100%) !important;
-  border-radius: 10px !important;
-  font-family: 'Satoshi', sans-serif !important;
-  font-weight: 600 !important;
-  font-size: 14px !important;
-  padding: 10px 20px !important;
-  transition: all 0.2s ease !important;
-  box-shadow: 0 0 20px rgba(124, 58, 237, 0.25), inset 0 1px 0 rgba(255,255,255,0.1) !important;
-  border: 1px solid rgba(139, 92, 246, 0.3) !important;
-}
-.wallet-adapter-button:hover {
-  background: linear-gradient(135deg, #6D28D9 0%, #7C3AED 100%) !important;
-  box-shadow: 0 0 32px rgba(124, 58, 237, 0.4), inset 0 1px 0 rgba(255,255,255,0.1) !important;
-  transform: translateY(-1px) !important;
-}
-
-/* Shimmer sweep on gold text */
-.shimmer-gold {
-  background: linear-gradient(
-    105deg,
-    #E2A336 0%,
-    #FBBF24 20%,
-    #FEF3C7 48%,
-    #FFFBEB 50%,
-    #FEF3C7 52%,
-    #FBBF24 80%,
-    #E2A336 100%
-  );
-  background-size: 250% 100%;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  animation: shimmer 4s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-  0%, 100% { background-position: 100% center; }
-  50% { background-position: -100% center; }
-}
-
-/* Breathing glow */
-@keyframes breathe {
-  0%, 100% { opacity: 0.5; transform: translate(-50%, -50%) scale(1); }
-  50% { opacity: 0.85; transform: translate(-50%, -50%) scale(1.06); }
-}
-.glow-breathe {
-  animation: breathe 4s ease-in-out infinite;
-}
-
-/* Floating particles */
-@keyframes float-1 {
-  0%, 100% { transform: translate(0, 0); opacity: 0.3; }
-  50% { transform: translate(12px, -35px); opacity: 0.8; }
-}
-@keyframes float-2 {
-  0%, 100% { transform: translate(0, 0); opacity: 0.2; }
-  50% { transform: translate(-18px, -25px); opacity: 0.7; }
-}
-@keyframes float-3 {
-  0%, 100% { transform: translate(0, 0); opacity: 0.4; }
-  50% { transform: translate(8px, -30px); opacity: 0.9; }
-}
-@keyframes float-4 {
-  0%, 100% { transform: translate(0, 0); opacity: 0.25; }
-  50% { transform: translate(-10px, -40px); opacity: 0.6; }
-}
-.float-1 { animation: float-1 5s ease-in-out infinite; }
-.float-2 { animation: float-2 7s ease-in-out infinite 1s; }
-.float-3 { animation: float-3 6s ease-in-out infinite 0.5s; }
-.float-4 { animation: float-4 8s ease-in-out infinite 2s; }
-
-/* Strobe sweep on progress bar */
-@keyframes strobe {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(300%); }
-}
-.progress-strobe {
-  position: absolute;
-  top: 0;
+.sheet {
+  position: fixed;
+  z-index: 61;
   left: 0;
-  width: 40%;
-  height: 100%;
-  background: linear-gradient(to right, transparent, rgba(255,255,255,0.35), transparent);
-  animation: strobe 2s linear infinite;
-  pointer-events: none;
-  border-radius: 999px;
+  right: 0;
+  bottom: 0;
+  max-height: 92vh;
+  overflow-y: auto;
+  background: var(--board);
+  border-top: 2px solid var(--brass);
+}
+@media (min-width: 768px) {
+  .sheet {
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    top: 50%;
+    width: min(760px, calc(100vw - 64px));
+    transform: translate(-50%, -50%);
+    border: 1px solid var(--line);
+    border-top: 2px solid var(--brass);
+  }
 }
 
-/* Scratch card shimmer sweep */
-@keyframes card-sweep {
-  0%, 100% { transform: translateX(-120%); }
-  50% { transform: translateX(200%); }
-}
-.card-shimmer::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 35%;
-  height: 100%;
-  background: linear-gradient(105deg, transparent 20%, rgba(255,255,255,0.2) 50%, transparent 80%);
-  animation: card-sweep 4s ease-in-out infinite;
-  pointer-events: none;
+/* ---------- skeleton (no shimmer: static blocks only) ---------- */
+.skel {
+  background: var(--panel);
+  border-radius: 2px;
 }
 
-/* Pulse ring on CTA */
-@keyframes pulse-ring {
-  0% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.4); }
-  70% { box-shadow: 0 0 0 12px rgba(124, 58, 237, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(124, 58, 237, 0); }
+/* ---------- fixtures badge ---------- */
+.fixture-badge {
+  position: fixed;
+  z-index: 100;
+  left: 8px;
+  bottom: 80px;
+  padding: 6px 10px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: var(--black);
+  background: repeating-linear-gradient(-45deg, var(--red) 0 8px, var(--cream) 8px 16px);
+  border: 2px solid var(--black);
 }
-.pulse-cta {
-  animation: pulse-ring 2.5s ease-out infinite;
-}
-
-/* Ticker */
-@keyframes ticker-scroll {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-.ticker-scroll {
-  animation: ticker-scroll 30s linear infinite;
-}
-
-/* Range slider — violet */
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: 999px;
-  outline: none;
-}
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #7C3AED, #8B5CF6);
-  cursor: pointer;
-  border: 3px solid #080B12;
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.4), 0 0 12px rgba(124, 58, 237, 0.2);
-}
-input[type="range"]::-moz-range-thumb {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #7C3AED, #8B5CF6);
-  cursor: pointer;
-  border: 3px solid #080B12;
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.4), 0 0 12px rgba(124, 58, 237, 0.2);
+.fixture-badge span {
+  background: var(--black);
+  color: var(--cream);
+  padding: 2px 6px;
 }
 
-/* Card hover glow */
-.card-glow {
-  transition: border-color 0.3s, box-shadow 0.3s;
+/* ---------- wallet adapter modal, restyled ---------- */
+.wallet-adapter-modal-wrapper {
+  background: var(--board) !important;
+  border: 1px solid var(--line);
+  border-top: 2px solid var(--brass);
+  border-radius: 2px !important;
+  box-shadow: none !important;
+  font-family: "IBM Plex Sans", sans-serif !important;
 }
-.card-glow:hover {
-  border-color: rgba(124, 58, 237, 0.12);
-  box-shadow: 0 0 40px rgba(124, 58, 237, 0.06);
+.wallet-adapter-modal-overlay {
+  background: rgba(11, 10, 9, 0.85) !important;
+}
+.wallet-adapter-modal-title {
+  font-family: "Big Shoulders Display", sans-serif !important;
+  font-weight: 800 !important;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 28px !important;
+  line-height: 32px !important;
+  color: var(--cream) !important;
+}
+.wallet-adapter-modal-button-close {
+  background: var(--panel) !important;
+  border-radius: 2px !important;
+}
+.wallet-adapter-modal-list .wallet-adapter-button {
+  font-family: "IBM Plex Sans", sans-serif !important;
+  font-weight: 500 !important;
+  color: var(--cream) !important;
+  border-radius: 2px !important;
+  background: transparent !important;
+}
+.wallet-adapter-modal-list .wallet-adapter-button:hover {
+  background: var(--panel) !important;
+}
+.wallet-adapter-modal-list li + li {
+  border-top: 1px solid var(--line);
+}
+.wallet-adapter-modal-list-more {
+  color: var(--dim) !important;
+  font-family: "IBM Plex Mono", monospace !important;
+  font-size: 12px !important;
+}
+.wallet-adapter-modal-list-more-icon-rotate {
+  fill: var(--dim) !important;
+}
+.wallet-adapter-button-end-icon,
+.wallet-adapter-button-start-icon {
+  width: 24px !important;
+  height: 24px !important;
+}
+.wallet-adapter-modal-list .wallet-adapter-button span {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  color: var(--green);
+  opacity: 1 !important;
 }
 
-/* Crosshatch pattern for scratch card */
-.crosshatch {
-  background-image: repeating-linear-gradient(
-    45deg,
-    transparent,
-    transparent 3px,
-    rgba(0,0,0,0.04) 3px,
-    rgba(0,0,0,0.04) 6px
-  );
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.001ms !important;
+  }
 }

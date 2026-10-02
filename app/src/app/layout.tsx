@@ -1,21 +1,30 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import "@fontsource/big-shoulders-display/latin-700";
+import "@fontsource/big-shoulders-display/latin-800";
+import "@fontsource/ibm-plex-sans/latin-400";
+import "@fontsource/ibm-plex-sans/latin-500";
+import "@fontsource/ibm-plex-sans/latin-600";
+import "@fontsource/ibm-plex-mono/latin-400";
+import "@fontsource/ibm-plex-mono/latin-500";
 import "./globals.css";
 import { WalletContextProvider } from "@/components/WalletProvider";
 
 export const metadata: Metadata = {
-  title: "DrawSol - Win 100 SOL",
+  title: "DrawSol — a prize draw you can check on-chain",
   description:
-    "Skill-based prize competition on Solana. Buy tickets, scratch to win instant prizes, and compete for the 100 SOL grand prize.",
+    "Prize locked in a vault before sales open. Draw at sell-out or the deadline. Randomness from ORAO VRF. Devnet demo with play money.",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export const viewport: Viewport = {
+  themeColor: "#0B0A09",
+  width: "device-width",
+  initialScale: 1,
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-bg text-text antialiased">
+      <body>
         <WalletContextProvider>{children}</WalletContextProvider>
       </body>
     </html>

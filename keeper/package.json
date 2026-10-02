@@ -1,20 +1,19 @@
 {
   "name": "drawsol-keeper",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
+  "description": "DrawSol v2 keeper: reveals entries, runs and settles draws (all permissionless). Imports ../scripts/lib.ts.",
   "scripts": {
-    "start": "ts-node index.ts",
-    "build": "tsc"
+    "start": "tsx index.ts",
+    "once": "ONCE=1 tsx index.ts"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "^0.30.1",
-    "@solana/spl-token": "^0.4.6",
-    "@solana/web3.js": "^1.95.2",
-    "dotenv": "^16.4.5"
+    "@coral-xyz/anchor": "0.31.1",
+    "@solana/web3.js": "^1.98.0"
   },
   "devDependencies": {
-    "@types/node": "^20.12.7",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
   }
 }
