@@ -82,7 +82,7 @@ export interface RevealSession {
   initialShown?: number;
 }
 
-export type ActionKey = "buy" | "free" | "run" | "settle" | "cancel" | `refund:${string}` | `reveal:${string}`;
+export type ActionKey = "buy" | "free" | "airdrop" | "run" | "settle" | "cancel" | `refund:${string}` | `reveal:${string}`;
 
 export interface Actions {
   phase: Partial<Record<ActionKey, TxPhase>>;
@@ -90,6 +90,8 @@ export interface Actions {
   lastSig: Partial<Record<ActionKey, string>>;
   buy: (quantity: number) => void;
   claimFree: () => void;
+  /** devnet only: ask the faucet for SOL from this browser (connection.requestAirdrop), then confirm it */
+  airdrop: () => void;
   runDraw: () => void;
   settle: () => void;
   cancel: () => void;

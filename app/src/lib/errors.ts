@@ -76,3 +76,19 @@ export function humanize(err: unknown, logs?: string[] | null): HumanError {
     return { code: "Network", message: "Can't reach devnet. Check your connection and retry." };
   return { message: msg.length > 160 ? msg.slice(0, 157) + "…" : msg };
 }
+
+/**
+ * Human copy for a failed devnet airdrop (connection.requestAirdrop from the visitor's browser).
+ * The public faucet rate-limits by IP (429) and sometimes runs dry; say which, plainly.
+ */
+export function airdropHuman(err: unknown): HumanError {
+  const msg = (err as { message?: string } | null)?.message ?? String(err);
+  if (/429|too many requests|rate.?limit/i.test(msg))
+    return { code: "RateLimited", message: "The devnet faucet is turning away requests from this connection for now (429 Too Many Requests). No SOL was sent." };
+  if (/dry|insufficient|faucet has|airdrop limit|limit reached/i.test(msg))
+    return { code: "FaucetDry", message: "The devnet faucet has run dry for now. No SOL was sent." };
+  if (/blockhash not found|block height exceeded|expired|timeout|timed out/i.test(msg))
+    return { code: "Expired", message: "The faucet’s transfer wasn’t confirmed in time. Check your balance in a minute before asking again." };
+  if (/failed to fetch|network/i.test(msg)) return { code: "Network", message: "Can’t reach the devnet faucet from this browser right now. No SOL was sent." };
+  return { code: "Faucet", message: `The devnet faucet didn’t send any SOL (${msg.length > 90 ? msg.slice(0, 87) + "…" : msg}).` };
+}

@@ -5,14 +5,21 @@ import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { remaining, walletAllowance } from "@/lib/derive";
 
+export type BuyMode = "buy" | "free";
+
 /**
- * UI state only (not data): the one quantity shared by the stub and the mobile bar, the
- * pick → confirm step, and the remembered 18+ answer.
+ * UI state only (not data): the one quantity shared by the stub and the mobile bar, which tab is open
+ * ("Buy tickets" or "Free entry", shared by the stub and the bar), the pick → confirm step, and the
+ * remembered 18+ acknowledgement.
  */
 export interface BuyState {
   qty: number;
   setQty: (n: number) => void;
   maxQ: number;
+  mode: BuyMode;
+  setMode: (m: BuyMode) => void;
+  /** open the "Free entry" tab and bring it into view (the back of the ticket links here) */
+  showFree: () => void;
   step: "pick" | "confirm";
   openConfirm: () => void;
   closeConfirm: () => void;
@@ -60,13 +67,22 @@ export function useIsMobile(query = "(max-width: 760px)") {
   return m;
 }
 
-export function BuyProvider({ children, initialStep }: { children: ReactNode; initialStep?: "pick" | "confirm" }) {
+export interface BuyInit {
+  step?: "pick" | "confirm";
+  mode?: BuyMode;
+  /** fixtures only: start at the "Max" preset */
+  qty?: "max";
+}
+
+export function BuyProvider({ children, init }: { children: ReactNode; init?: BuyInit }) {
   const { current: d, wallet, player } = useDrawSol();
-  const { session } = useActions();
+  const { session, lastSig } = useActions();
   const { setVisible } = useWalletModal();
   const mobile = useIsMobile();
   const barMode = useIsMobile(BAR_QUERY);
-  const [qty, setQtyRaw] = useState(10);
+  // one ticket by default: the smallest spend is the starting point (research P0-7)
+  const [qty, setQtyRaw] = useState(1);
+  const [mode, setModeRaw] = useState<BuyMode>("buy");
   const [step, setStep] = useState<"pick" | "confirm">("pick");
   const [adultRemembered, setAdult] = useState(false);
   const pending = useRef(false);
@@ -75,8 +91,12 @@ export function BuyProvider({ children, initialStep }: { children: ReactNode; in
 
   useEffect(() => setAdult(readAdult()), []);
   useEffect(() => {
-    if (initialStep) setStep(initialStep);
-  }, [initialStep]);
+    if (init?.step) setStep(init.step);
+    if (init?.mode) setModeRaw(init.mode);
+  }, [init?.step, init?.mode]);
+  useEffect(() => {
+    if (init?.qty === "max" && maxQ > 0) setQtyRaw(maxQ);
+  }, [init?.qty, maxQ]);
 
   // keep the quantity inside what this wallet can actually buy
   useEffect(() => {
@@ -85,12 +105,32 @@ export function BuyProvider({ children, initialStep }: { children: ReactNode; in
 
   const setQty = useCallback((n: number) => setQtyRaw(Math.max(1, Math.min(n, Math.max(1, maxQ)))), [maxQ]);
 
+  const setMode = useCallback((m: BuyMode) => {
+    setModeRaw(m);
+    setStep("pick");
+  }, []);
+
   const focusBuy = useCallback(() => {
+    setModeRaw("buy");
     const id = window.matchMedia(BAR_QUERY).matches ? "bar-buy" : "stub-buy";
     requestAnimationFrame(() => {
       const el = document.getElementById(id);
       if (!el) return;
       el.scrollIntoView({ block: "nearest" });
+      el.focus({ preventScroll: true });
+    });
+  }, []);
+
+  const showFree = useCallback(() => {
+    setModeRaw("free");
+    setStep("pick");
+    const bar = window.matchMedia(BAR_QUERY).matches;
+    requestAnimationFrame(() => {
+      // below 1024px the bar holds the claim; on desktop the stub's tab
+      if (bar) document.getElementById("buy")?.scrollIntoView({ block: "start" });
+      const el = document.getElementById(bar ? "bar-buy" : "tab-free");
+      if (!el) return;
+      if (!bar) el.scrollIntoView({ block: "nearest" });
       el.focus({ preventScroll: true });
     });
   }, []);
@@ -118,6 +158,10 @@ export function BuyProvider({ children, initialStep }: { children: ReactNode; in
   useEffect(() => {
     if (session && session.stage !== "failed") setStep("pick");
   }, [session]);
+  // a free entry has been claimed: the sheet (below 1024px) closes on the claimed state
+  useEffect(() => {
+    if (lastSig.free) setStep("pick");
+  }, [lastSig.free]);
 
   const rememberAdult = useCallback(() => {
     try {
@@ -140,6 +184,9 @@ export function BuyProvider({ children, initialStep }: { children: ReactNode; in
     qty: maxQ > 0 ? Math.min(qty, maxQ) : qty,
     setQty,
     maxQ,
+    mode,
+    setMode,
+    showFree,
     step,
     openConfirm,
     closeConfirm,

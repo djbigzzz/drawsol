@@ -1,43 +1,29 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useActions, useDrawSol } from "@/hooks/context";
-import { sol, ticketNo } from "@/lib/format";
-import { Busy, ErrorNote, inFlight } from "./bits";
+import { sol, ticketNo, utcLabel } from "@/lib/format";
+import { vaultPda } from "@/lib/chain";
+import type { DrawView } from "@/lib/types";
+import { Busy, ErrorNote, inFlight, ProofLink } from "./bits";
 import { useBuy } from "./BuyContext";
 import { FeeLine } from "./Fee";
 import { plural } from "./fmt";
 
-/** One plain general-knowledge question (UI only, committed to by the draw's terms hash; not checked on-chain). */
-const QUESTION = "Which planet is known as the Red Planet?";
-const OPTIONS = ["Mars", "Venus", "Jupiter"];
-const ANSWER = "Mars";
-
 /**
- * Check and pay: summary, one-line fee, one question, 18+ once, Pay.
+ * Check and pay: summary, one-line fee, 18+ once, Pay, and the draw guarantee.
  * Renders inside the stub on desktop and inside the sheet on mobile (one instance).
+ * There is no question: this is a prize draw decided by chance, with a free entry route beside it.
  */
 export function ConfirmStep({ headingId, inStub = false }: { headingId: string; inStub?: boolean }) {
   const { current: d } = useDrawSol();
   const { buy, phase, errors, clearError, disabledReason } = useActions();
   const { qty, closeConfirm, adultRemembered, rememberAdult, forgetAdult } = useBuy();
-  const [pick, setPick] = useState<string | null>(null);
   const [adult, setAdult] = useState(false);
   const hint = useId();
-  const name = useId();
-  // shuffled once each time the step opens
-  const order = useMemo(() => {
-    const a = [...OPTIONS];
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [a[i], a[j]] = [a[j], a[i]];
-    }
-    return a;
-  }, []);
 
   useEffect(() => {
-    // focus lands on the "Check and pay" heading, never on an answer: a focus ring on one option
-    // would read as a preselected (wrong) answer. Tab goes on to the fee, then the three options.
+    // focus lands on the "Check and pay" heading, so the summary is read first; Tab goes on to the fee.
     const t = setTimeout(() => document.getElementById(headingId)?.focus({ preventScroll: true }), 60);
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeConfirm();
     window.addEventListener("keydown", onKey);
@@ -49,11 +35,10 @@ export function ConfirmStep({ headingId, inStub = false }: { headingId: string; 
 
   if (!d) return null;
   const subtotal = d.ticketPrice * BigInt(qty);
-  const right = pick === ANSWER;
   const ageOk = adultRemembered || adult;
   const bp = phase.buy;
   const busy = inFlight(bp);
-  const ready = right && ageOk && !busy && !disabledReason;
+  const ready = ageOk && !busy && !disabledReason;
 
   const pay = () => {
     if (!ready) return;
@@ -86,50 +71,21 @@ export function ConfirmStep({ headingId, inStub = false }: { headingId: string; 
       <FeeLine />
       <p className="c-num t-fine-g">Numbered from {ticketNo(d.nextTicket)}, unless someone buys first.</p>
 
-      <fieldset className="q">
-        <legend>{QUESTION}</legend>
-        <span className="sub">One general-knowledge question, then you pay.</span>
-        {order.map((o) => (
-          <label className="radio" key={o}>
-            <input type="radio" name={name} value={o} checked={pick === o} onChange={() => setPick(o)} disabled={busy} />
-            <span className="ring" aria-hidden="true" />
-            {o}
-          </label>
-        ))}
-        <p className="msg" aria-live="polite">
-          {pick === null ? "" : right ? <span className="c-blue">Correct.</span> : "Not quite. Have another go."}
-        </p>
-      </fieldset>
-
-      {adultRemembered ? (
-        <p className="age-ok t-small">
-          <b>18+</b> confirmed on this device ·
-          <button type="button" className="tbtn" onClick={forgetAdult}>
-            Undo
-          </button>
-        </p>
-      ) : (
-        <label className="age">
-          <input type="checkbox" checked={adult} onChange={(e) => setAdult(e.target.checked)} disabled={busy} />
-          <span>
-            I’m 18 or older. <span className="sub">Asked once, remembered on this device.</span>
-          </span>
-        </label>
-      )}
+      <AdultRow remembered={adultRemembered} checked={adult} onChange={setAdult} onUndo={forgetAdult} disabled={busy} />
 
       <button
         type="button"
         className="btn btn-block btn-56 pay"
         onClick={pay}
         disabled={!ready}
-        aria-describedby={!right || !ageOk ? hint : undefined}
+        aria-describedby={!ageOk ? hint : undefined}
       >
         {busy && <Busy />}
         {label}
       </button>
-      {(!right || !ageOk) && !busy && (
+      {!ageOk && !busy && (
         <p className="c-hint t-fine" id={hint}>
-          Answer the question and confirm you’re 18+ to pay.
+          Confirm you’re 18 or older to pay.
         </p>
       )}
       {disabledReason && <p className="c-hint t-fine">{disabledReason}</p>}
@@ -139,6 +95,56 @@ export function ConfirmStep({ headingId, inStub = false }: { headingId: string; 
         </div>
       )}
       <p className="c-fine t-fine">Then sign in your wallet. About <span className="nw">2 s</span> later it asks once more, to reveal your results and pay any wins.</p>
+      <Guarantee d={d} />
     </div>
+  );
+}
+
+/** 18+, asked once per device (DESIGN.md §5.5): a checkbox row, or "18+ confirmed on this device · Undo". */
+export function AdultRow({
+  remembered,
+  checked,
+  onChange,
+  onUndo,
+  disabled,
+}: {
+  remembered: boolean;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  onUndo: () => void;
+  disabled?: boolean;
+}) {
+  return remembered ? (
+    <p className="age-ok t-small">
+      <b>18+</b> confirmed on this device ·
+      <button type="button" className="tbtn" onClick={onUndo}>
+        Undo
+      </button>
+    </p>
+  ) : (
+    <label className="age">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} disabled={disabled} />
+      <span>
+        I’m 18 or older. <span className="sub">Asked once, remembered on this device.</span>
+      </span>
+    </label>
+  );
+}
+
+/**
+ * The draw guarantee, scoped to the grand prize (research P0-4). Every figure is the draw account's;
+ * the link is the vault that holds the prize. "Never reduced" covers the grand prize only: instant wins
+ * are paid up to what is left in the reserve.
+ */
+export function Guarantee({ d, className = "" }: { d: DrawView; className?: string }) {
+  return (
+    <p className={`guarantee t-small ${className}`}>
+      Drawn at <span className="nw">{utcLabel(d.closesAt)}</span> or when all {d.ticketCap} tickets sell, whichever comes first. Grand prize already locked:{" "}
+      <ProofLink account={vaultPda(d.address)}>
+        {sol(d.prizeLamports, 0, 4)} SOL
+        <span className="sr-only"> in the vault</span>
+      </ProofLink>
+      . Never extended; the grand prize is never reduced.
+    </p>
   );
 }

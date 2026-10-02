@@ -23,6 +23,16 @@ export const ORAO_NETWORK_STATE = new PublicKey(
 
 export const SOURCE_URL = "https://github.com/djbigzzz/drawsol";
 export const FAUCET_URL = "https://faucet.solana.com";
+export const SOLFAUCET_URL = "https://solfaucet.com";
+/** What "Get devnet SOL" asks the devnet faucet for, from the visitor's own browser. */
+export const AIRDROP_LAMPORTS = 500_000_000;
+/** Below this (or below one ticket plus fees) the stub offers "Get devnet SOL". */
+export const LOW_BALANCE_LAMPORTS = BigInt(50_000_000);
+/**
+ * The in-app question was removed from the confirm step on this date. Draws created before it have
+ * published terms (committed in terms_hash) that still mention it; the back of the ticket says so.
+ */
+export const QUESTION_REMOVED_AT = Math.floor(Date.UTC(2026, 9, 2) / 1000);
 export const GAMBLE_AWARE_URL = "https://www.begambleaware.org";
 
 export const MAX_PER_TX = 25;

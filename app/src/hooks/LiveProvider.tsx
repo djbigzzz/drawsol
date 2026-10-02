@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import type { PublicKey } from "@solana/web3.js";
-import { ENTRY_SPACE, PLAYER_SPACE } from "@/lib/config";
+import { AIRDROP_LAMPORTS, ENTRY_SPACE, PLAYER_SPACE } from "@/lib/config";
 import {
   fetchEntries,
   fetchEntry,
@@ -19,7 +19,7 @@ import {
 import { drawSeed, entrySeed, oraoRandomnessPda, winningTicket } from "@/lib/fairness";
 import { fetchOraoNetwork, fetchRandomness } from "@/lib/orao";
 import { randomNonce, sendIxs, TxError, type TxPhase } from "@/lib/tx";
-import type { HumanError } from "@/lib/errors";
+import { airdropHuman, type HumanError } from "@/lib/errors";
 import type { EntryView } from "@/lib/types";
 import {
   ActionsContext,
@@ -278,6 +278,33 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     run("free", async (wallet) => [await ixClaimFree(program, draw, wallet)]);
   }, [program, run]);
 
+  /**
+   * Devnet only: ask the public faucet for SOL straight from this browser (the visitor's own IP and rate
+   * limit, no server of ours), wait for it to confirm, then re-read the balance. Nothing is signed.
+   */
+  const airdrop = useCallback(async () => {
+    const wallet = walletCtx.publicKey;
+    if (!wallet) {
+      setVisible(true);
+      return;
+    }
+    setErrors((e) => ({ ...e, airdrop: null }));
+    setPhase((p) => ({ ...p, airdrop: "simulating" }));
+    try {
+      const sig = await connection.requestAirdrop(wallet, AIRDROP_LAMPORTS);
+      setPhase((p) => ({ ...p, airdrop: "confirming" }));
+      const bh = await connection.getLatestBlockhash("confirmed");
+      const res = await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+      if (res.value.err) throw new Error("The faucet's transfer failed on devnet");
+      setLastSig((s) => ({ ...s, airdrop: sig }));
+      setPhase((p) => ({ ...p, airdrop: "done" }));
+      refresh();
+    } catch (e) {
+      setErrors((x) => ({ ...x, airdrop: airdropHuman(e) }));
+      setPhase((p) => ({ ...p, airdrop: "failed" }));
+    }
+  }, [connection, walletCtx.publicKey, setVisible, refresh]);
+
   const runDraw = useCallback(() => {
     const draw = currentRef.current;
     if (!draw) return;
@@ -324,6 +351,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     lastSig,
     buy,
     claimFree,
+    airdrop,
     runDraw,
     settle,
     cancel,

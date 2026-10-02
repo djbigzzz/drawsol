@@ -6,7 +6,7 @@ import { useDrawSol } from "@/hooks/context";
 import { DevnetStrip, Header } from "@/components/Header";
 import { Hero } from "@/components/DrawTicket";
 import { BarSpacer, ConfirmSheet, MobileBuyBar } from "@/components/BuyPanel";
-import { BuyProvider } from "@/components/BuyContext";
+import { BuyProvider, type BuyInit } from "@/components/BuyContext";
 import { MyTickets } from "@/components/MyTickets";
 import { EntriesBoard } from "@/components/EntriesBoard";
 import { PastDraws } from "@/components/PastDraws";
@@ -24,13 +24,21 @@ const DataRoot: ComponentType<{ children: ReactNode }> =
       require("@/fixtures/FixtureProvider").FixtureProvider
     : LiveProvider;
 
-/** Fixture builds only: `?fx=confirm` opens the confirm step. Folds to a no-op in production. */
-const useFxStep: () => "confirm" | undefined =
+/**
+ * Fixture builds only: `?fx=confirm` opens the confirm step, `?fx=open-free…` the "Free entry" tab,
+ * `?fx=confirm-free` the free-entry sheet, `?fx=open-max` the Max preset. Folds to a no-op in production.
+ */
+const useFxInit: () => BuyInit | undefined =
   process.env.NEXT_PUBLIC_FIXTURES === "1"
     ? () => {
-        const [s, set] = useState<"confirm" | undefined>(undefined);
+        const [s, set] = useState<BuyInit | undefined>(undefined);
         useEffect(() => {
-          if (new URLSearchParams(window.location.search).get("fx") === "confirm") set("confirm");
+          const fx = new URLSearchParams(window.location.search).get("fx") ?? "";
+          set({
+            step: fx === "confirm" || fx === "confirm-free" ? "confirm" : undefined,
+            mode: fx.startsWith("open-free") || fx === "confirm-free" ? "free" : undefined,
+            qty: fx === "open-max" ? "max" : undefined,
+          });
         }, []);
         return s;
       }
@@ -45,9 +53,9 @@ export default function Home() {
 }
 
 function Shell() {
-  const initialStep = useFxStep();
+  const init = useFxInit();
   return (
-    <BuyProvider initialStep={initialStep}>
+    <BuyProvider init={init}>
       <DevnetStrip />
       <Header />
       <Office />
