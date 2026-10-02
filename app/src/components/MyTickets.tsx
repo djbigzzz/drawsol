@@ -143,7 +143,7 @@ function Roll({ e, d }: { e: EntryView; d: DrawView }) {
   };
 
   return (
-    <div className="roll">
+    <div className={`roll ${e.isFree ? "roll-free" : ""}`}>
       <p className="roll-cap">
         <b>{e.isFree ? "Free entry" : `Bought ${e.count}`}</b>
         <span className="nw tab">{ticketRange(e.firstTicket, e.count)}</span>

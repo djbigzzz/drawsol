@@ -285,7 +285,7 @@ p { margin: 0; }
 @media (min-width: 761px) { .fact .unit { font-size: 22px; } }
 .fact .unit:last-child { margin-right: 0; }
 .fact .abs { font-family: var(--grot); font-stretch: 88%; font-weight: 700; font-size: 18px; margin-top: 10px; font-variant-numeric: tabular-nums lining-nums; }
-.fact .note { font-size: 15px; line-height: 1.4; color: var(--ink-2); margin-top: 2px; }
+.fact .note { font-size: 15px; line-height: 1.4; color: var(--ink-2); margin-top: 2px; text-wrap: pretty; }
 .fact .fig.small .t-fact { font-size: 40px; }
 @media (min-width: 761px) { .fact .fig.small .t-fact { font-size: 44px; } }
 .fact-sold .t-fact { font-size: 44px; }
@@ -343,12 +343,13 @@ p { margin: 0; }
 .stub-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 14px; position: relative; }
 .stub-head .price { font-family: var(--grot); font-stretch: 88%; font-size: 15px; color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .stub-head .price b { color: var(--ink); font-weight: 800; }
-/* SALES CLOSED (due): out of the flow, struck just under the head rule over the explanation's right
-   edge, clear of the steps and the button. The head keeps its open-state height. */
-.stub .stamp-closed { position: absolute; right: 16px; top: 56px; width: 128px; z-index: 2; pointer-events: none; }
-.due-body { padding-right: 96px; }
-@media (min-width: 761px) { .stub .stamp-closed { right: 32px; top: 64px; width: 168px; } .due-body { padding-right: 128px; } }
-@media (min-width: 1024px) { .stub .stamp-closed { right: 24px; top: 60px; } .due-body { padding-right: 96px; } }
+/* SALES CLOSED (due): out of the flow, struck across the head rule at the right, where the open state
+   prints the price. The head keeps its open-state height (both halves share one head rule); the
+   explanation starts under the stamp's lowest corner, so no text runs under the ink. */
+.stub .stamp-closed { position: absolute; right: 16px; top: 16px; width: 128px; z-index: 2; pointer-events: none; }
+.stub .due-body { margin-top: 40px; }
+@media (min-width: 761px) { .stub .stamp-closed { right: 40px; top: 16px; width: 160px; } .stub .due-body { margin-top: 56px; } }
+@media (min-width: 1024px) { .stub .stamp-closed { right: 24px; top: 14px; } }
 .stub-in { animation: fadein .16s ease-out; }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 .stub-pick { display: block; }
@@ -417,6 +418,10 @@ p { margin: 0; }
 .ledger.big dd { font-weight: 800; font-stretch: 85%; font-size: 22px; }
 @media (min-width: 761px) { .ledger.big dd { font-size: 24px; } }
 .ledger .won dd { color: var(--red-ink); }
+/* the total line of a receipt-style ledger (cancelled: refunds) */
+.ledger > .sum { border-top: 1px solid var(--ink); border-bottom: 0; }
+.ledger > .sum dt { color: var(--ink); }
+.ledger > .sum dd { font-weight: 800; font-size: 16px; }
 .limits { margin-top: 8px; color: var(--ink-3); }
 .freeline { margin-top: 8px; color: var(--ink-2); }
 .freeline .tbtn { margin-left: -6px; }
@@ -532,6 +537,8 @@ p { margin: 0; }
 .rolls-row { display: flex; flex-direction: column; gap: 32px; align-items: flex-start; }
 @media (min-width: 761px) { .rolls-row { flex-direction: row; flex-wrap: wrap; } }
 .roll { min-width: 0; max-width: 100%; }
+/* the free entry's caption wraps under its single stub, so it sits beside a 5-stub roll at md too */
+@media (min-width: 761px) { .rolls-row > .roll-free { max-width: 160px; } }
 .roll-cap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin: 0 0 12px; font-family: var(--serif); font-size: 16px; color: var(--ink-2); }
 .roll-cap b { font-family: var(--grot); font-stretch: 88%; font-weight: 800; font-size: 16px; color: var(--ink); }
 .roll-cap .won { font-family: var(--grot); font-stretch: 88%; font-weight: 700; color: var(--red-ink); }

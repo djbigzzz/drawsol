@@ -154,7 +154,7 @@ Sizes are px and line-height is unitless. Mobile applies at ≤ 760px. Class nam
 | `.t-serial` | Archivo 75% 600 | 24 / 1 (head), 22 (stubs) | 20 / 1, 18 (rows) | .02em | "Nº 0003", "#0034" |
 | `.t-sec` | Archivo 112% 850 | 34 / 1.0 | 28 / 1.05 | −.01em | Section titles, reveal h1 (sentence case) |
 | `.t-lede-h` | Archivo 112% 800 | 20 / 1.2 | 20 / 1.2 | −.005em | "Draw Nº 3 is open." |
-| `.t-ticket-head` | Archivo 125% 800 UPPERCASE | 14 / 1.2 | 11 / 1.2 | .06em | Ticket header only: "DRAWSOL · GRAND DRAW" |
+| `.t-ticket-head` | Archivo 125% 800 UPPERCASE | 14 / 1.2 | 12 / 1.2 (.05em) | .06em | Ticket header only: "DRAWSOL · GRAND DRAW" (also 12 on the past ticket) |
 | `.t-stub-head` | Archivo 112% 800 | 18 / 1.2 | 17 / 1.2 | 0 | "Buy tickets", "Check and pay", "Run the draw" (sentence case) |
 | `.t-btn` | Archivo 88% 800 | 18 / 1 | 17 / 1 | .005em | Primary and secondary buttons |
 | `.t-ui` | Archivo 88% 500/600/700 | 15–17 / 1.3 | 15–16 / 1.3 | 0 | Nav, ledgers, inputs, picks (17/600, chosen 800), radio labels |
@@ -435,12 +435,14 @@ There is one component: `<Stamp kind seed label size angle />`. It renders inlin
 | Kind | Asset | Text (parametrised) | Where | Size desktop / mobile | Base angle |
 |---|---|---|---|---|---|
 | `locked` | `stamp-locked.svg` | PRIZE · DRAW Nº {n} / LOCKED / IN THE VAULT | Prize (open, due, drawing) | 200 / 120 | −8° / −7° |
-| `closed` | `stamp-closed.svg` | SALES · DRAW Nº {n} / CLOSED / {SUN 4 OCT · 04:13 UTC} | Stub head (due) | 168 / 128 | +6° |
+| `closed` | `stamp-closed.svg` | SALES · DRAW Nº {n} / CLOSED / {THU 1 OCT} (date only; the time is on the ticket face) | Struck across the stub's head rule, top right, out of the flow (due) | 160 / 128 | +6° |
 | `drawn` | `stamp-drawn.svg` | DRAWN / {20 SEP} / DRAW Nº {n} | Prize (settled); past tickets | 184 / 128 | +7° |
-| `paid` | `stamp-paid.svg` | arc: PRIZE {1 SOL} / DRAWSOL, centre PAID. Reveal variant: DRAW Nº {n} / SAME TX | Past ticket stub; reveal end | 118 (past), 132 (reveal) / 92 | −14° / −12° |
+| `paid` | `stamp-paid.svg` | arc: PRIZE {1 SOL} / DRAWSOL, centre PAID. Reveal variant: DRAW Nº {n} / SAME TX | Past ticket stub; reveal end | 118 (past), 144 box / 131 ring (reveal) / 100 box | −14° / −12° |
 | `won` | `stamp-won.svg` | WON | Winning stubs | 74 (86 for ≥ 0.05 SOL) / 48 in Your tickets / hidden in mobile reveal rows | −12° |
 | `cancelled` | `stamp-cancelled.svg` | DRAW Nº {n} / CANCELLED / REFUNDS OPEN | Prize (cancelled) | 200 / 120 | −6° |
 | `refunded` | `stamp-refunded.svg` | REFUNDED | Refunded entry rolls | 120 / 96 | −5° |
+
+In the reveal's end cell the PAID stamp is `padded`: its SVG carries a 5% ink margin in the viewBox and `overflow: hidden`, so neither the wobble nor the arc legend can paint outside its own box (and the overlay can never pan sideways).
 
 **Each print is unique** (must-fix). This replaces the prototype's single shared filter seed:
 - Every instance renders its own `<filter id={useId()}>`.
@@ -562,18 +564,19 @@ The prototype's `text-shadow` read as a retro drop shadow. It is replaced by a t
 
 The sun is a half disc of red halftone. It rises behind the reveal total and is cut flat by the horizon, a 1px ink rule on the figure's baseline. Reference render: `sun-440.svg` / `sun-280.svg`; algorithm: `sunDots()` in `generate.mjs`.
 
-- **No moiré.** Dot centres sit on an integer 45° lattice (4px grid, checkerboard) and the sun is rendered at 1:1 (`width` = viewBox width; never CSS-scaled). Desktop uses 440px and mobile 280px, as separate renders. Every dot rasterises identically at 1x and 2x.
+- **No moiré.** Dot centres sit on an integer 45° lattice (4px grid, checkerboard) and the sun is rendered at 1:1 (`width` = viewBox width; never CSS-scaled). Desktop uses up to 360px (it must fit the 224px slot) and phones 224px, as separate renders. Every dot rasterises identically at 1x and 2x.
 - **Clear of the glyphs.** The sun lives in the same SVG as the total text, under a `<mask>`: a white rect, minus the total text stroked with `stroke-width: 16; stroke-linejoin: round` in black. Dots never come within 8px of a glyph, so the numerals are the cleanest thing on screen. This was checked at 1x and 2x.
-- **Placement:** the centre sits on the horizon, horizontally under the numerals' midpoint. Opacity .85, multiply. It appears only when wins > 0.
+- **Placement:** the centre sits on the horizon, horizontally under the midpoint of the rendered "0.08 SOL" text box (measured with `getBBox`), then clamped so the whole disc stays inside the main column: it never bleeds into the gutter or off a phone's edge. Opacity .85, multiply. It appears only when wins > 0.
+- **"You won"** sits in its own strip above the sun's top edge, on clean paper. It is not part of the mask, so no halo is carved out of the dots around it.
 - **Density:** dot radius `0.45 + 1.25 × (1 − d²)` px, denser at the core and fading to the rim.
 
 ### 4.10 Receipt bars (graft from Poster)
 
 The receipt is a tear-off slip under the reveal total: stock, perforated top edge, `--shadow-slip`. It holds one bar per ticket, with the algorithm `receipt()` and the reference `receipt-0031-0040.svg`.
 
-- Pitch 28px and bar width 6px.
-- **Height is proportional to SOL won.** The top tier (0.20) is 80px and a win is never under 4px, so 0.05 is 20px and 0.01 is 4px.
-- A ticket that won nothing is a 1px × 8px ink-3 tick. The baseline is 1px ink.
+- The slip has a fixed width: 300px in the bottom row from 761px, the full column on phones. The pitch spreads the tickets across it: `min(48, inner width / n)`, so the bottom row stays `[300 | 48 | actions]` on every reveal. Bar width 6px (4px below a 17px pitch).
+- **Height is proportional within the receipt.** The largest win on this receipt is 48px and every other win scales to it, never under 12px: 0.05 → 48px and 0.01 → 12px; a single 0.01 win is 48px. The labels keep the proportion honest. The plot height is fixed at 48px, so nothing moves while the bars grow.
+- A ticket that won nothing is a 1px × 3px ink-3 tick hanging **under** the baseline (losers quiet, winners loud); a ticket still sealed is the same tick in `--rule-2`. The baseline is 1px ink.
 - Winning bars are red and carry their amount above in `.t-key` red-ink ("0.05"). Ticket numbers sit under the baseline in `.t-key` ink-3 ("31" … "40").
 - Italic label "Your receipt". `role="img"` with a full aria-label listing the wins.
 
@@ -616,7 +619,7 @@ This is a duplicate-book carbon copy, not an admonition box. It has no left bord
 | Secondary button | Transparent, `box-shadow: inset 0 0 0 2px var(--ink)`, ink text, same sizes. Hover `rgba(27,24,20,.05)` |
 | Text button | `.t-link` in blue-ink, underline 1px with 3px offset. Used for "Change quantity", "Undo", "Replay", "Skip to total", "Show all…", "Claim free entry". Hit area ≥ 44px tall via padding |
 | Proof link (`<ProofLink>`) | Like a text button, plus a 0.62em ↗ arrow drawn with a CSS `mask` (not a glyph), `white-space: nowrap`, `target="_blank" rel="noopener noreferrer"`, and an sr-only " (opens Solscan)". **The label is always a phrase that names the thing** ("Check the vault on Solscan", "Payout transaction"), never "verify" |
-| Radio row (skill question) | Full-width row, min-height 48, 1px `--rule` under each. Custom 20px ring (1.5px ink-2). Checked: ink ring with a 10px blue dot. Label `.t-ui` 17/500. Focus ring on the ring |
+| Radio row (skill question) | Full-width row, min-height 48, 1px `--rule` under each. Custom 20px ring (1.5px ink-2). Checked: ink ring with a 10px blue dot. Label `.t-ui` 17/500. Keyboard focus: a 2px **ink** ring around the whole row (offset 2px), never a blue ring on the circle, so focus can't be mistaken for a choice. When the confirm step opens, focus goes to the "Check and pay" heading (`tabindex="-1"`), never to an option. The radio ring is used only here: step lists use numbered marks (§5.5, §5.6) |
 | Checkbox (18+) | Native 20px, `accent-color: var(--ink)`. The label is the whole row (min-height 44) |
 | Busy | 8px ink dot (blinking only while a real request is in flight) followed by the verb: "Confirming on devnet…" |
 | `ErrorNote` | No box. 1px red-ink rules above and below with 12px padding. Lead-in "Didn't go through." in Archivo 88% 800 red-ink, then the human message in Newsreader 16 ink. "Dismiss" text button (44px target). `role="alert"` |
@@ -759,13 +762,15 @@ It is replaced by `NumberWheel` (§4.5) for the countdown. The prize, sold count
 
 Leftover height goes **below** item 10, never between blocks (must-fix: no 80px gap). **No `margin-top: auto`.**
 
+At the wallet limit, the ledger's "You can still buy 0" row is replaced by this wallet's tally: "Your grand-prize odds 1 in 2.0 now", "Spent", "Won so far" (from `player`, as in Your tickets).
+
 **Buy button and bar states**, in priority order:
 
 | Condition | Stub button | Mobile bar button | Helper (stub only, under the button) |
 |---|---|---|---|
-| No wallet | "Connect wallet to buy" (opens the wallet modal; afterwards continue to confirm) | "Connect wallet" | — |
+| No wallet | "Connect wallet to buy" (opens the wallet modal; afterwards continue to confirm) | "Connect wallet to buy" ("Connect wallet" below 385px), keeping the stepper and the quantity | — |
 | Wallet limit reached (`allowance.wallet === 0`) | disabled: "Wallet limit reached (50 of 50)" | disabled: "Limit reached" (stepper hidden) | — |
-| Balance < subtotal + fees | disabled: "Not enough devnet SOL" | "Get devnet SOL" (link to `FAUCET_URL`) | "You have 0.0123 SOL. Get free devnet SOL from the Solana faucet." |
+| Balance < subtotal + fees | "Get devnet SOL" (link to `FAUCET_URL`) | "Get devnet SOL" (link to `FAUCET_URL`), note "You have 0.0123 SOL" (4 decimals, as the stub) | "You have 0.0123 SOL. 10 tickets need ≈0.103 SOL with fees." |
 | `disabledReason` | disabled: as in normal | disabled | `disabledReason` in `.t-fine` |
 | Normal | "Buy 10 tickets" → `openConfirm()` | "Buy 10 · 0.10 SOL" → `openConfirm()` | — |
 
@@ -819,10 +824,10 @@ Esc closes the step on desktop and the sheet on mobile.
 
 | State | Stub contents |
 |---|---|
-| due | Head "Run the draw" with the SALES CLOSED stamp top-right (never over a button) · `.t-body` explanation · primary "Run the draw" (`runDraw`) · `.t-fine` "+ ≈0.0005 SOL randomness fee, paid by you" (`costs.oraoFee`) · busy labels from `phase.run` · `errors.run`. No tickets: head "Close the draw", button "Close the draw". Then a "Your entry" mini-ledger when the wallet holds tickets |
+| due | Head "Run the draw" at its open-state height (both halves share one head rule) with the SALES CLOSED stamp struck across the head rule at the right, out of the flow (never over text, the steps or a button) · three steps with **numbered** marks (1, 2, 3 in a dashed `--rule-2` circle; never a radio ring) · `.t-body` explanation · primary "Run the draw" (`runDraw`) · `.t-fine` "+ ≈0.0005 SOL randomness fee, paid by you" (`costs.oraoFee`) · busy labels from `phase.run` · `errors.run`. No tickets: head "Close the draw", button "Close the draw". Then a "Your entry" mini-ledger when the wallet holds tickets |
 | drawing | Head "Settle the draw" · three-step list: ✓ "Randomness requested from ORAO for 102 tickets" + **Request** link (`d.drawVrfRequest`); ✓ or busy "Randomness landed" / "Waiting for ORAO, usually a few seconds"; "Settle pays 1 SOL to the winning ticket. Anyone can press it." · primary "Settle the draw" (disabled until fulfilled) · `errors.settle` · safety-valve line (`.t-fine`) with "Cancel the draw" secondary button when `canCancel` |
 | settled | Head "Draw finished" · your result in `.t-body`: "You hold the winning ticket #0067. 1 SOL was paid to your wallet." (red-ink amount) or "Ticket #0067 won. Not one of yours this time." · `.t-small` "A new draw will appear here when the operator opens one. There isn't one yet." · the carbon slip (§4.11) for this draw |
-| cancelled | Head "Refunds are open" · explanation · "Your refund 0.15 SOL" ledger row · primary "Go to your refunds" (anchor `#my-tickets`). No tickets sold: "Closed with no tickets" + explanation; no button |
+| cancelled | Head "Refunds are open" · explanation · a refund receipt ledger: one row per paid purchase ("#0031–#0040 · 10 tickets 0.10 SOL", "refunded" once done), "Free entry #0059 · not refundable", then a ruled total "Refundable to you 0.15 SOL" · primary "Go to your refunds" (anchor `#my-tickets`) · `.t-small` "Each refund is its own transaction. Anyone can send it, and it always pays the ticket's owner." No tickets sold: "Closed with no tickets" + explanation; no button |
 
 ### 5.6 `RevealSheet.tsx` → reveal overlay
 
@@ -836,13 +841,14 @@ This is the emotional peak. It is a full-viewport overlay below the strip (`top:
   - `.t-sec` h1 "Your 10 tickets";
   - `.t-small` "Draw Nº 3 · #0031–#0040";
   - receipt steps (2px ink rule on top). Each step is a 22px mark (ring, or an ink-filled circle with a stock check when done, or a busy dot), a bold Archivo 88% 16 title, a Newsreader 15 ink-2 detail and one proof link when it exists:
+    Marks: a number in a dashed `--rule-2` circle (to do), an ink circle with a stock check (done), the bare 8px busy dot (in flight), a red-ink ring (failed). Never a radio ring.
     1. "Bought": "10 tickets · 0.10 SOL", **Purchase tx**. For a later reveal: "Bought earlier", **Entry**.
     2. "ORAO randomness": "waiting…" / "landed in 1.8 s", **Request**.
     3. "Revealed & paid": "in one transaction", **Reveal tx**.
 
     Step state comes from `stepStates(s)`, as today.
 - **Main column:**
-  1. **Status row:** `.t-voice` 18px ink-2 status on the left ("Waiting for the randomness to land…" → "Tearing off the covers, one at a time" → "All 10 revealed"). On the right, during the reveal only, the text button "Skip to total". **Nothing appears on the right after the end.** The duplicate "Total 0.08 SOL" is gone (must-fix).
+  1. **Status row:** `.t-voice` 18px ink-2 status on the left ("Waiting for the randomness to land…" → "Tearing off the covers, one at a time" → "All 10 revealed"). On the right, during the reveal only and at every width, the text button "Skip to total". **Nothing appears on the right after the end.** The duplicate "Total 0.08 SOL" is gone (must-fix).
   2. **Strip:**
      - up to 10 stubs per row at 100×212 (`width = min(100, (main − 0)/10)`, min 88), joined by perforations;
      - the strip row is 252px tall so winners can drop;
@@ -852,16 +858,16 @@ This is the emotional peak. It is a full-viewport overlay below the strip (`top:
      - after the lift: loser "no win" or winner amount + "SOL won" + WON stamp, plus the **roll line** `.t-key` ink-3 "roll 168 / 1000" at the stub's bottom (graft).
   3. **Roll key** (`.t-fine` ink-3, one line under the strip, visible once the randomness lands): "A roll under 200 wins: under 10 pays 0.20 SOL, under 50 pays 0.05, under 200 pays 0.01. Each roll is sha256(randomness + ticket number), scaled to 1000." The thresholds are the cumulative `d.iwTiers` odds.
   4. **Double rule** (red-plate shifted, §4.8).
-  5. **Slot**, 240px tall, the same box during and after the reveal so nothing shifts:
+  5. **Slot**, 224px tall, the same box during and after the reveal so nothing shifts:
      - *During:* the now-showing ticket (graft from Poster). It shows `.t-now` "#0036" in ink, then a 32px gap, then "+0.05 SOL" in red-ink for a win, or the ticket number in ink-3 with `.t-voice` 40px "no win" in ink-3 for a loss. Under it, `.t-ui` "Won so far **0.06 SOL**" (red-ink amount) as the running tally.
-     - *After, with wins:* a grid `[total auto | detail 1fr | stamp 132px]`, gap 48.
+     - *After, with wins:* a grid `[total auto | detail 1fr | stamp 144px]`, gap 48.
        - Total column: `.t-voice` "You won", then the money-plate total `.t-total` "0.08 SOL" on its horizon, with the sun (§4.9).
        - Detail column: `.t-body` "**4 winning tickets:** #0034 +0.01, #0036 +0.05, #0037 +0.01 and #0040 +0.01. Paid to 5zXY…4wAD in the reveal transaction." plus **Payout transaction**. Every address and amount is `nowrap` (must-fix: no mid-string wrap).
        - Stamp column: the PAID stamp (reveal variant), in its own cell so it **can never overlap text** (must-fix).
      - *After, no wins:* `.t-voice` 40px "No instant wins this time." plus `.t-body` "All 10 tickets are still in the grand draw for 1 SOL." No sun and no PAID stamp.
   6. **Bottom row** `[receipt slip 300 | 48 | notes + actions]`. This fills the formerly dead paper (about y 760–900).
      - Receipt slip (§4.10).
-     - Actions: primary **"Buy more tickets"** (`closeSession()` then `focusBuy()`, keeping the quantity; hidden if sales are no longer open), the text button "Back to Draw Nº 3", and the text button "Replay" (re-runs the animation; not shown under reduced motion).
+     - Actions (only once the reveal has ended; the cell stays empty during it): primary **"Buy more tickets"** (`closeSession()` then `focusBuy()`, keeping the quantity; hidden if sales are no longer open), the text button "Back to Draw Nº 3", and the text button "Replay" (re-runs the animation; not shown under reduced motion).
      - Notes in `.t-fine` ink-3: "All 10 tickets stay in the grand draw for 1 SOL, drawn at sell-out or on Sun 4 Oct, 04:13 UTC." and "Each stamp's ink is printed from that ticket's randomness."
 
 **Announcer** (graft from Studio):
@@ -871,12 +877,12 @@ This is the emotional peak. It is a full-viewport overlay below the strip (`top:
 
 **Mobile layout** (≤ 760px). Must-fix: the total and payout link stay in the first viewport.
 1. Top bar 48.
-2. h1 24px + sub.
-3. Steps as three compact lines (18px marks, 13px text, links inline).
+2. h1 24px with the ticket range on the same line, right-aligned (the top bar already names the draw; it wraps under the h1 below 360px).
+3. Steps as three compact 22px lines (20px marks, 13px text), then **one 44px row of their proof links** ("Purchase tx · Request · Reveal tx"), so no two tap targets overlap.
 4. Status (15px).
-5. **Strip as a 2-column list**: rows 56px tall, serial 18px with the roll line under it on the left, result on the right. Winners become **solid `--red-fill` slips** with stock text, rotated ±1.4° at scale 1.03, with no WON stamp. Losers show "no win" in italic ink-3.
+5. **Strip as a 2-column list** (`repeat(2, minmax(0, 1fr))`, so it never overflows; at ≤ 380px the serial and the result share the top line and the roll line runs underneath): rows 56px tall, serial 18px with the roll line under it on the left, result on the right. Winners become **solid `--red-fill` slips** with stock text, rotated ±1.4° at scale 1.03, with no WON stamp. Losers show "no win" in italic ink-3.
 6. Double rule.
-7. Slot: now-showing at 64px during; after, "You won" 20px + `.t-total` 96px with `sun-280` and the PAID stamp at 92px top-right (no overlap with the figure).
+7. Slot: now-showing at 64px during; after, "You won" 20px + `.t-total` 96px with a 224px sun and the PAID stamp in a 100px box top-right (no overlap with the figure).
 8. Winners sentence + Payout transaction (by about y 765).
 9. Receipt slip at full width.
 10. Actions stacked at full width.
@@ -923,7 +929,7 @@ Section grid `[248 | 40 | 1fr]`, `id="my-tickets"`.
 - paid but not revealed: "Bought 5" · "#0097–#0101" · "sealed".
 
   It is followed by one `.t-small` line: "The reveal transaction wasn't sent after this purchase, so these results are still sealed. Anyone can send it; any wins are paid to you." Then the primary 44px button **"Reveal 5 tickets"** (`reveal(e)`).
-- The free entry and the sealed roll sit side by side on desktop (`flex`, gap 32) and stack on mobile.
+- Rolls of more than 5 get a row each. The short rolls (5 or fewer, sealed or revealed) and the free entry share one row side by side (`flex`, gap 32) from 761px, before and after a reveal, and stack on mobile. The free entry only stands alone when there is no short roll.
 - Mobile strips: stubs at 20% width, 108px tall, wrapping into rows of 5.
 
 **Draw-state overlays on rolls:**
@@ -1118,7 +1124,8 @@ Unchanged. Keep importing `@solana/wallet-adapter-react-ui/styles.css`, which is
 1. **Badge** (`FixtureProvider`):
    - move it into the strip's right end, z 101, height `var(--strip-h)`;
    - text "Fixture data · ?fx=open" (mobile "Fixture · open") in Archivo 88% 700 12px, stock on `--ink` with no radius;
-   - it must never cover page content (fixes the baseline's hazard tape).
+   - it must never cover page content (fixes the baseline's hazard tape);
+   - at 360px and below it shrinks to "Fx" plus a 2–3 letter code ("Fx rd"), so it never covers the honesty marker.
 2. **`FxState.entryRandomness`:** expose `FxWorld.entryRandomness` so the provider can reveal any entry.
 3. **`reveal(e)`** (fixes "Reveal replays #0031–#0040"): open a session for **that** entry:
    - `stage "revealed"`, `vrfRequest e.vrfRequest`, `vrfMs 1800`;
@@ -1136,7 +1143,8 @@ Unchanged. Keep importing `@solana/wallet-adapter-react-ui/styles.css`, which is
    | `reveal-done` | Same session with `initialShown: 10` |
    | `reveal-5` | The session from item 3 for the #0097–#0101 entry |
 
-5. The fixture `buy`, `claimFree`, `runDraw`, `settle`, `cancel` and `refund` keep failing with "Fixture build — nothing is sent to devnet.", shown in an `ErrorNote`.
+5. **Timeline:** a scenario that moves `closesAt` into the past (due, drawing, settled, cancelled, and past Draw Nº 2) slides the whole purchase history, and the draw's `createdAt`, back so the newest entry lands a minute before the close (`fitBeforeClose`). No ticket is ever shown bought after the close or the payout.
+6. The fixture `buy`, `claimFree`, `runDraw`, `settle`, `cancel` and `refund` keep failing with "Fixture build — nothing is sent to devnet.", shown in an `ErrorNote`.
 
 ### 5.19 Data-layer touch points (the only allowed changes)
 
@@ -1431,7 +1439,7 @@ The bottom of the bounding rect of each of these is ≤ 900, without scrolling:
 
 - [ ] Fonts verified with `document.fonts.check` (§2.2) before every screenshot. Only Archivo and Newsreader load. No requests to fonts.googleapis.com or fontshare.
 - [ ] axe (or equivalent) reports zero contrast violations on `open`, `confirm`, `reveal-done`, `settled` and `cancelled`, on desktop and mobile.
-- [ ] Spacing values come only from §2.4. Text is never smaller than 13px, except the two `aria-hidden` print details (specimen 11px, microtext 4px).
+- [ ] Spacing values come only from §2.4. Text is never smaller than 13px, except the two `aria-hidden` print details (specimen 11px, microtext 4px) and the printed ticket head, which is 12px uppercase Archivo 125% on phones (§2.3).
 - [ ] Tabular figures on every changing number; equal advance widths are checked on the countdown.
 - [ ] Every stamp has `role="img"` and an `aria-label`, and its own filter id. No two stamps on a page share a seed.
 - [ ] Focus is visible (2px blue ring) on every interactive element. The sheet and the reveal trap focus and restore it on close. Esc closes them.

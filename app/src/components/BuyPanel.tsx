@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { canCancel, phaseOf, remaining, walletAllowance } from "@/lib/derive";
-import { oneIn, sol, ticketNo, utcLabel } from "@/lib/format";
+import { oneIn, sol, ticketNo, ticketRange, utcLabel } from "@/lib/format";
 import { CANCEL_GRACE_SECS, FAUCET_URL } from "@/lib/config";
 import { inkAt } from "@/lib/print";
 import type { DrawView } from "@/lib/types";
@@ -224,6 +224,10 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
               </div>
               {capped ? (
                 <>
+                  <div>
+                    <dt>Your grand-prize odds</dt>
+                    <dd>{oneIn(held, d.nextTicket)} now</dd>
+                  </div>
                   <div>
                     <dt>Spent</dt>
                     <dd>{sol(spent, 2, 4)} SOL</dd>
@@ -501,27 +505,34 @@ function Cancelled({ d }: { d: DrawView }) {
       {!empty && (
         <>
           {wallet && myEntries.length > 0 ? (
-            <dl className="ledger">
-              <div>
-                <dt>Your paid tickets</dt>
-                <dd>{paidTickets}</dd>
-              </div>
-              <div>
-                <dt>Refundable to you</dt>
-                <dd>{sol(owed, 2, 4)} SOL</dd>
-              </div>
-              {back > BigInt(0) && (
+            // a refund receipt: one line per purchase, then the total owed to this wallet
+            <dl className="ledger refunds" aria-label={`Your entry: ${paidTickets} paid ${plural(paidTickets, "ticket", "tickets")}`}>
+              {paid.slice(0, 4).map((e) => (
+                <div key={e.address.toBase58()}>
+                  <dt>
+                    <span className="nw tab">{ticketRange(e.firstTicket, e.count)}</span> · {e.count} {plural(e.count, "ticket", "tickets")}
+                  </dt>
+                  <dd className={e.refunded ? "c-ink-3" : ""}>{e.refunded ? "refunded" : `${sol(e.paidLamports, 2, 4)} SOL`}</dd>
+                </div>
+              ))}
+              {paid.length > 4 && (
                 <div>
-                  <dt>Already refunded</dt>
-                  <dd>{sol(back, 2, 4)} SOL</dd>
+                  <dt>{paid.length - 4} more purchases</dt>
+                  <dd>{sol(paid.slice(4).filter((e) => !e.refunded).reduce((n, e) => n + e.paidLamports, BigInt(0)), 2, 4)} SOL</dd>
                 </div>
               )}
               {free && (
                 <div>
-                  <dt>Your free entry</dt>
-                  <dd>{ticketNo(free.firstTicket)}, not refundable</dd>
+                  <dt>
+                    Free entry <span className="nw tab">{ticketNo(free.firstTicket)}</span>
+                  </dt>
+                  <dd className="c-ink-3">not refundable</dd>
                 </div>
               )}
+              <div className="sum">
+                <dt>{back > BigInt(0) ? "Still to refund" : "Refundable to you"}</dt>
+                <dd>{sol(owed, 2, 4)} SOL</dd>
+              </div>
             </dl>
           ) : (
             <dl className="ledger">
@@ -608,7 +619,9 @@ function SellBar({ d }: { d: DrawView }) {
           onClick={connectThenConfirm}
           aria-label={`Connect wallet to buy ${qty} ${plural(qty, "ticket", "tickets")} for ${total}`}
         >
-          Connect wallet<span className="cw-more"> to buy</span>
+          <span>
+            Connect wallet<span className="cw-more"> to buy</span>
+          </span>
         </button>
       ) : bb.kind === "cap" ? (
         <button type="button" id="bar-buy" className="btn" disabled>
