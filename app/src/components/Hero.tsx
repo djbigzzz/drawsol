@@ -17,7 +17,7 @@ import { useSettleTx } from "./Recompute";
 
 const ZERO = BigInt(0);
 
-/** The one competition card: the prize on the left, the sold meter and the entry panel on the right. */
+/** The one draw card: the prize on the left, the sold meter and the entry panel on the right. */
 export function Hero() {
   const { current: d, now } = useDrawSol();
   if (!d) return null;
@@ -67,7 +67,7 @@ function PrizeBlock({ d, ph }: { d: DrawView; ph: Phase }) {
         <Pill tone={tone}>{ph === "closed" && soldOut ? "Sold out" : label}</Pill>
       </p>
       <h1 className="t-win" id="hero-h">
-        {camp ? (
+        {camp && !(ph === "settled" && d.guaranteed && d.paidTickets < d.minTickets) ? (
           <>
             <span className="win-verb">{ph === "settled" ? "Won" : "Win"}</span> {usdWhole(camp.usd)} <span className="win-what">cash</span>
           </>
@@ -179,6 +179,19 @@ function PrizeBlock({ d, ph }: { d: DrawView; ph: Phase }) {
             See the numbers
           </a>
         </p>
+      )}
+      {d.schedule.length === 0 && (ph === "selling" || ph === "closed") && (
+        <ul className="hero-promise">
+          <li>
+            <Check size={14} /> {d.guaranteed ? `Draws ${utcLabel(d.drawAt)} whatever has sold` : `Drawn at the deadline once ${n(d.minTickets)} tickets sell`}
+          </li>
+          <li>
+            <Check size={14} /> {d.guaranteed ? `Full prize once ${n(d.minTickets)} sell, else ${d.potBps / 100}% of sales` : "Otherwise everyone is refunded in full, enforced by the program"}
+          </li>
+          <li>
+            <Check size={14} /> Winner picked by ORAO VRF; anyone can recompute it
+          </li>
+        </ul>
       )}
       {vaultLamports !== null && ph !== "settled" && (
         <p className="hero-vault">
