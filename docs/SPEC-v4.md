@@ -113,3 +113,90 @@ same SOL price; winning numbers chosen by the admin script with a seeded shuffle
 As v3: reveal unrevealed entries; request at `draw_at`; settle when fulfilled; after settlement, create and
 open the next week's draw from a preset. Runs with the keeper key; `open_draw` escrow must come from the
 authority, so weekly creation is an admin step (`admin.ts create-scratch --preset weekly && open`).
+
+## 6. Deviations (implementation notes)
+
+The program implements §1–§3 as written; this section records where a detail was left open, where the
+implementation adds a safeguard, and where it differs. The generated IDL (`target/idl/drawsol.json`, copied
+to `target/idl-v4/`) is authoritative for account and argument names.
+
+**Accounts**
+- `Tier { amount, count, set, won }`: `set` (winning numbers registered so far by `set_schedule`) is added so
+  `open_draw` can require every tier complete, not just the total.
+- `DrawV4` adds `refunded_lamports`, `escrow_returned` (end-prize escrow left the vault) and
+  `instant_escrow_returned` (unwon schedule escrow returned); `house_lamports` is fixed at settle.
+- `EntryV4` adds `refunded`; the fixed fields come first (draw @8, owner @40, seq @72, first_pos @76,
+  count @80, is_free @82, …) and the two vectors last, so memcmp filters have stable offsets. Space is
+  `EntryV4::space(count)` = 8 + 160 + (4 + 4·count) + (4 + count); a 1000-ticket entry is 5,172 bytes.
+- `Pool` / `Schedule` are raw-byte accounts (`disc[8] | remaining u32 | u32[cap]` and `disc[8] | u8[cap]`),
+  never deserialised; the IDL lists them as empty account types so clients know the discriminators.
+- `Config` and `Profile` are byte-identical to v3 (`Profile.credits` is kept for layout, unused).
+- **Every ticket takes a number**, so `ticket_cap` bounds paid **and** free tickets: `buy` requires
+  `next_pos + quantity ≤ cap`, sell-out is `next_pos == cap`. `min_tickets` compares to `paid_tickets` only.
+
+**Setup (Draft)**
+- `create_draw` makes the Pool header-only (12 bytes) and the Schedule `min(8 + cap, 10 240)` bytes.
+  `init_pool(from, to)` chunks must be sequential (`from == pool.remaining`, `1 ≤ to − from ≤ 2000`,
+  `to ≤ cap`) and grow the Pool to `12 + 4·to` and the Schedule to `8 + to` (rent paid by the signer).
+- `set_schedule` entries are `{ ticket, tier }` with **tier = 0-based tier index** (stored as `tier + 1`).
+  A number beyond the Schedule's current size fails with `PoolIncomplete` (run `init_pool` further first).
+- `open_draw` is signed by the **authority** (it escrows), requires `now < closes_at`, a complete pool,
+  every tier `set == count`, re-runs the §1 inequalities, and hashes the `cap` schedule bytes
+  (`sha256`, tier+1 per number) into `DrawOpened { schedule_hash, escrow_lamports }`.
+- `cancel_draw` also cancels a **Draft** (authority only, nothing escrowed) — reason 3.
+
+**Reveal / settle**
+- Assignment: `r = u64_le(sha256(rand ‖ "assign" ‖ (i/4)_le_u32)[8·(i%4)..][..8])`, `j = r mod remaining`
+  — four indices per hash (§3.7 said one hash per ticket). Pure functions in `fairness.rs`
+  (`assign_roll`, `assign_index`, `assign_tickets`, `winning_position`), mirrored in `scripts/lib.ts`.
+- Compute: `reveal_entry(1000)` measures ≈386k CU in LiteSVM; clients must request a compute-unit limit
+  (`scripts/lib.ts: revealCuLimit(count) = min(1.4M, 80k + 400·count)`), the 200k default only covers ≈480 tickets.
+- `settle_draw` requires the winning entry to be **already revealed** (`WinnerNotRevealed`) instead of
+  revealing it inline; reveal is permissionless and the keeper reveals everything before requesting.
+- **Deferred schedule escrow.** At settle the whole end-prize escrow is returned when the fallback pot was
+  paid; the unwon schedule escrow (`schedule_total − instants_paid`) is returned at settle only if every
+  entry is revealed. Otherwise it stays in the vault so late reveals are still paid, and `withdraw` releases
+  it once all entries are revealed or 48 h after `draw_at`. A reveal after that release still assigns the
+  numbers and records the prizes (won bits, counters) but pays nothing (`instant_paid = 0`).
+- `house_lamports = revenue − fallback_pot_paid` is withdrawable only after Settled.
+
+**Cancel (randomness timeout)**
+- `claim_refund` pays `paid − instant_paid` (net of instant prizes, as §3.10). Consequently `withdraw` on a
+  Cancelled draw returns the **whole** escrow (end prize + full schedule total) to the authority: the instant
+  prizes already paid are borne by the refunds. Instant prizes paid to free entries therefore leave the
+  vault short by that amount; `claim_refund` then fails with `VaultShortfall` (never paying one player's
+  refund with another's) until the operator tops the vault up (plain transfer); `admin.ts status` reports it.
+- `reveal_entry` is refused once Cancelled.
+
+**Request**
+- The ORAO accounts of `request_draw` are optional (pass `null` on the no-tickets cancel path); on
+  `buy_tickets` / `claim_free_entry` they are required (every entry rolls).
+
+**Removed / legacy**
+- `migrate_config` and `legacy_close_v2` are gone (devnet's Config is already in the v3 = v4 layout; v2 draws
+  #0–#1 are closed). `legacy_close_v3` closes a v3 draw when `entry_count == 0 && next_ticket == 0`, or
+  Settled with `prize_paid && house_withdrawn == house_lamports`, or Cancelled with
+  `refunded_lamports == revenue_lamports` (and `prize_paid` for a headline). Checked offsets:
+  kind @48, status @49, house @136, house_withdrawn @144, revenue @152, refunded @160, next_ticket @220,
+  entry_count @224, prize_paid @448 (483-byte account, discriminator `sha256("account:DrawV3")[..8]`).
+- `fairness.rs` keeps the v2/v3 seed functions, `ticket_tier` and `winning_ticket` for history verification.
+
+**Events**: `DrawCreated` carries the schedule total; `PoolInitialised { from, to }` and
+`ScheduleSet { schedule_set }` are added; `TicketsPurchased` carries `first_pos` and the running revenue;
+`EntryRevealed` carries `tickets` / `prizes` vectors (a 1000-ticket event is ≈7 KB of base64 in the log —
+read the `EntryV4` account for the authoritative result); `DrawSettled` carries `winning_pos` and `fallback`;
+`DrawCancelled.reason` 3 = draft cancelled.
+
+**Errors** added: `WrongSideAccount`, `BadPoolChunk`, `PoolIncomplete`, `BadScheduleBatch`,
+`DuplicateScheduleTicket`, `TierFull`, `ScheduleIncomplete`, `PoolExhausted`, `WinnerNotRevealed`.
+
+**Scripts / keeper**
+- `admin.ts create-scratch` creates the Draft, fills the pool, picks the winning numbers with the seeded
+  shuffle (seed = `sha256(id_le_u64 ‖ parameters section)`, Fisher–Yates with
+  `j = u64_le(sha256(seed ‖ i_le_u32)[..8]) mod (i+1)`, first Σ count numbers tier by tier), registers them
+  in batches and writes `scripts/terms/draw-<id>.md` (hashed into `terms_hash`, numbers included) and
+  `draw-<id>.json` (for `setup --draw` resume and `terms --draw` re-rendering). `open --draw` is separate.
+- The §4 schedule ($200 at $119.30 = 1.67645 SOL) exceeds the 10 % instant budget (1.676 SOL) by lamport
+  rounding; `buildDraw` scales the tier amounts down proportionally (×0.999734) to fit, and says so.
+- The keeper no longer creates draws (opening escrows the admin's money); it reveals, requests and settles,
+  and reports when no draw is open for sale.

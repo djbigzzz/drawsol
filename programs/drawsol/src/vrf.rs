@@ -1,6 +1,4 @@
 //! ORAO `request_v2` CPI shared by buy_tickets, claim_free_entry and request_draw.
-//! The ORAO accounts are optional in those instructions: they are only needed when a roll is made
-//! (pot entries with instant tiers, and the grand draw).
 
 use anchor_lang::prelude::*;
 use orao_solana_vrf::cpi::accounts::RequestV2;
@@ -15,16 +13,13 @@ use crate::fairness::vrf_request_address;
 /// network state. Returns the request address.
 pub fn request_randomness<'info>(
     payer: &AccountInfo<'info>,
-    request: &Option<UncheckedAccount<'info>>,
-    network_state: &Option<Box<Account<'info, NetworkState>>>,
-    treasury: &Option<UncheckedAccount<'info>>,
-    vrf: &Option<Program<'info, OraoVrf>>,
+    request: &UncheckedAccount<'info>,
+    network_state: &Account<'info, NetworkState>,
+    treasury: &UncheckedAccount<'info>,
+    vrf: &Program<'info, OraoVrf>,
     system_program: &AccountInfo<'info>,
     seed: [u8; 32],
 ) -> Result<Pubkey> {
-    let (Some(request), Some(network_state), Some(treasury), Some(vrf)) = (request, network_state, treasury, vrf) else {
-        return err!(DrawError::VrfWrongAccount);
-    };
     let expected = vrf_request_address(&seed);
     require_keys_eq!(request.key(), expected, DrawError::VrfWrongAccount);
     require_keys_eq!(treasury.key(), network_state.config.treasury, DrawError::VrfWrongAccount);

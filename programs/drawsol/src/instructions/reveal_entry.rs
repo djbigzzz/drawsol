@@ -1,20 +1,32 @@
 use anchor_lang::prelude::*;
 
-use crate::constants::{BPS, DRAW_SEED, ENTRY_SEED, PLAYER_SEED, PROFILE_SEED, TIER_CREDITS, TIER_SOL_SHARE, VAULT_SEED};
+use crate::constants::*;
 use crate::errors::DrawError;
 use crate::events::EntryRevealed;
-use crate::fairness::{read_fulfilled_randomness, ticket_tier};
-use crate::state::{DrawStatus, DrawV3, EntryV3, PlayerV3, Profile, VaultV3};
+use crate::fairness::{assign_index, read_fulfilled_randomness};
+use crate::side::{check_pool, check_schedule, pool_get, pool_remaining, pool_set, set_pool_remaining};
+use crate::state::{DrawStatus, DrawV4, EntryV4, PlayerV4, Vault};
 use crate::utils::pay_from_vault;
 
-/// Permissionless: whoever sends the transaction pays its fee; winnings always go to `entry.owner`.
+/// Permissionless: assigns the entry's ticket numbers at random (Fisher–Yates swap-remove over the Pool,
+/// driven by the entry's ORAO randomness), looks each one up in the Schedule and pays the instant prizes
+/// from the vault to the owner. Compute grows with `count`: a 1000-ticket reveal needs the client to
+/// request a higher compute-unit limit (see BUILD.md).
 #[derive(Accounts)]
 pub struct RevealEntry<'info> {
     #[account(mut, seeds = [DRAW_SEED, &draw.id.to_le_bytes()], bump = draw.bump)]
-    pub draw: Box<Account<'info, DrawV3>>,
+    pub draw: Box<Account<'info, DrawV4>>,
 
     #[account(mut, seeds = [VAULT_SEED, draw.key().as_ref()], bump = draw.vault_bump)]
-    pub vault: Account<'info, VaultV3>,
+    pub vault: Account<'info, Vault>,
+
+    /// CHECK: owner / discriminator checked in the handler; raw bytes.
+    #[account(mut, seeds = [POOL_SEED, draw.key().as_ref()], bump = draw.pool_bump)]
+    pub pool: UncheckedAccount<'info>,
+
+    /// CHECK: owner / discriminator checked in the handler; raw bytes.
+    #[account(mut, seeds = [SCHEDULE_SEED, draw.key().as_ref()], bump = draw.schedule_bump)]
+    pub schedule: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -23,20 +35,16 @@ pub struct RevealEntry<'info> {
         has_one = draw,
         has_one = owner,
     )]
-    pub entry: Box<Account<'info, EntryV3>>,
+    pub entry: Box<Account<'info, EntryV4>>,
 
     #[account(
         mut,
         seeds = [PLAYER_SEED, draw.key().as_ref(), entry.owner.as_ref()],
         bump = player.bump,
     )]
-    pub player: Box<Account<'info, PlayerV3>>,
+    pub player: Box<Account<'info, PlayerV4>>,
 
-    /// Receives credit prizes.
-    #[account(mut, seeds = [PROFILE_SEED, entry.owner.as_ref()], bump = profile.bump)]
-    pub profile: Box<Account<'info, Profile>>,
-
-    /// CHECK: receives the instant SOL; pinned to the entry owner.
+    /// CHECK: receives the instant prizes; pinned to the entry owner.
     #[account(mut, address = entry.owner)]
     pub owner: UncheckedAccount<'info>,
 
@@ -48,77 +56,83 @@ pub struct RevealEntry<'info> {
 pub fn handler(ctx: Context<RevealEntry>) -> Result<()> {
     let draw_key = ctx.accounts.draw.key();
     let entry_key = ctx.accounts.entry.key();
-
     {
         let e = &ctx.accounts.entry;
-        require!(e.needs_reveal, DrawError::NoInstantRoll);
         require!(!e.revealed, DrawError::AlreadyRevealed);
-        // A cancelled draw refunds `paid − sol_paid`: no new instant payouts once refunds are open.
-        require!(ctx.accounts.draw.status != DrawStatus::Cancelled, DrawError::WrongStatus);
+        // A cancelled draw refunds `paid − instant_paid`: no new instant payouts once refunds are open.
+        let st = ctx.accounts.draw.status;
+        require!(st != DrawStatus::Cancelled && st != DrawStatus::Draft, DrawError::WrongStatus);
     }
-
     let rnd = read_fulfilled_randomness(
         &ctx.accounts.vrf_request.to_account_info(),
         &ctx.accounts.entry.vrf_request,
         &ctx.accounts.entry.vrf_seed,
     )?;
+    let pool = ctx.accounts.pool.to_account_info();
+    let schedule = ctx.accounts.schedule.to_account_info();
+    check_pool(&pool)?;
+    check_schedule(&schedule)?;
 
-    let d = &ctx.accounts.draw;
-    let e = &ctx.accounts.entry;
-    let odds = d.tier_odds();
-    let mut tiers = [0u8; 25];
+    let d = &mut ctx.accounts.draw;
+    let count = ctx.accounts.entry.count;
+    let mut tickets: Vec<u32> = Vec::with_capacity(count as usize);
+    let mut prizes: Vec<u8> = Vec::with_capacity(count as usize);
     let mut owed: u64 = 0;
-    let mut credits: u32 = 0;
-    for i in 0..e.count {
-        let ticket = e.first_ticket.checked_add(i as u32).ok_or(DrawError::MathOverflow)?;
-        let tier = ticket_tier(&rnd, ticket, d.iw_denominator, &odds);
-        tiers[i as usize] = tier;
-        if tier == 0 {
-            continue;
-        }
-        let t = d.iw_tiers[(tier - 1) as usize];
-        match t.kind {
-            TIER_SOL_SHARE => {
-                let share = (e.pool_snapshot as u128)
-                    .checked_mul(t.value as u128)
-                    .ok_or(DrawError::MathOverflow)?
-                    / BPS as u128;
-                owed = owed
-                    .checked_add(u64::try_from(share).map_err(|_| DrawError::MathOverflow)?)
-                    .ok_or(DrawError::MathOverflow)?;
+    {
+        let mut pd = pool.try_borrow_mut_data()?;
+        let mut sd = schedule.try_borrow_mut_data()?;
+        require!(pd.len() >= d.pool_len() && sd.len() >= d.schedule_len(), DrawError::PoolIncomplete);
+        let mut remaining = pool_remaining(&pd);
+        for i in 0..count as u32 {
+            require!(remaining > 0, DrawError::PoolExhausted);
+            let j = assign_index(&rnd, i, remaining) as usize;
+            let last = (remaining - 1) as usize;
+            let ticket = pool_get(&pd, j);
+            let moved = pool_get(&pd, last);
+            pool_set(&mut pd, j, moved);
+            remaining -= 1;
+            let o = SCHEDULE_BYTES_OFFSET + ticket as usize;
+            let s = sd[o];
+            let tier = s & SCHEDULE_TIER_MASK;
+            if tier != 0 {
+                // each number is assigned once, so a set won bit means a corrupt pool
+                require!(s & SCHEDULE_WON_BIT == 0 && (tier as usize) <= MAX_TIERS, DrawError::PoolExhausted);
+                sd[o] = s | SCHEDULE_WON_BIT;
+                let t = &mut d.tiers[(tier - 1) as usize];
+                t.won = t.won.checked_add(1).ok_or(DrawError::MathOverflow)?;
+                owed = owed.checked_add(t.amount).ok_or(DrawError::MathOverflow)?;
             }
-            TIER_CREDITS => credits = credits.checked_add(t.value).ok_or(DrawError::MathOverflow)?,
-            _ => {}
+            tickets.push(ticket);
+            prizes.push(tier);
         }
+        set_pool_remaining(&mut pd, remaining);
     }
-    // The snapshot was taken at purchase, so a delayed reveal cannot inflate the payout; the pool caps it.
-    let sol_paid = owed.min(d.instant_pool_lamports);
 
+    // Each schedule number is won at most once, so Σ owed ≤ schedule_total while the escrow is held.
+    // After the unwon escrow went back to the authority (Settled, all revealed / 48 h), a late reveal
+    // still records its prizes but nothing is left to pay them from.
+    let paid = if d.instant_escrow_returned { 0 } else { owed };
+    require!(paid <= d.instant_escrow_left()?, DrawError::VaultShortfall);
     pay_from_vault(
         &ctx.accounts.vault.to_account_info(),
         &ctx.accounts.owner.to_account_info(),
-        sol_paid,
+        paid,
     )?;
 
     let e = &mut ctx.accounts.entry;
     e.revealed = true;
-    e.tiers = tiers;
-    e.sol_paid = sol_paid;
-    e.credits_won = credits;
-    let (owner, first_ticket, count) = (e.owner, e.first_ticket, e.count);
-
-    // Saturating: a reveal must never be blocked by a (practically unreachable) credit overflow.
-    let pr = &mut ctx.accounts.profile;
-    pr.credits = pr.credits.saturating_add(credits);
+    e.tickets = tickets.clone();
+    e.prizes = prizes.clone();
+    e.instant_paid = paid;
+    let (owner, seq) = (e.owner, e.seq);
 
     let p = &mut ctx.accounts.player;
-    p.won_sol = p.won_sol.checked_add(sol_paid).ok_or(DrawError::MathOverflow)?;
-    p.won_credits = p.won_credits.saturating_add(credits);
+    p.won_lamports = p.won_lamports.checked_add(paid).ok_or(DrawError::MathOverflow)?;
 
-    let d = &mut ctx.accounts.draw;
+    d.assigned = d.assigned.checked_add(count as u32).ok_or(DrawError::MathOverflow)?;
     d.revealed_entries = d.revealed_entries.checked_add(1).ok_or(DrawError::MathOverflow)?;
-    d.instant_pool_lamports = d.instant_pool_lamports.checked_sub(sol_paid).ok_or(DrawError::MathOverflow)?;
+    d.instants_paid = d.instants_paid.checked_add(paid).ok_or(DrawError::MathOverflow)?;
 
-    emit!(EntryRevealed { draw: draw_key, entry: entry_key, owner, first_ticket, count, tiers, sol_paid, credits_won: credits });
+    emit!(EntryRevealed { draw: draw_key, entry: entry_key, owner, seq, tickets, prizes, paid });
     Ok(())
 }

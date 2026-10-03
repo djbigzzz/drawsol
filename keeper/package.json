@@ -1,8 +1,8 @@
 {
   "name": "drawsol-keeper",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
-  "description": "DrawSol v3 keeper (SPEC-v3 §4). Run from the repo root: npx tsx keeper/index.ts [--once]. Imports ../scripts/lib.ts.",
+  "description": "DrawSol v4 keeper (SPEC-v4 \u00a75). Run from the repo root: npx tsx keeper/index.ts [--once]. Imports ../scripts/lib.ts.",
   "scripts": {
     "start": "tsx index.ts",
     "once": "tsx index.ts --once"

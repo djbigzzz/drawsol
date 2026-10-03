@@ -1,6 +1,6 @@
 {
   "name": "drawsol",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "private": true,
   "license": "MIT",
   "scripts": {
@@ -10,7 +10,7 @@
     "test:program": "cargo test --manifest-path tests-svm/Cargo.toml",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "keeper:once": "tsx keeper/index.ts --once",
-    "e2e:v3": "tsx scripts/e2e-devnet-v3.ts"
+    "e2e:v4": "tsx scripts/e2e-devnet-v4.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.31.1",

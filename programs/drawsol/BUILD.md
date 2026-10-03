@@ -1,4 +1,4 @@
-# Building `drawsol` (v3)
+# Building `drawsol` (v4)
 
 ## Toolchain
 
@@ -45,46 +45,63 @@ Do not run a plain `cargo update` afterwards; repeat the whole recipe instead.
 
 ```bash
 anchor build
+mkdir -p target/idl-v4 && cp target/idl/drawsol.json target/idl-v4/drawsol.json && cp target/types/drawsol.ts target/idl-v4/drawsol.ts
 ```
 
-Outputs: `target/deploy/drawsol.so` (v3: 659,472 bytes), `target/idl/drawsol.json`, `target/types/drawsol.ts`.
-The frontend, `scripts/` and the keeper use the generated IDL; after every interface change copy it over:
-
-```bash
-cp target/idl/drawsol.json app/src/idl/drawsol.json
-cp target/types/drawsol.ts  app/src/idl/drawsol.ts
-```
-
-`app/src/idl/drawsol-v2.json` is the frozen v2 IDL, kept only to decode legacy v2 history (draws #0–#1, their
-entries and events). Do not overwrite it.
+Outputs: `target/deploy/drawsol.so` (v4: 699,440 bytes), `target/idl/drawsol.json`, `target/types/drawsol.ts`.
+`scripts/` and the keeper import the IDL from **`target/idl-v4/`** (the copy above; `target/` is gitignored, so
+build before running them). The frontend keeps its own copy under `app/src/idl/` and is updated by its owner.
 
 Note: `AccountInfo::resize` is not available in every `solana-account-info` 2.x that the program and the test
 workspace resolve to, so the program uses the (deprecated) `realloc` with `#[allow(deprecated)]`.
 
 Program ID `FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb` (keypair `target/deploy/drawsol-keypair.json`).
 
+## Compute budget (clients)
+
+`reveal_entry` does one swap-remove, one schedule lookup and (every 4 tickets) one sha256 per ticket, plus
+the re-serialisation of the entry's two vectors. Measured in LiteSVM (`cargo test ... -- --nocapture`):
+
+| instruction | CU |
+|---|---|
+| `reveal_entry`, 1 ticket | ≈ 25k |
+| `reveal_entry`, 30 tickets | ≈ 37k |
+| `reveal_entry`, 1000 tickets | **≈ 386k** (limit 1.4M; fails under the 200k default) |
+| `buy_tickets`, 5 / 1000 tickets | ≈ 64k / 65k |
+| `init_pool`, 2000 numbers | ≈ 75k |
+
+≈ 24k + 362 CU per ticket. Clients must prepend `ComputeBudgetProgram.setComputeUnitLimit` to every reveal;
+`scripts/lib.ts` uses `revealCuLimit(count) = min(1.4M, 80_000 + 400 × count)` (480k for 1000 tickets).
+The tests send `SetComputeUnitLimit(1_400_000)` with every reveal (`tests/common/mod.rs`), and
+`reveal_1000_tickets_fits_the_compute_budget` asserts the 1000-ticket reveal stays under 1.4M.
+
 ## Test
 
-The tests live in `tests-svm/` (`config.rs`, `creation.rs`, `pot.rs`, `headline.rs`, `profile.rs`, `legacy.rs`,
-`vectors.rs`; shared harness in `tests/common/mod.rs`) — a Rust [LiteSVM](https://github.com/LiteSVM/litesvm) 0.6.1 harness in its
-**own** cargo workspace (empty `[workspace]` table) so its host-only dependencies never enter the SBF lockfile.
-They load `target/deploy/drawsol.so` (deployed as an upgradeable program with a real ProgramData account), the
-real ORAO VRF program dumped from devnet (`tests-svm/fixtures/orao_vrf.so`) and ORAO's devnet network-state
-account (`tests-svm/fixtures/network_state.json`). Fulfilment is simulated by rewriting the request account into
-the fulfilled `RandomnessV2` layout. The v2 → v3 migration tests use the real devnet v2 accounts
-(`fixtures/v2_config.json`, `v2_draw_{0,1}.json`, `v2_vault_{0,1}.json`, `getAccountInfo` dumps from
-2 Oct 2026; the Config's admin is swapped for the test admin).
+The tests live in `tests-svm/` (`config.rs`, `creation.rs`, `setup.rs`, `buy.rs`, `reveal.rs`, `settle.rs`,
+`cancel.rs`, `profile.rs`, `legacy.rs`, `vectors.rs`; shared harness in `tests/common/mod.rs`) — a Rust
+[LiteSVM](https://github.com/LiteSVM/litesvm) 0.6.1 harness in its **own** cargo workspace (empty `[workspace]`
+table) so its host-only dependencies never enter the SBF lockfile. They load `target/deploy/drawsol.so`
+(deployed as an upgradeable program with a real ProgramData account), the real ORAO VRF program dumped from
+devnet (`tests-svm/fixtures/orao_vrf.so`) and ORAO's devnet network-state account
+(`tests-svm/fixtures/network_state.json`). Fulfilment is simulated by rewriting the request account into the
+fulfilled `RandomnessV2` layout. `legacy_close_v3` is tested on the real devnet v3 accounts
+(`fixtures/v3_draw_{2..6}.json`, `v3_vault_{2..6}.json`: `solana account <pda> --url devnet --output json`
+dumps of 3 Oct 2026; draw PDAs `[b"draw3", id le u64]`, vaults `[b"vault3", draw]`).
 
 ```bash
 anchor build
-cargo test --manifest-path tests-svm/Cargo.toml
+cargo test --manifest-path tests-svm/Cargo.toml                 # 41 tests
+cargo test --manifest-path tests-svm/Cargo.toml -- --nocapture  # prints the CU figures above
 ```
 
 (The Node `litesvm` package crashes with `std::bad_alloc` on this program set — use the Rust harness.)
 
 `tests-svm/tests/vectors.rs` also (re)generates `tests-svm/fixtures/fairness_vectors.json` — cross-language
-vectors for `app/src/lib/fairness.ts` (v2 sections for legacy draws, `*_v3` sections for v3 seeds/PDAs). Regenerate with `DRAWSOL_REGEN_VECTORS=1 cargo test ... vectors`.
-`npx tsx scripts/check-vectors.ts` checks the TypeScript port in `scripts/lib.ts` against them.
+vectors for `scripts/lib.ts` / the app's `fairness.ts`: v4 sections `assign` (random ticket assignment over a
+pool state), `winning_position`, `entry_seed_v4`, `draw_seed_v4`, `pdas_v4`, `functions_v4`; the v2 / v3
+sections are kept for the history of draws #0–#6. Regenerate with `DRAWSOL_REGEN_VECTORS=1 cargo test ... vectors`.
+`npx tsx scripts/check-vectors.ts` checks the TypeScript port in `scripts/lib.ts` against them (118 checks).
+`npx tsc --noEmit -p tsconfig.json` typechecks `scripts/` and `keeper/`.
 
 Refreshing fixtures from devnet:
 
@@ -95,29 +112,33 @@ curl -s https://api.devnet.solana.com -H 'content-type: application/json' -d \
   > tests-svm/fixtures/network_state.json
 ```
 
-## Upgrade devnet to v3 (in place)
+## Upgrade devnet to v4 (in place)
 
-The v3 program is larger than the deployed v2 ProgramData (515,728 bytes), so extend it first:
+The v4 program is larger than the deployed v3 ProgramData (659,472 bytes), so extend it first:
 
 ```bash
 solana config set --url devnet
-NEW=$(stat -c %s target/deploy/drawsol.so)                     # 659,472 at the time of writing
-solana program show FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb   # Data Length: 515728
-solana program extend FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb $((NEW - 515728))
-#   +143,744 bytes ≈ 0.7302 SOL of extra rent (ProgramData 2.6208 → 3.3510 SOL);
-#   the deploy buffer needs ≈ 3.351 SOL more temporarily (refunded when the upgrade completes)
+NEW=$(stat -c %s target/deploy/drawsol.so)                     # 699,440 at the time of writing
+solana program show FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb   # Data Length: 659472
+solana program extend FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb $((NEW - 659472))
+#   +39,968 bytes ≈ 0.2030 SOL of extra rent (`solana rent 39968` → 0.20368768 SOL incl. the 128-byte
+#   account overhead; ProgramData 3.3510 → ≈3.5540 SOL); the deploy buffer needs ≈ 3.55 SOL more
+#   temporarily (refunded when the upgrade completes)
 solana program deploy target/deploy/drawsol.so --program-id FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb
-npx tsx scripts/admin.ts migrate-config --keeper <KEEPER_PUBKEY>  # realloc v2 Config → v3, set keeper
-npx tsx scripts/admin.ts legacy-close --draw 1                     # v2 draw #1: 0 entries, 3 SOL escrow back
-npx tsx scripts/admin.ts legacy-close --draw 0                     # v2 draw #0: settled, fully withdrawn
-npx tsx scripts/admin.ts create-headline --preset weekly           # next Sunday 20:00 UTC
+npx tsx scripts/admin.ts status                                     # Config is unchanged (v3 layout == v4)
+npx tsx scripts/admin.ts legacy-close-v3 --draw 4                   # v3 pot #4: 0 entries
+npx tsx scripts/admin.ts legacy-close-v3 --draw 5                   # v3 headline #5: 0 entries, 1 SOL escrow back
+npx tsx scripts/admin.ts legacy-close-v3 --draw 6                   # v3 headline #6: 0 entries, 4.1911 SOL escrow back
+npx tsx scripts/admin.ts legacy-close-v3 --draw 2                   # settled, house withdrawn
+npx tsx scripts/admin.ts legacy-close-v3 --draw 3                   # cancelled, fully refunded
+npx tsx scripts/admin.ts create-scratch --preset weekly             # draw #7: Draft + pool + schedule + terms
+npx tsx scripts/admin.ts open --draw 7                              # escrows end prize + schedule (authority)
 npx tsx scripts/admin.ts status
 ```
 
-Then fund the keeper key (fees + rent for nightly draws, ~0.05 SOL lasts weeks), add the repo secret
-`KEEPER_SECRET` (its JSON array) and the variable `RPC_URL`; `.github/workflows/keeper.yml` runs
-`npx tsx keeper/index.ts --once` every 10 minutes and creates the nightly pot draw itself.
-`npx tsx scripts/e2e-devnet-v3.ts` exercises one pot draw and one undersold headline draw end to end.
+The keeper key stays as set (`set-keeper` to change it). `.github/workflows/keeper.yml` runs
+`npx tsx keeper/index.ts --once` every 10 minutes (reveal / request / settle); weekly creation is the admin
+step above. `npx tsx scripts/e2e-devnet-v4.ts` exercises one whole draw end to end (incl. a 1000-ticket entry).
 
 ## Deploy (fresh cluster)
 
@@ -125,5 +146,5 @@ Then fund the keeper key (fees + rent for nightly draws, ~0.05 SOL lasts weeks),
 solana rent $(( $(stat -c %s target/deploy/drawsol.so) + 45 ))   # ProgramData rent; budget ~2x for the deploy buffer
 anchor deploy --provider.cluster <cluster>
 npx tsx scripts/admin.ts init-config --keeper <KEEPER_PUBKEY>     # signer must be the upgrade authority
-npx tsx scripts/admin.ts create-pot --preset nightly
+npx tsx scripts/admin.ts create-scratch --preset weekly && npx tsx scripts/admin.ts open --draw 0
 ```

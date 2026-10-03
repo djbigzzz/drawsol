@@ -1,17 +1,10 @@
-//! Creation-time profitability checks (SPEC-v3 §2.7).
+//! create_draw: the SPEC-v4 §1 inequalities and parameter bounds, each violated in turn.
 mod common;
 
 use common::*;
-use drawsol::instructions::{HeadlineDrawParams, PotDrawParams};
-use drawsol::state::{DrawKind, DrawStatus, IwTierV3};
+use drawsol::instructions::CreateDrawParams;
+use drawsol::state::DrawStatus;
 use solana_signer::Signer;
-
-fn try_pot(env: &mut Env, p: PotDrawParams) -> Result<(), String> {
-    env.create_pot(p).map(|_| ())
-}
-fn try_headline(env: &mut Env, p: HeadlineDrawParams) -> Result<(), String> {
-    env.create_headline(p).map(|_| ())
-}
 
 #[track_caller]
 fn assert_invalid(r: Result<(), String>, what: &str) {
@@ -22,155 +15,119 @@ fn assert_invalid(r: Result<(), String>, what: &str) {
 }
 
 #[test]
-fn pot_draw_by_admin_or_keeper_only() {
+fn create_by_admin_or_keeper_only_and_draft_state() {
     let mut env = Env::new();
     let keeper = env.keeper.insecure_clone();
     let mallory = env.user(10);
 
-    let a = env.create_pot(pot_params(CLOSE)).unwrap();
+    let a = env.create(params(CLOSE)).unwrap();
     let k0 = env.balance(&keeper.pubkey());
-    let k = env.create_pot_as(&keeper, pot_params(CLOSE)).unwrap();
-    expect_err(env.create_pot_as(&mallory, pot_params(CLOSE)), &code("Unauthorized"));
+    let k = env.create_as(&keeper, params(CLOSE)).unwrap();
+    expect_err(env.create_as(&mallory, params(CLOSE)), &code("Unauthorized"));
 
     for draw in [a, k] {
         let d = env.draw(&draw);
-        assert_eq!(d.authority, env.admin.pubkey(), "house always belongs to the admin");
-        assert_eq!((d.kind, d.status), (DrawKind::Pot, DrawStatus::Open));
+        assert_eq!(d.authority, env.admin.pubkey(), "escrow and house always belong to the admin");
+        assert_eq!(d.status, DrawStatus::Draft);
         assert_eq!((d.house_bps, d.pot_bps, d.instant_bps), (5500, 3500, 1000));
-        assert_eq!((d.ticket_price, d.ticket_cap, d.max_per_tx, d.max_per_wallet, d.free_cap), (CENT, 300, 25, 50, 15));
+        assert_eq!((d.ticket_price, d.ticket_cap, d.max_per_tx, d.max_per_wallet, d.free_cap), (CENT, 300, 100, 200, 15));
         assert_eq!((d.closes_at, d.draw_at, d.public_grace_secs), (CLOSE, CLOSE, 1800));
-        assert_eq!(d.prize_lamports, 0);
-        assert_eq!(d.iw_tiers, pot_params(CLOSE).iw_tiers);
-        assert_eq!(env.balance(&vault_pda(&draw)), env.vault_rent(), "no escrow");
+        assert_eq!((d.end_prize_lamports, d.min_tickets), (70 * CENT, 200));
+        assert_eq!(d.schedule_total_lamports, 30 * CENT);
+        assert_eq!(d.schedule_set, 0);
+        assert_eq!(d.tiers[0].amount, 10 * CENT);
+        assert_eq!((d.tiers[0].count, d.tiers[1].count, d.tiers[2].count, d.tiers[3].count), (1, 5, 20, 0));
+        assert!(d.tiers.iter().all(|t| t.set == 0 && t.won == 0));
+        assert_eq!(env.balance(&vault_pda(&draw)), env.vault_rent(), "nothing escrowed at creation");
+        assert_eq!(env.pool(&draw), (0, vec![]), "pool is a header only");
+        assert_eq!(env.schedule(&draw), vec![0u8; 300], "schedule zeroed, full size (≤ 10 KB)");
+        assert_eq!(d.terms_hash, [7u8; 32]);
     }
-    // the keeper paid rent + fee only
     let spent = k0 - env.balance(&keeper.pubkey());
-    assert!(spent < SOL / 50, "keeper spent {spent}");
+    assert!(spent < SOL / 50, "keeper paid rent only: {spent}");
     assert_eq!((env.draw(&a).id, env.draw(&k).id), (0, 1));
+    assert_eq!(env.config().next_draw_id, 2);
+    // nothing can be played in a Draft
+    let alice = env.user(10);
+    let (ix, _, _) = env.ix_buy(&a, &alice.pubkey(), 1);
+    expect_err(env.send(&[ix], &[&alice]), &code("WrongStatus"));
 }
 
 #[test]
-fn pot_creation_checks() {
+fn creation_checks_each_inequality() {
     let mut env = Env::new();
-    let base = pot_params(CLOSE);
-    type M = fn(&mut PotDrawParams);
+    let base = params(CLOSE);
+    type M = fn(&mut CreateDrawParams);
     let bad: Vec<(&str, M)> = vec![
-        ("house 4999", |p| (p.common.house_bps, p.pot_bps) = (4999, 4001)),
-        ("house 6001", |p| (p.common.house_bps, p.pot_bps) = (6001, 2999)),
+        ("house 4999", |p| (p.house_bps, p.pot_bps) = (4999, 4001)),
+        ("house 6001", |p| (p.house_bps, p.pot_bps) = (6001, 2999)),
         ("split sums to 9999", |p| p.instant_bps = 999),
         ("split sums to 10001", |p| p.instant_bps = 1001),
-        ("pot 1999", |p| (p.common.house_bps, p.pot_bps, p.instant_bps) = (6000, 1999, 2001)),
-        ("odds sum > denominator", |p| p.iw_tiers[3] = credits_tier(776, 1)),
-        ("sol_share 5001 bps", |p| p.iw_tiers[0] = sol_share(15, 5001)),
-        ("sol_share value 0", |p| p.iw_tiers[0] = sol_share(15, 0)),
-        ("sol_share odds 0", |p| p.iw_tiers[0] = sol_share(0, 2000)),
-        ("credits value 0", |p| p.iw_tiers[2] = credits_tier(150, 0)),
-        ("credits value 101", |p| p.iw_tiers[2] = credits_tier(150, 101)),
-        ("expected credits per ticket >= 1", |p| p.iw_tiers[2] = credits_tier(100, 10)),
-        ("unknown kind", |p| p.iw_tiers[3] = IwTierV3 { odds: 1, kind: 3, value: 1 }),
-        ("none tier with odds", |p| p.iw_tiers[3] = IwTierV3 { odds: 1, kind: 0, value: 0 }),
-        ("none tier with value", |p| p.iw_tiers[3] = IwTierV3 { odds: 0, kind: 0, value: 1 }),
-        ("denominator 0 with tiers", |p| p.iw_denominator = 0),
-        ("denominator without tiers", |p| p.iw_tiers = [NO_TIER; 4]),
-        ("closes_at == now", |p| (p.common.closes_at, p.common.draw_at) = (T0, T0)),
-        ("draw_at < closes_at", |p| p.common.draw_at = CLOSE - 1),
-        ("public grace > 48h", |p| p.common.public_grace_secs = 48 * 3600 + 1),
-        ("max_per_tx 26", |p| p.common.max_per_tx = 26),
-        ("max_per_tx 0", |p| p.common.max_per_tx = 0),
-        ("max_per_wallet 0", |p| p.common.max_per_wallet = 0),
-        ("ticket_cap 0", |p| p.common.ticket_cap = 0),
-        ("price 0", |p| p.common.ticket_price = 0),
-        ("sell-out overflows u64", |p| p.common.ticket_price = u64::MAX / 2),
-    ];
-    for (what, m) in bad {
-        let mut p = base.clone();
-        m(&mut p);
-        assert_invalid(try_pot(&mut env, p), what);
-    }
-    assert_eq!(env.config().next_draw_id, 0);
-
-    let good: Vec<(&str, M)> = vec![
-        ("devnet preset", |_| {}),
-        ("house 5000 / pot 4000 / instant 1000", |p| (p.common.house_bps, p.pot_bps) = (5000, 4000)),
-        ("house 6000 / pot 2000 / instant 2000", |p| (p.common.house_bps, p.pot_bps, p.instant_bps) = (6000, 2000, 2000)),
-        ("no instant wins at all", |p| {
-            (p.common.house_bps, p.pot_bps, p.instant_bps, p.iw_denominator) = (6000, 4000, 0, 0);
-            p.iw_tiers = [NO_TIER; 4];
-        }),
-        ("sol_share exactly 5000, odds == denominator", |p| {
-            p.iw_tiers = [sol_share(500, 5000), credits_tier(500, 1), NO_TIER, NO_TIER];
-        }),
-        ("expected credits just below 1 ticket", |p| p.iw_tiers[2] = credits_tier(9, 100)),
-        ("grace exactly 48h, draw_at later", |p| {
-            p.common.public_grace_secs = 48 * 3600;
-            p.common.draw_at = CLOSE + DAY;
-        }),
-    ];
-    for (what, m) in good {
-        let mut p = base.clone();
-        m(&mut p);
-        try_pot(&mut env, p).unwrap_or_else(|e| panic!("{what}: {e}"));
-    }
-}
-
-#[test]
-fn headline_creation_checks() {
-    let mut env = Env::new();
-    let admin = env.admin.pubkey();
-
-    // keeper cannot create headline draws (they escrow admin money)
-    let keeper = env.keeper.insecure_clone();
-    let ix = env.ix_create_headline(&keeper.pubkey(), 0, headline_params(CLOSE));
-    expect_err(env.send(&[ix], &[&keeper]), &code("Unauthorized"));
-
-    type M = fn(&mut HeadlineDrawParams);
-    let bad: Vec<(&str, M)> = vec![
-        ("house 4999", |p| p.common.house_bps = 4999),
-        ("house 6001", |p| p.common.house_bps = 6001),
-        // prize 1 SOL, 0.01 SOL, house 55%: needs cap × 0.0045 ≥ 1 → cap ≥ 223
-        ("sell-out house < house_bps (cap 222)", |p| p.common.ticket_cap = 222),
-        // house 50%: cap 199 × 0.005 = 0.995 < 1
-        ("sell-out house < 50% (cap 199)", |p| (p.common.house_bps, p.common.ticket_cap) = (5000, 199)),
-        // 119 × 0.01 = 1.19 < 1 × 1.2
-        ("floor margin at min_tickets (119)", |p| p.min_tickets = 119),
-        ("floor_margin 999", |p| (p.floor_margin_bps, p.min_tickets) = (999, 200)),
+        ("end prize 0", |p| p.end_prize_lamports = 0),
+        // min × price × pot_bps/1e4 ≥ end_prize: 200 × 0.01 × 0.35 = 0.7 exactly in the preset
+        ("end prize 1 lamport over the min-tickets pot", |p| p.end_prize_lamports = 70 * CENT + 1),
+        ("min_tickets 199 (0.6965 < 0.7)", |p| p.min_tickets = 199),
+        ("pot 3499 (shifts house, 0.6998 < 0.7)", |p| (p.house_bps, p.pot_bps) = (5501, 3499)),
         ("min_tickets 0", |p| p.min_tickets = 0),
-        ("min_tickets > cap", |p| (p.min_tickets, p.common.ticket_cap) = (231, 230)),
-        ("prize 0", |p| p.prize_lamports = 0),
-        ("prize 2 SOL", |p| p.prize_lamports = 2 * SOL),
-        ("draw_at < closes_at", |p| p.common.draw_at = CLOSE - 1),
-        ("closes_at in the past", |p| (p.common.closes_at, p.common.draw_at) = (T0 - 1, T0)),
+        ("min_tickets > cap", |p| (p.min_tickets, p.ticket_cap) = (301, 300)),
+        // Σ schedule ≤ instant_bps × cap × price / 1e4: 0.3 SOL exactly in the preset
+        ("schedule 1 lamport per number over the budget", |p| p.tiers[2] = tier(CENT / 2 + 1, 20)),
+        ("one more winning number", |p| p.tiers[1] = tier(2 * CENT, 6)),
+        ("instant 999 bps leaves the schedule over budget", |p| (p.pot_bps, p.instant_bps) = (3501, 999)),
+        ("tier amount without count", |p| p.tiers[3] = tier(1, 0)),
+        ("tier count without amount", |p| p.tiers[3] = tier(0, 1)),
+        ("Σ count > cap", |p| p.tiers = tiers(&[tier(1, 301)])),
+        ("cap 0", |p| p.ticket_cap = 0),
+        ("cap 65536", |p| p.ticket_cap = 65_536),
+        ("max_per_tx 0", |p| p.max_per_tx = 0),
+        ("max_per_tx 1001", |p| p.max_per_tx = 1001),
+        ("max_per_wallet 0", |p| p.max_per_wallet = 0),
+        ("closes_at == now", |p| (p.closes_at, p.draw_at) = (T0, T0)),
+        ("closes_at in the past", |p| (p.closes_at, p.draw_at) = (T0 - 1, T0)),
+        ("draw_at < closes_at", |p| p.draw_at = CLOSE - 1),
+        ("public grace > 48h", |p| p.public_grace_secs = 48 * 3600 + 1),
+        ("price 0", |p| p.ticket_price = 0),
+        ("sell-out overflows u64", |p| p.ticket_price = u64::MAX / 2),
+        ("escrow overflows u64", |p| p.end_prize_lamports = u64::MAX),
     ];
     for (what, m) in bad {
-        let mut p = headline_params(CLOSE);
+        let mut p = base.clone();
         m(&mut p);
-        assert_invalid(try_headline(&mut env, p), what);
+        assert_invalid(env.create(p).map(|_| ()), what);
     }
     assert_eq!(env.config().next_draw_id, 0);
 
     let good: Vec<(&str, M)> = vec![
-        ("cap 223 (house just ≥ 55%)", |p| p.common.ticket_cap = 223),
-        ("house 50%, cap 200: exactly prize at sell-out", |p| (p.common.house_bps, p.common.ticket_cap) = (5000, 200)),
-        ("house 60%, cap 250: exactly prize at sell-out", |p| (p.common.house_bps, p.common.ticket_cap) = (6000, 250)),
-        ("margin 10% at min 110 exactly", |p| (p.floor_margin_bps, p.min_tickets) = (1000, 110)),
-        ("min == cap", |p| p.min_tickets = 230),
+        ("preset (both inequalities exactly tight)", |_| {}),
+        ("house 5000 / pot 4000 / instant 1000", |p| (p.house_bps, p.pot_bps) = (5000, 4000)),
+        ("house 6000 / pot 2000 / instant 2000, prize 0.4", |p| {
+            (p.house_bps, p.pot_bps, p.instant_bps) = (6000, 2000, 2000);
+            p.end_prize_lamports = 40 * CENT;
+        }),
+        ("no instant prizes at all (instant 0, no tiers)", |p| {
+            (p.house_bps, p.pot_bps, p.instant_bps) = (6000, 4000, 0);
+            p.tiers = tiers(&[]);
+        }),
+        ("all 8 tiers used", |p| p.tiers = [tier(CENT, 3); 8]),
+        ("cap 65535 (schedule starts at 10 KB)", |p| {
+            p.ticket_cap = 65_535;
+            p.min_tickets = 40_000;
+            p.end_prize_lamports = 40_000 * CENT * 35 / 100;
+        }),
+        ("grace exactly 48h, draw_at later", |p| {
+            p.public_grace_secs = 48 * 3600;
+            p.draw_at = CLOSE + DAY;
+        }),
+        ("max_per_tx 1000", |p| p.max_per_tx = 1000),
     ];
     for (what, m) in good {
-        let mut p = headline_params(CLOSE);
+        let mut p = base.clone();
         m(&mut p);
-        try_headline(&mut env, p).unwrap_or_else(|e| panic!("{what}: {e}"));
+        env.create(p).unwrap_or_else(|e| panic!("{what}: {e}"));
     }
-
-    // devnet preset (SPEC-v3 §3): escrows exactly the prize
-    let a0 = env.balance(&admin);
-    let draw = env.create_headline(headline_params(CLOSE)).unwrap();
-    assert_eq!(env.balance(&vault_pda(&draw)), env.vault_rent() + SOL);
-    assert!(a0 - env.balance(&admin) >= SOL);
-    let d = env.draw(&draw);
-    assert_eq!((d.kind, d.prize_lamports, d.min_tickets, d.floor_margin_bps), (DrawKind::Headline, SOL, 120, 2000));
-    assert_eq!((d.pot_bps, d.instant_bps, d.iw_denominator), (0, 0, 0));
-    assert_eq!(d.iw_tiers, [NO_TIER; 4]);
-    // and sells out with the house at >= 55%
-    let revenue = d.ticket_cap as u64 * d.ticket_price;
-    assert!((revenue - SOL) * 10_000 >= revenue * 5500);
+    // the 65535-cap draw: header-only pool, 10 KB schedule
+    let big = draw_pda(5);
+    let acc = env.svm.get_account(&schedule_pda(&big)).unwrap();
+    assert_eq!(acc.data.len(), 10_240);
+    assert_eq!(env.svm.get_account(&pool_pda(&big)).unwrap().data.len(), 12);
 }

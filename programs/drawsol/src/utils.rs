@@ -13,18 +13,6 @@ pub fn mul_bps(amount: u64, bps: u64) -> Result<u64> {
     u64::try_from(v).map_err(|_| error!(DrawError::MathOverflow))
 }
 
-/// Pot-draw split of one payment (SPEC-v3 §2.3): `(house, instant, pot)`.
-/// house and instant are floored; the pot takes the remainder, so the three always sum to `payment`.
-pub fn split_payment(payment: u64, house_bps: u16, instant_bps: u16) -> Result<(u64, u64, u64)> {
-    let house = mul_bps(payment, house_bps as u64)?;
-    let instant = mul_bps(payment, instant_bps as u64)?;
-    let pot = payment
-        .checked_sub(house)
-        .and_then(|v| v.checked_sub(instant))
-        .ok_or(error!(DrawError::MathOverflow))?;
-    Ok((house, instant, pot))
-}
-
 /// Lamports the vault can pay out while staying rent-exempt.
 pub fn vault_available(vault: &AccountInfo) -> Result<u64> {
     let min = Rent::get()?.minimum_balance(vault.data_len());
@@ -70,6 +58,24 @@ pub fn deposit_to_vault<'info>(
     )
 }
 
+/// Grows a program-owned account to `new_len` (no-op if already at least that long), with `payer`
+/// topping up the rent so it stays rent-exempt. Growth per call must stay ≤ 10 KB (runtime limit).
+pub fn grow_account<'info>(
+    acc: &AccountInfo<'info>,
+    new_len: usize,
+    payer: &AccountInfo<'info>,
+    system_program: &AccountInfo<'info>,
+) -> Result<()> {
+    if acc.data_len() >= new_len {
+        return Ok(());
+    }
+    let need = Rent::get()?.minimum_balance(new_len).saturating_sub(acc.lamports());
+    deposit_to_vault(payer, acc, system_program, need)?;
+    #[allow(deprecated)] // `resize` is not available in every solana-account-info 2.x this builds against
+    acc.realloc(new_len, false)?;
+    Ok(())
+}
+
 /// Empties a program-owned account into `to` and hands it back to the System Program (like Anchor's `close`).
 pub fn close_raw<'info>(acc: &AccountInfo<'info>, to: &AccountInfo<'info>) -> Result<u64> {
     let amount = acc.lamports();
@@ -77,7 +83,7 @@ pub fn close_raw<'info>(acc: &AccountInfo<'info>, to: &AccountInfo<'info>) -> Re
     **to.try_borrow_mut_lamports()? = credited;
     **acc.try_borrow_mut_lamports()? = 0;
     acc.assign(&system_program::ID);
-    #[allow(deprecated)] // see init_config.rs
+    #[allow(deprecated)]
     acc.realloc(0, false)?;
     Ok(amount)
 }

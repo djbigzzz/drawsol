@@ -3,27 +3,28 @@ use orao_solana_vrf::program::OraoVrf;
 use orao_solana_vrf::state::NetworkState;
 use orao_solana_vrf::CONFIG_ACCOUNT_SEED;
 
-use crate::constants::{CANCEL_REASON_NO_TICKETS, CANCEL_REASON_UNDERSOLD, CONFIG_SEED, DRAW_SEED, VAULT_SEED};
+use crate::constants::{CANCEL_REASON_NO_TICKETS, CONFIG_SEED, DRAW_SEED, VAULT_SEED};
 use crate::errors::DrawError;
 use crate::events::{DrawCancelled, DrawRequested};
 use crate::fairness::draw_vrf_seed;
-use crate::state::{Config, DrawKind, DrawStatus, DrawV3, VaultV3};
+use crate::state::{Config, DrawStatus, DrawV4, Vault};
 use crate::utils::{now, pay_from_vault};
 use crate::vrf::request_randomness;
 
 /// Due at `draw_at`. Keeper/authority only during `[draw_at, draw_at + public_grace_secs)`, anyone after.
+/// With no tickets at all the draw is cancelled here and the whole escrow returns to the authority.
 #[derive(Accounts)]
 pub struct RequestDraw<'info> {
     #[account(seeds = [CONFIG_SEED], bump = config.bump)]
     pub config: Box<Account<'info, Config>>,
 
     #[account(mut, seeds = [DRAW_SEED, &draw.id.to_le_bytes()], bump = draw.bump)]
-    pub draw: Box<Account<'info, DrawV3>>,
+    pub draw: Box<Account<'info, DrawV4>>,
 
     #[account(mut, seeds = [VAULT_SEED, draw.key().as_ref()], bump = draw.vault_bump)]
-    pub vault: Account<'info, VaultV3>,
+    pub vault: Account<'info, Vault>,
 
-    /// CHECK: receives a headline prize back if the draw is cancelled here.
+    /// CHECK: receives the escrow back if the draw is cancelled here.
     #[account(mut, address = draw.authority @ DrawError::Unauthorized)]
     pub authority: UncheckedAccount<'info>,
 
@@ -32,7 +33,7 @@ pub struct RequestDraw<'info> {
     pub payer: Signer<'info>,
 
     /// CHECK: ORAO randomness PDA for the draw seed; checked in `request_randomness`, created by the CPI.
-    /// Not needed when the draw is cancelled here (no tickets / headline undersold).
+    /// Not needed when the draw is cancelled here (no tickets).
     #[account(mut)]
     pub vrf_request: Option<UncheckedAccount<'info>>,
 
@@ -65,41 +66,42 @@ pub fn handler(ctx: Context<RequestDraw>, client_nonce: [u8; 16]) -> Result<()> 
         }
     }
 
-    let d = &ctx.accounts.draw;
-    let cancel_reason = if d.next_ticket == 0 {
-        Some(CANCEL_REASON_NO_TICKETS)
-    } else if d.kind == DrawKind::Headline && d.paid_tickets < d.min_tickets {
-        Some(CANCEL_REASON_UNDERSOLD)
-    } else {
-        None
-    };
-
-    if let Some(reason) = cancel_reason {
-        // Headline: the escrowed prize goes straight back to the authority; refunds open via claim_refund.
-        if d.kind == DrawKind::Headline {
-            pay_from_vault(
-                &ctx.accounts.vault.to_account_info(),
-                &ctx.accounts.authority.to_account_info(),
-                d.prize_lamports,
-            )?;
-        }
+    if ctx.accounts.draw.next_pos == 0 {
+        // Nothing sold: the whole escrow (end prize + schedule total, nothing paid out) goes straight back.
+        let d = &ctx.accounts.draw;
+        let escrow = d
+            .end_prize_lamports
+            .checked_add(d.instant_escrow_left()?)
+            .ok_or(DrawError::MathOverflow)?;
+        pay_from_vault(
+            &ctx.accounts.vault.to_account_info(),
+            &ctx.accounts.authority.to_account_info(),
+            escrow,
+        )?;
         let d = &mut ctx.accounts.draw;
-        if d.kind == DrawKind::Headline {
-            d.prize_paid = true;
-        }
+        d.escrow_returned = true;
+        d.instant_escrow_returned = true;
         d.status = DrawStatus::Cancelled;
-        emit!(DrawCancelled { draw: draw_key, reason });
+        emit!(DrawCancelled { draw: draw_key, reason: CANCEL_REASON_NO_TICKETS });
         return Ok(());
     }
 
-    let total_tickets = d.next_ticket;
-    let seed = draw_vrf_seed(&draw_key, total_tickets, &client_nonce);
-    let req = request_randomness(
-        &ctx.accounts.payer.to_account_info(),
+    let (Some(request), Some(network_state), Some(treasury), Some(vrf)) = (
         &ctx.accounts.vrf_request,
         &ctx.accounts.vrf_config,
         &ctx.accounts.vrf_treasury,
         &ctx.accounts.vrf,
+    ) else {
+        return err!(DrawError::VrfWrongAccount);
+    };
+    let total_tickets = ctx.accounts.draw.next_pos;
+    let seed = draw_vrf_seed(&draw_key, total_tickets, &client_nonce);
+    let req = request_randomness(
+        &ctx.accounts.payer.to_account_info(),
+        request,
+        network_state,
+        treasury,
+        vrf,
         &ctx.accounts.system_program.to_account_info(),
         seed,
     )?;

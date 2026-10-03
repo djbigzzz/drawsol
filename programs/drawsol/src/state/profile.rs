@@ -3,12 +3,12 @@ use anchor_lang::prelude::*;
 use crate::constants::PERIOD_SECS;
 use crate::errors::DrawError;
 
-/// seeds = [b"profile", wallet]. Global across draws.
+/// seeds = [b"profile", wallet]. Global across draws. Unchanged since v3 (SPEC-v3 §2.6).
 #[account]
 #[derive(InitSpace)]
 pub struct Profile {
     pub wallet: Pubkey,
-    /// free-ticket credits (won as instant prizes, spent with `use_credits`)
+    /// v3 free-ticket credits; kept for layout compatibility, unused in v4 (no credit tiers)
     pub credits: u32,
     /// 0 = no limit
     pub limit_lamports: u64,

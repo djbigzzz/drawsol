@@ -1,23 +1,27 @@
 /**
- * DrawSol v3 admin CLI.  Usage:  npx tsx scripts/admin.ts <command> [flags]
+ * DrawSol v4 admin CLI.  Usage:  npx tsx scripts/admin.ts <command> [flags]
  *
- *   migrate-config --keeper <pubkey>          v2 Config → v3 layout + keeper (once, after the upgrade)
- *   set-keeper --keeper <pubkey>
  *   init-config --keeper <pubkey>             fresh deployments only (signer = upgrade authority)
- *   create-pot --preset nightly [overrides] [--dry-run]
- *   create-headline --preset weekly [overrides] [--dry-run]
+ *   set-keeper --keeper <pubkey>
+ *   create-scratch --preset weekly [overrides] [--dry-run]
+ *                                             create (Draft) → fill the pool → pick + register the winning
+ *                                             numbers → write scripts/terms/draw-<id>.{md,json}. Then `open`.
+ *   setup --draw id                           resume an interrupted create-scratch (pool chunks / schedule batches)
+ *   open --draw id                            Draft → Open: escrows end prize + schedule total (signer = authority)
  *   status [--draw id]
  *   withdraw --draw id
  *   reveal-all --draw id
- *   run-draw --draw id [--timeout s]          request_draw when due, wait for ORAO, settle_draw
+ *   run-draw --draw id [--timeout s]          reveal, request_draw when due, wait for ORAO, settle_draw
  *   refund-all --draw id                      claim_refund for every entry of a cancelled draw (permissionless)
- *   legacy-close --draw id                    close a v2 draw (#0 settled / #1 empty) into the admin wallet
- *   terms --draw id                           re-render a draw's terms from chain and check its terms_hash
+ *   cancel --draw id                          cancel a Draft (authority) or a Drawing draw stuck > 48 h (anyone)
+ *   legacy-close-v3 --draw id                 close a v3 draw (#2 settled, #3 cancelled, #4–#6 empty) into the admin
+ *   terms --draw id                           re-render a draw's terms from chain + terms file, check terms_hash
  *
- * Overrides (both kinds): --price SOL --cap N --house BPS --per-tx N --per-wallet N --free-cap N --grace-min M
- *   timing: --closes <ISO|unix> --draw-at <ISO|unix>, or --minutes M (close in M minutes) [--draw-delay-min D]
- *   default timing: pot = next 22:00 UTC; headline = next Sunday 20:00 UTC; draw_at = closes_at.
- * Pot only: --pot BPS --instant BPS.   Headline only: --prize SOL --min N --margin BPS.
+ * create-scratch overrides: --prize SOL (default $prizeUsd / usd-rate) --price SOL --cap N --min N --per-tx N
+ *   --per-wallet N --free-cap N --grace-min M --house BPS --pot BPS --instant BPS
+ *   --tiers "25x2,10x4,5x8,2x15,1x40" (USD × count) --usd-rate R (SOL price in USD, default 119.30)
+ *   timing: --closes <ISO|unix> --draw-at <ISO|unix>, or --minutes M (close in M minutes) [--draw-delay-min D];
+ *   default: next Sunday 20:00 UTC, draw_at = closes_at.
  *
  * Env: RPC_URL (default devnet), KEYPAIR_PATH (default ~/.config/solana/id.json).
  */
@@ -27,44 +31,62 @@ import * as fs from "fs";
 import * as path from "path";
 import {
   CANCEL_GRACE_SECS,
-  HEADLINE_PRESETS,
-  POT_PRESETS,
+  PRESETS,
   ROOT,
   RPC_URL,
-  buildHeadlineDraw,
-  buildPotDraw,
+  SCHEDULE_TIER_MASK,
+  SCHEDULE_WON_BIT,
+  big,
+  buildDraw,
+  cancelIfStuck,
   configPda,
   createDraw,
   currentPrize,
   drawPda,
   fetchEntries,
-  fetchLegacyDraw,
+  fetchLegacyDrawV3,
+  fetchPool,
+  fetchSchedule,
+  initPoolAll,
   iso,
   isDue,
-  kindName,
-  legacyDrawPda,
-  legacyVaultPda,
+  legacyV3DrawPda,
+  legacyV3VaultPda,
   makeProgram,
-  nextDailyUtc,
   nextWeeklyUtc,
   nowSecs,
+  openDraw,
+  parseTiers,
+  pickSchedule,
   programDataPda,
   publicFrom,
   readRandomness,
   refundAll,
+  renderParameters,
   renderTerms,
   requestDraw,
   revealReady,
+  scheduleHash,
+  scheduleSeed,
+  scheduleTotal,
+  setScheduleAll,
   settleIfReady,
   sha256,
+  shapeFromChain,
+  shapeFromJson,
+  shapeToJson,
   sleep,
   sol,
   statusName,
+  termsPaths,
+  usedTiers,
   vaultPda,
-  willCancelAtRequest,
-  winningTicket,
+  withdraw as withdrawIx,
+  winningPosition,
   type DrawAccount,
+  type DrawShape,
   type DrawsolProgram,
+  type TermsFile,
 } from "./lib";
 
 type Flags = Record<string, string>;
@@ -90,13 +112,18 @@ const keeperFlag = (f: Flags) => {
   return new PublicKey(f.keeper);
 };
 
-/** --minutes / --closes / --draw-at handling shared by both kinds. */
+/** --minutes / --closes / --draw-at handling. */
 function timing(f: Flags) {
   const minutes = num(f, "minutes");
   const closesAt = minutes !== undefined ? nowSecs() + Math.round(minutes * 60) : time(f.closes);
   const delay = num(f, "draw-delay-min");
   const drawAt = time(f["draw-at"]) ?? (closesAt !== undefined && delay !== undefined ? closesAt + Math.round(delay * 60) : undefined);
   return { closesAt, drawAt };
+}
+
+function readTermsFile(id: number): TermsFile | null {
+  const p = termsPaths(id).json;
+  return fs.existsSync(p) ? (JSON.parse(fs.readFileSync(p, "utf8")) as TermsFile) : null;
 }
 
 // ------------------------------------------------------------------ config
@@ -109,120 +136,149 @@ async function initConfig(program: DrawsolProgram, f: Flags) {
   console.log(`config initialised, admin = ${program.provider.publicKey} ${sig}`);
 }
 
-async function migrateConfig(program: DrawsolProgram, f: Flags) {
-  const keeper = keeperFlag(f);
-  const acc = await program.provider.connection.getAccountInfo(configPda());
-  if (!acc) throw new Error("no Config account: use init-config on a fresh deployment");
-  console.log(`config is ${acc.data.length} bytes (${acc.data.length === 49 ? "v2 layout" : "v3 layout?"})`);
-  const sig = await program.methods.migrateConfig(keeper).accountsPartial({ config: configPda(), admin: program.provider.publicKey! }).rpc();
-  const c = await program.account.config.fetch(configPda());
-  console.log(`migrated: admin ${c.admin}, keeper ${c.keeper}, next draw id ${c.nextDrawId} ${sig}`);
-}
-
 async function setKeeper(program: DrawsolProgram, f: Flags) {
   const sig = await program.methods.setKeeper(keeperFlag(f)).accountsPartial({ config: configPda(), admin: program.provider.publicKey! }).rpc();
   console.log(`keeper set to ${f.keeper} ${sig}`);
 }
 
-// ------------------------------------------------------------------ creation
+// ------------------------------------------------------------------ create-scratch / setup / open
 
-async function create(program: DrawsolProgram, f: Flags, kind: "pot" | "headline") {
+function shapeFromFlags(f: Flags): DrawShape {
+  const preset = PRESETS[f.preset ?? ""];
+  if (!preset) throw new Error(`--preset ${Object.keys(PRESETS).join("|")} is required`);
   const { closesAt, drawAt } = timing(f);
-  const common = {
-    price: num(f, "price"), cap: num(f, "cap"), houseBps: num(f, "house"), perTx: num(f, "per-tx"),
-    perWallet: num(f, "per-wallet"), freeCap: num(f, "free-cap"), graceMin: num(f, "grace-min"), closesAt, drawAt,
-  };
-  let shape;
-  if (kind === "pot") {
-    const preset = POT_PRESETS[f.preset ?? ""];
-    if (!preset) throw new Error(`--preset ${Object.keys(POT_PRESETS).join("|")} is required`);
-    shape = buildPotDraw(preset, { ...common, potBps: num(f, "pot"), instantBps: num(f, "instant") }, nextDailyUtc(22));
-  } else {
-    const preset = HEADLINE_PRESETS[f.preset ?? ""];
-    if (!preset) throw new Error(`--preset ${Object.keys(HEADLINE_PRESETS).join("|")} is required`);
-    shape = buildHeadlineDraw(preset, { ...common, prize: num(f, "prize"), minTickets: num(f, "min"), floorMarginBps: num(f, "margin") }, nextWeeklyUtc(0, 20));
-  }
-  const config = await program.account.config.fetchNullable(configPda()).catch(() => null); // null while still v2
-  if (!config && !f["dry-run"]) throw new Error("config not migrated/initialised (run migrate-config)");
-  const id = config ? config.nextDrawId.toNumber() : 0;
-  const terms = renderTerms(id, shape);
-  console.log(`${kind} draw #${id}: ${shape.ticketCap} × ${sol(shape.ticketPrice)} SOL, closes ${iso(shape.closesAt)}, draw ${iso(shape.drawAt)}` +
-    (kind === "headline" ? `, prize ${sol(shape.prizeLamports)} SOL, min ${shape.minTickets}` : `, split ${shape.houseBps}/${shape.potBps}/${shape.instantBps}`) +
-    `, terms_hash ${sha256(terms).toString("hex")}`);
+  return buildDraw(preset, {
+    prize: num(f, "prize"), price: num(f, "price"), cap: num(f, "cap"), minTickets: num(f, "min"), perTx: num(f, "per-tx"),
+    perWallet: num(f, "per-wallet"), freeCap: num(f, "free-cap"), graceMin: num(f, "grace-min"), houseBps: num(f, "house"),
+    potBps: num(f, "pot"), instantBps: num(f, "instant"), usdRate: num(f, "usd-rate"), tiers: f.tiers ? parseTiers(f.tiers) : undefined,
+    closesAt, drawAt,
+  }, nextWeeklyUtc(0, 20));
+}
+
+function describeShape(id: number, s: DrawShape) {
+  return `draw #${id}: ${s.ticketCap} × ${sol(s.ticketPrice)} SOL, min ${s.minTickets}, end prize ${sol(s.endPrizeLamports)} SOL, ` +
+    `schedule ${sol(scheduleTotal(s.tiers))} SOL over ${s.tiers.reduce((a, t) => a + t.count, 0)} numbers, split ${s.houseBps}/${s.potBps}/${s.instantBps}, ` +
+    `closes ${iso(s.closesAt)}, draws ${iso(s.drawAt)}`;
+}
+
+/** Continues the Draft setup: pool chunks, schedule batches. */
+async function fillDraft(program: DrawsolProgram, id: number, draw: PublicKey, numbers: number[][]) {
+  const chunks = await initPoolAll(program, draw, (from, to, sig) => console.log(`  init_pool(${from}, ${to}) ${sig}`));
+  console.log(`pool: ${chunks.length} chunk(s) sent`);
+  const batches = await setScheduleAll(program, draw, numbers, (n, sig) => console.log(`  set_schedule(${n} numbers) ${sig}`));
+  console.log(`schedule: ${batches} batch(es) sent`);
+  const d = await program.account.drawV4.fetch(draw);
+  const pool = await fetchPool(program.provider.connection, draw, d.ticketCap);
+  const ready = pool.remaining === d.ticketCap && d.tiers.every((t) => t.set === t.count);
+  console.log(`draw #${id}: pool ${pool.remaining}/${d.ticketCap}, schedule ${d.scheduleSet}/${usedTiers(d).reduce((a, t) => a + t.count, 0)} — ` +
+    (ready ? `ready: npx tsx scripts/admin.ts open --draw ${id}` : "NOT complete; rerun `setup --draw " + id + "`"));
+}
+
+async function createScratch(program: DrawsolProgram, f: Flags) {
+  const shape = shapeFromFlags(f);
+  const config = await program.account.config.fetch(configPda());
+  const id = config.nextDrawId.toNumber();
+  console.log(describeShape(id, shape));
   if (f["dry-run"]) {
+    const parameters = renderParameters(id, shape);
+    const numbers = pickSchedule(scheduleSeed(id, parameters), shape.ticketCap, shape.tiers);
+    const terms = renderTerms(id, shape, numbers);
     console.log(terms);
+    console.log(`terms_hash ${sha256(terms).toString("hex")}`);
     return;
   }
   const r = await createDraw(program, shape);
-  const out = path.join(ROOT, `scripts/terms/draw-${r.id}.md`);
-  fs.mkdirSync(path.dirname(out), { recursive: true });
-  fs.writeFileSync(out, r.terms);
-  console.log(`created ${kind} draw #${r.id} at ${r.draw} ${r.sig}\nterms saved to ${path.relative(ROOT, out)}`);
+  const out = termsPaths(r.id);
+  fs.mkdirSync(path.dirname(out.md), { recursive: true });
+  fs.writeFileSync(out.md, r.terms);
+  const file: TermsFile = {
+    id: r.id, draw: r.draw.toBase58(), shape: shapeToJson(shape), numbers: r.numbers,
+    termsHash: r.termsHash.toString("hex"), scheduleSeed: r.seed.toString("hex"),
+  };
+  fs.writeFileSync(out.json, JSON.stringify(file, null, 2) + "\n");
+  console.log(`created draft draw #${r.id} at ${r.draw} ${r.sig}\nterms saved to ${path.relative(ROOT, out.md)} (hash ${file.termsHash})`);
+  await fillDraft(program, r.id, r.draw, r.numbers);
+}
+
+async function setup(program: DrawsolProgram, f: Flags) {
+  const id = drawId(f);
+  const t = readTermsFile(id);
+  if (!t) throw new Error(`no scripts/terms/draw-${id}.json (the winning numbers live there)`);
+  const draw = drawPda(id);
+  const d = await program.account.drawV4.fetch(draw);
+  if (statusName(d.status) !== "draft") throw new Error(`draw #${id} is ${statusName(d.status)}`);
+  if (Buffer.from(d.termsHash).toString("hex") !== t.termsHash) throw new Error("terms file does not match the on-chain terms_hash");
+  await fillDraft(program, id, draw, t.numbers);
+}
+
+async function open(program: DrawsolProgram, f: Flags) {
+  const id = drawId(f);
+  const draw = drawPda(id);
+  const d = await program.account.drawV4.fetch(draw);
+  const escrow = big(d.endPrizeLamports) + big(d.scheduleTotalLamports);
+  const schedule = await fetchSchedule(program.provider.connection, draw, d.ticketCap);
+  console.log(`opening draw #${id}: escrowing ${sol(escrow)} SOL (end prize ${sol(d.endPrizeLamports)} + schedule ${sol(d.scheduleTotalLamports)}); ` +
+    `schedule hash ${scheduleHash(schedule).toString("hex")}`);
+  const sig = await openDraw(program, draw);
+  console.log(`draw #${id} is OPEN ${sig}`);
 }
 
 // ------------------------------------------------------------------ status
 
 function describe(id: number, draw: PublicKey, d: DrawAccount, vaultBal: number, now: number) {
   const st = statusName(d.status);
-  const kind = kindName(d.kind);
-  const lines = [`\n#${id} ${kind.toUpperCase()} ${draw}  [${st.toUpperCase()}]${isDue(d, now) ? "  ← DUE: run-draw" : ""}`];
-  lines.push(`  price ${sol(d.ticketPrice)} · paid ${d.paidTickets}/${d.ticketCap} · credit ${d.creditTickets} · free ${d.freeTickets}/${d.freeCap}` +
-    ` · entries ${d.entryCount} (rolled ${d.rolledEntries}, revealed ${d.revealedEntries})`);
+  const lines = [`\n#${id} ${draw}  [${st.toUpperCase()}]${isDue(d, now) ? "  ← DUE: run-draw" : ""}`];
+  lines.push(`  price ${sol(d.ticketPrice)} · paid ${d.paidTickets} · free ${d.freeTickets}/${d.freeCap} · positions ${d.nextPos}/${d.ticketCap} · ` +
+    `entries ${d.entryCount} (revealed ${d.revealedEntries}, tickets assigned ${d.assigned})`);
   lines.push(`  closes ${iso(d.closesAt)} · draw ${iso(d.drawAt)} · public after ${iso(publicFrom(d))}`);
-  if (kind === "pot") {
-    lines.push(`  split ${d.houseBps}/${d.potBps}/${d.instantBps} · pot ${sol(d.potLamports)} · instant pool ${sol(d.instantPoolLamports)}` +
-      ` · house ${sol(d.houseLamports)} (withdrawn ${sol(d.houseWithdrawn)})`);
-  } else {
-    lines.push(`  prize ${sol(d.prizeLamports)} · min ${d.minTickets} paid · revenue ${sol(d.revenueLamports)} · house ${sol(d.houseLamports)} (withdrawn ${sol(d.houseWithdrawn)})` +
-      (st === "open" && willCancelAtRequest(d) ? "  [below min: would cancel + refund]" : ""));
-  }
-  lines.push(`  vault ${sol(vaultBal)} SOL · revenue ${sol(d.revenueLamports)} · refunded ${sol(d.refundedLamports)} · prize_paid=${d.prizePaid}`);
-  if (st === "open") lines.push(`  prize if drawn now: ${sol(currentPrize(d))} SOL`);
-  if (st === "settled") lines.push(`  winner ${d.winner} · ticket #${d.winningTicket} · prize ${sol(d.prizePaidLamports)} SOL`);
+  lines.push(`  end prize ${sol(d.endPrizeLamports)} · min ${d.minTickets} paid (${d.paidTickets >= d.minTickets ? "reached" : `fallback pot ${sol(currentPrize(d))}`}) · ` +
+    `split ${d.houseBps}/${d.potBps}/${d.instantBps}`);
+  lines.push(`  schedule ${sol(d.scheduleTotalLamports)} over ${d.scheduleSet} numbers · instants paid ${sol(d.instantsPaid)} · ` +
+    usedTiers(d).map((t) => `${sol(t.amount)}×${t.count} (set ${t.set}, won ${t.won})`).join(", "));
+  lines.push(`  vault ${sol(vaultBal)} · revenue ${sol(d.revenue)} · house ${sol(d.houseLamports)} (withdrawn ${sol(d.houseWithdrawn)}) · ` +
+    `refunded ${sol(d.refundedLamports)} · escrow returned ${d.escrowReturned}/${d.instantEscrowReturned}`);
+  if (st === "settled") lines.push(`  winner ${d.winner} · position ${d.winningPos} → ticket #${d.winningTicket} · paid ${sol(d.endPrizePaid)} SOL`);
   return lines;
 }
 
 async function status(program: DrawsolProgram, f: Flags) {
   const conn = program.provider.connection;
   console.log(`RPC ${RPC_URL}, program ${program.programId}`);
-  const raw = await conn.getAccountInfo(configPda());
-  if (!raw) return console.log("config: not initialised");
-  if (raw.data.length === 49) {
-    console.log("config: v2 layout — run `migrate-config --keeper <pubkey>`");
-  } else {
-    const c = await program.account.config.fetch(configPda());
-    console.log(`config: admin ${c.admin}, keeper ${c.keeper}, next draw id ${c.nextDrawId}`);
-  }
+  const c = await program.account.config.fetchNullable(configPda());
+  if (!c) return console.log("config: not initialised");
+  console.log(`config: admin ${c.admin}, keeper ${c.keeper}, next draw id ${c.nextDrawId}`);
   const now = nowSecs();
-  const next = raw.data.readBigUInt64LE(raw.data.length === 49 ? 40 : 72);
-  const ids = f.draw !== undefined ? [Number(f.draw)] : [...Array(Number(next)).keys()];
+  const ids = f.draw !== undefined ? [Number(f.draw)] : [...Array(c.nextDrawId.toNumber()).keys()];
   for (const id of ids) {
-    const legacy = await fetchLegacyDraw(conn, id);
+    const legacy = await fetchLegacyDrawV3(conn, id);
     if (legacy) {
-      console.log(`\n#${id} LEGACY v2 ${legacy.draw} [${legacy.status.toUpperCase()}] entries ${legacy.entryCount}, ` +
-        `${sol(legacy.drawLamports + legacy.vaultLamports)} SOL in draw + vault — ${legacy.closable ? "closable: legacy-close" : "NOT closable"}`);
+      console.log(`\n#${id} LEGACY v3 ${legacy.kind} ${legacy.draw} [${legacy.status.toUpperCase()}] entries ${legacy.entryCount}, ` +
+        `${sol(legacy.drawLamports + legacy.vaultLamports)} SOL in draw + vault — ${legacy.closable ? "closable: legacy-close-v3" : "NOT closable"}`);
       continue;
     }
     const draw = drawPda(id);
-    const d = await program.account.drawV3.fetchNullable(draw);
+    const d = await program.account.drawV4.fetchNullable(draw);
     if (!d) {
-      console.log(`\n#${id}: no account (closed v2 draw)`);
+      console.log(`\n#${id}: no account (closed legacy draw)`);
       continue;
     }
     const vaultBal = await conn.getBalance(vaultPda(draw));
     for (const l of describe(id, draw, d, vaultBal, now)) console.log(l);
     const st = statusName(d.status);
+    if (st === "draft") {
+      const pool = await fetchPool(conn, draw, d.ticketCap);
+      console.log(`  pool ${pool.remaining}/${d.ticketCap} initialised · schedule ${d.scheduleSet}/${usedTiers(d).reduce((a, t) => a + t.count, 0)} registered`);
+    }
     if (st === "drawing") {
       const rnd = await readRandomness(conn, d.drawVrfRequest, d.drawVrfSeed);
-      console.log(`  ORAO request ${d.drawVrfRequest}: ${rnd ? `fulfilled → winning ticket #${winningTicket(rnd, d.nextTicket)}` : "pending"}`);
-      if (now > d.drawAt.toNumber() + CANCEL_GRACE_SECS) console.log("  randomness grace period over: cancel_draw is allowed");
+      console.log(`  ORAO request ${d.drawVrfRequest}: ${rnd ? `fulfilled → winning position ${winningPosition(rnd, d.nextPos)}` : "pending"}`);
+      if (now > d.drawAt.toNumber() + CANCEL_GRACE_SECS) console.log("  randomness grace period over: cancel is allowed");
     }
     if (st === "cancelled") {
-      // Outstanding refunds vs vault (a pot entry that won more instant SOL than it paid can leave a shortfall).
       let owed = 0n;
       for (const { account: e } of await fetchEntries(program, draw)) {
         if (e.refunded) continue;
-        const a = BigInt(e.paidLamports.toString()) - BigInt(e.solPaid.toString());
+        const a = big(e.paidLamports) - big(e.instantPaid);
         if (a > 0n) owed += a;
       }
       const rent = BigInt(await conn.getMinimumBalanceForRentExemption(8));
@@ -235,10 +291,10 @@ async function status(program: DrawsolProgram, f: Flags) {
 
 // ------------------------------------------------------------------ actions
 
-async function withdraw(program: DrawsolProgram, f: Flags) {
+async function withdrawCmd(program: DrawsolProgram, f: Flags) {
   const draw = drawPda(drawId(f));
   const before = await program.provider.connection.getBalance(program.provider.publicKey!);
-  const sig = await program.methods.withdraw().accountsPartial({ draw, vault: vaultPda(draw), authority: program.provider.publicKey! }).rpc();
+  const sig = await withdrawIx(program, draw);
   const after = await program.provider.connection.getBalance(program.provider.publicKey!);
   console.log(`withdrew ≈${sol(after - before)} SOL (net of fee) ${sig}`);
 }
@@ -246,22 +302,23 @@ async function withdraw(program: DrawsolProgram, f: Flags) {
 async function revealAll(program: DrawsolProgram, f: Flags) {
   const draw = drawPda(drawId(f));
   const n = await revealReady(program, draw);
-  const pending = (await fetchEntries(program, draw)).filter((e) => e.account.needsReveal && !e.account.revealed).length;
-  console.log(`revealed ${n}; ${pending} rolled entries still unrevealed (randomness pending or reveal failed)`);
+  const pending = (await fetchEntries(program, draw)).filter((e) => !e.account.revealed).length;
+  console.log(`revealed ${n}; ${pending} entries still unrevealed (randomness pending or reveal failed)`);
 }
 
 async function runDraw(program: DrawsolProgram, f: Flags) {
   const draw = drawPda(drawId(f));
-  let d = await program.account.drawV3.fetch(draw);
+  let d = await program.account.drawV4.fetch(draw);
   if (statusName(d.status) === "open") {
     if (!isDue(d)) throw new Error(`draw #${d.id} is not due until ${iso(d.drawAt)}`);
-    await revealReady(program, draw); // reveal before the pool rolls into the pot
+    await revealReady(program, draw);
     if (!(await requestDraw(program, draw))) return;
   }
-  d = await program.account.drawV3.fetch(draw);
+  d = await program.account.drawV4.fetch(draw);
   if (statusName(d.status) !== "drawing") return console.log(`draw #${d.id} is ${statusName(d.status)}; nothing to do`);
   const deadline = Date.now() + (num(f, "timeout") ?? 300) * 1000;
   while (Date.now() < deadline) {
+    await revealReady(program, draw); // the winning entry must be revealed before settle
     if (await settleIfReady(program, draw)) return;
     console.log("waiting for ORAO fulfilment…");
     await sleep(3000);
@@ -271,31 +328,60 @@ async function runDraw(program: DrawsolProgram, f: Flags) {
 
 async function refundAllCmd(program: DrawsolProgram, f: Flags) {
   const total = await refundAll(program, drawPda(drawId(f)));
-  console.log(`refunded ${sol(Number(total))} SOL in total`);
+  console.log(`refunded ${sol(total)} SOL in total`);
 }
 
-async function legacyClose(program: DrawsolProgram, f: Flags) {
+async function cancel(program: DrawsolProgram, f: Flags) {
   const id = drawId(f);
-  const conn = program.provider.connection;
-  const legacy = await fetchLegacyDraw(conn, id);
-  if (!legacy) throw new Error(`no v2 draw #${id}`);
-  if (!legacy.closable) throw new Error(`v2 draw #${id} is ${legacy.status} with ${legacy.entryCount} entries and not fully withdrawn: not closable`);
-  const draw = legacyDrawPda(id);
+  const draw = drawPda(id);
+  const d = await program.account.drawV4.fetch(draw);
+  const st = statusName(d.status);
+  if (st === "draft") {
+    const sig = await program.methods.cancelDraw().accountsPartial({ draw, signer: program.provider.publicKey! }).rpc();
+    return console.log(`draft draw #${id} cancelled ${sig}`);
+  }
+  if (st === "drawing") {
+    if (!(await cancelIfStuck(program, draw))) throw new Error(`draw #${id} is Drawing but not cancellable yet (48 h after draw_at, randomness still pending)`);
+    return;
+  }
+  throw new Error(`draw #${id} is ${st}: nothing to cancel`);
+}
+
+async function legacyCloseV3(program: DrawsolProgram, f: Flags) {
+  const id = drawId(f);
+  const legacy = await fetchLegacyDrawV3(program.provider.connection, id);
+  if (!legacy) throw new Error(`no v3 draw #${id}`);
+  if (!legacy.closable) throw new Error(`v3 draw #${id} is ${legacy.status} with ${legacy.entryCount} entries and liabilities: not closable`);
+  const draw = legacyV3DrawPda(id);
   const sig = await program.methods
-    .legacyCloseV2(new BN(id))
-    .accountsPartial({ config: configPda(), admin: program.provider.publicKey!, legacyDraw: draw, legacyVault: legacyVaultPda(draw) })
+    .legacyCloseV3(new BN(id))
+    .accountsPartial({ config: configPda(), admin: program.provider.publicKey!, legacyDraw: draw, legacyVault: legacyV3VaultPda(draw) })
     .rpc();
-  console.log(`closed v2 draw #${id}: ${sol(legacy.drawLamports + legacy.vaultLamports)} SOL returned to the admin ${sig}`);
+  console.log(`closed v3 draw #${id} (${legacy.kind}, ${legacy.status}): ${sol(legacy.drawLamports + legacy.vaultLamports)} SOL returned to the admin ${sig}`);
 }
 
 async function terms(program: DrawsolProgram, f: Flags) {
   const id = drawId(f);
-  const d = await program.account.drawV3.fetch(drawPda(id));
-  const text = renderTerms(id, d);
-  const ok = sha256(text).equals(Buffer.from(d.termsHash));
+  const draw = drawPda(id);
+  const d = await program.account.drawV4.fetch(draw);
+  const t = readTermsFile(id);
+  const shape = t ? shapeFromJson(t.shape) : shapeFromChain(d);
+  if (!t) console.log("(no terms file: USD figures unknown, rendering from chain only — the hash will not match)");
+  const parameters = renderParameters(id, shape);
+  const numbers = pickSchedule(scheduleSeed(id, parameters), shape.ticketCap, shape.tiers);
+  const text = renderTerms(id, shape, numbers);
   console.log(text);
+  const ok = sha256(text).equals(Buffer.from(d.termsHash));
   console.log(`terms_hash on chain ${Buffer.from(d.termsHash).toString("hex")} — ${ok ? "MATCHES" : "DOES NOT MATCH"} this rendering`);
-  if (!ok) process.exit(1);
+  // the on-chain schedule must hold exactly these numbers
+  const schedule = await fetchSchedule(program.provider.connection, draw, d.ticketCap);
+  let mismatch = 0;
+  numbers.forEach((nums, tier) => nums.forEach((n) => { if ((schedule[n] & SCHEDULE_TIER_MASK) !== tier + 1) mismatch++; }));
+  const registered = [...schedule].filter((b) => (b & SCHEDULE_TIER_MASK) !== 0).length;
+  const won = [...schedule].filter((b) => b & SCHEDULE_WON_BIT).length;
+  console.log(`on-chain schedule: ${registered} numbers registered (${won} won), hash ${scheduleHash(schedule).toString("hex")}; ` +
+    (mismatch ? `${mismatch} number(s) DIFFER from the terms` : "every published number matches"));
+  if (!ok || mismatch) process.exit(1);
 }
 
 async function main() {
@@ -304,16 +390,17 @@ async function main() {
   const program = makeProgram();
   switch (cmd) {
     case "init-config": return initConfig(program, f);
-    case "migrate-config": return migrateConfig(program, f);
     case "set-keeper": return setKeeper(program, f);
-    case "create-pot": return create(program, f, "pot");
-    case "create-headline": return create(program, f, "headline");
+    case "create-scratch": return createScratch(program, f);
+    case "setup": return setup(program, f);
+    case "open": return open(program, f);
     case "status": return status(program, f);
-    case "withdraw": return withdraw(program, f);
+    case "withdraw": return withdrawCmd(program, f);
     case "reveal-all": return revealAll(program, f);
     case "run-draw": return runDraw(program, f);
     case "refund-all": return refundAllCmd(program, f);
-    case "legacy-close": return legacyClose(program, f);
+    case "cancel": return cancel(program, f);
+    case "legacy-close-v3": return legacyCloseV3(program, f);
     case "terms": return terms(program, f);
     default:
       console.log(fs.readFileSync(__filename, "utf8").split("*/")[0]);
@@ -325,4 +412,3 @@ main().catch((e) => {
   console.error(e?.logs ? `${e.message}\n${e.logs.join("\n")}` : e);
   process.exit(1);
 });
-

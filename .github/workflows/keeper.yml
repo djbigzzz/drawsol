@@ -1,5 +1,6 @@
-# DrawSol v3 keeper (SPEC-v3 §4): one pass every 10 minutes — reveal entries, request / settle / cancel draws,
-# create tonight's pot draw. Signs with the dedicated low-balance keeper key, never the admin key.
+# DrawSol v4 keeper (SPEC-v4 §5): one pass every 10 minutes — reveal entries, request / settle / cancel draws.
+# Signs with the dedicated low-balance keeper key, never the admin key. Creating + opening the weekly draw
+# escrows the admin's money and stays an admin step (scripts/admin.ts create-scratch / open).
 #
 # Setup: repo secret KEEPER_SECRET = the keeper keypair's JSON array (`cat keeper.json`);
 #        repo variable RPC_URL = devnet RPC endpoint (defaults to https://api.devnet.solana.com when unset).

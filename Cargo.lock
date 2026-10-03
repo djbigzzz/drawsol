@@ -634,7 +634,7 @@ dependencies = [
 
 [[package]]
 name = "drawsol"
-version = "3.0.0"
+version = "4.0.0"
 dependencies = [
  "anchor-lang",
  "orao-solana-vrf",

@@ -1,12 +1,13 @@
 //! Generates / checks `fixtures/fairness_vectors.json`: cross-language test vectors produced by the
-//! program's own fairness functions, for `app/src/lib/fairness.ts`.
+//! program's own fairness functions, for `scripts/lib.ts` and the app's `fairness.ts`.
 //!
 //! The file is (re)written when missing or when `DRAWSOL_REGEN_VECTORS=1`; otherwise the test asserts
 //! that the committed file still matches what the Rust code produces.
 //!
-//! v3 changed only the VRF seed domains (`drawsol:v3:*`) and the PDA seeds. The v2 sections
-//! (`entry_seed`, `draw_seed`, `pdas`) are kept byte-identical for verifying legacy draws #0–#1;
-//! the v3 ones are `entry_seed_v3`, `draw_seed_v3`, `pdas_v3`.
+//! v4 sections: `assign` (random ticket assignment over a pool state), `winning_position`,
+//! `entry_seed_v4`, `draw_seed_v4`, `pdas_v4`, `functions_v4`. The v2 (`entry_seed`, `draw_seed`, `pdas`,
+//! `ticket_tier`, `winning_ticket`) and v3 (`*_v3`) sections are kept byte-identical for verifying the
+//! history of draws #0–#6.
 mod common;
 
 use anchor_lang::prelude::Pubkey;
@@ -38,6 +39,9 @@ fn demo_tiers() -> [IwTier; 4] {
 fn legacy_pda(seeds: &[&[u8]]) -> Pubkey {
     pda(seeds)
 }
+fn v3_draw_pda(id: u64) -> Pubkey {
+    pda(&[b"draw3", &id.to_le_bytes()])
+}
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
@@ -62,6 +66,40 @@ fn tiers_json(t: &[IwTier; 4]) -> Value {
     Value::Array(t.iter().map(|t| json!({ "amount": t.amount.to_string(), "odds": t.odds })).collect())
 }
 
+fn seeds_json(domain_fn: impl Fn(&Pubkey, &Pubkey, u32, &[u8; 16]) -> [u8; 32], draw_of: impl Fn(usize) -> Pubkey) -> Vec<Value> {
+    let mut out = Vec::new();
+    for (i, (seq, nonce)) in [(0u32, [0u8; 16]), (1, [0xAB; 16]), (4_000_000_000, *b"0123456789abcdef")].iter().enumerate() {
+        let draw = draw_of(i);
+        let buyer = key(&format!("buyer-{i}"));
+        let seed = domain_fn(&draw, &buyer, *seq, nonce);
+        out.push(json!({
+            "draw": draw.to_string(),
+            "buyer": buyer.to_string(),
+            "seq": seq,
+            "client_nonce": hex(nonce),
+            "seed": hex(&seed),
+            "vrf_request": vrf_request_address(&seed).to_string(),
+        }));
+    }
+    out
+}
+
+fn draw_seeds_json(domain_fn: impl Fn(&Pubkey, u32, &[u8; 16]) -> [u8; 32], draw_of: impl Fn(usize) -> Pubkey, ns: [u32; 2], field: &str) -> Vec<Value> {
+    let mut out = Vec::new();
+    for (i, (n, nonce)) in [(ns[0], [7u8; 16]), (ns[1], *b"fedcba9876543210")].iter().enumerate() {
+        let draw = draw_of(i);
+        let seed = domain_fn(&draw, *n, nonce);
+        out.push(json!({
+            "draw": draw.to_string(),
+            field: n,
+            "client_nonce": hex(nonce),
+            "seed": hex(&seed),
+            "vrf_request": vrf_request_address(&seed).to_string(),
+        }));
+    }
+    out
+}
+
 fn build() -> Value {
     let demo = demo_tiers();
     let prod = [
@@ -71,7 +109,7 @@ fn build() -> Value {
         IwTier { amount: 15 * SOL / 1000, odds: 400 },
     ];
 
-    // --- per-ticket instant tiers
+    // --- v2/v3 per-ticket instant tiers (history only)
     let mut ticket_cases = Vec::new();
     let mut add_ticket = |label: &str, ticket: u32, denom: u32, tiers: &[IwTier; 4]| {
         let r = rnd(label);
@@ -90,14 +128,13 @@ fn build() -> Value {
     add_ticket("ticket-b", 41, 1000, &demo);
     add_ticket("ticket-c", 9_999, 10_000, &prod);
     add_ticket("ticket-d", 123_456, 10_000, &prod);
-    // A guaranteed winner for each demo tier: search tickets until each tier appears once.
     let r = rnd("ticket-search");
     for want in 1..=3u8 {
         let t = (0u32..100_000).find(|&t| ticket_tier(&r, t, 1000, &odds(&demo)) == want).unwrap();
         add_ticket("ticket-search", t, 1000, &demo);
     }
 
-    // --- grand-draw winning ticket
+    // --- v2/v3 grand-draw winning ticket == v4 winning position (same function)
     let mut win_cases = Vec::new();
     for (label, n) in [("win-a", 1u32), ("win-b", 150), ("win-c", 165), ("win-d", 10_500), ("win-e", u32::MAX)] {
         let r = rnd(label);
@@ -110,36 +147,10 @@ fn build() -> Value {
         }));
     }
 
-    // --- VRF seeds and ORAO request PDAs (v2: legacy draws)
+    // --- v2 seeds / PDAs (draws #0–#1)
     let v2_draw_pda = |id: u64| legacy_pda(&[b"draw", &id.to_le_bytes()]);
-    let mut entry_seeds = Vec::new();
-    for (i, (seq, nonce)) in [(0u32, [0u8; 16]), (1, [0xAB; 16]), (4_000_000_000, *b"0123456789abcdef")].iter().enumerate() {
-        let draw = v2_draw_pda(i as u64);
-        let buyer = key(&format!("buyer-{i}"));
-        let seed = entry_vrf_seed_v2(&draw, &buyer, *seq, nonce);
-        entry_seeds.push(json!({
-            "draw": draw.to_string(),
-            "buyer": buyer.to_string(),
-            "seq": seq,
-            "client_nonce": hex(nonce),
-            "seed": hex(&seed),
-            "vrf_request": vrf_request_address(&seed).to_string(),
-        }));
-    }
-    let mut draw_seeds = Vec::new();
-    for (i, (n, nonce)) in [(1u32, [7u8; 16]), (150, *b"fedcba9876543210")].iter().enumerate() {
-        let draw = v2_draw_pda(i as u64);
-        let seed = draw_vrf_seed_v2(&draw, *n, nonce);
-        draw_seeds.push(json!({
-            "draw": draw.to_string(),
-            "next_ticket": n,
-            "client_nonce": hex(nonce),
-            "seed": hex(&seed),
-            "vrf_request": vrf_request_address(&seed).to_string(),
-        }));
-    }
-
-    // --- program PDAs (for the frontend's address derivation), v2 legacy seeds
+    let entry_seeds = seeds_json(entry_vrf_seed_v2, |i| v2_draw_pda(i as u64));
+    let draw_seeds = draw_seeds_json(draw_vrf_seed_v2, |i| v2_draw_pda(i as u64), [1, 150], "next_ticket");
     let d0 = v2_draw_pda(0);
     let w = key("buyer-0");
     let pdas = json!({
@@ -152,47 +163,79 @@ fn build() -> Value {
         "player_of_draw_0": { "wallet": w.to_string(), "player": legacy_pda(&[b"player", d0.as_ref(), w.as_ref()]).to_string() },
     });
 
-    // --- v3: seeds with the v3 domains, v3 PDA seeds (draw ids continue at 2 on devnet)
-    let mut entry_seeds_v3 = Vec::new();
-    for (i, (seq, nonce)) in [(0u32, [0u8; 16]), (1, [0xAB; 16]), (4_000_000_000, *b"0123456789abcdef")].iter().enumerate() {
-        let draw = draw_pda(2 + i as u64);
-        let buyer = key(&format!("buyer-{i}"));
-        let seed = entry_vrf_seed(&draw, &buyer, *seq, nonce);
-        entry_seeds_v3.push(json!({
-            "draw": draw.to_string(),
-            "buyer": buyer.to_string(),
-            "seq": seq,
-            "client_nonce": hex(nonce),
-            "seed": hex(&seed),
-            "vrf_request": vrf_request_address(&seed).to_string(),
-        }));
-    }
-    let mut draw_seeds_v3 = Vec::new();
-    for (i, (n, nonce)) in [(1u32, [7u8; 16]), (300, *b"fedcba9876543210")].iter().enumerate() {
-        let draw = draw_pda(2 + i as u64);
-        let seed = draw_vrf_seed(&draw, *n, nonce);
-        draw_seeds_v3.push(json!({
-            "draw": draw.to_string(),
-            "next_ticket": n,
-            "client_nonce": hex(nonce),
-            "seed": hex(&seed),
-            "vrf_request": vrf_request_address(&seed).to_string(),
-        }));
-    }
-    let d2 = draw_pda(2);
+    // --- v3 seeds / PDAs (draws #2–#6)
+    let entry_seeds_v3 = seeds_json(entry_vrf_seed_v3, |i| v3_draw_pda(2 + i as u64));
+    let draw_seeds_v3 = draw_seeds_json(draw_vrf_seed_v3, |i| v3_draw_pda(2 + i as u64), [1, 300], "next_ticket");
+    let d2 = v3_draw_pda(2);
     let pdas_v3 = json!({
         "config": config_pda().to_string(),
         "draw_2": d2.to_string(),
-        "draw_3": draw_pda(3).to_string(),
-        "vault_of_draw_2": vault_pda(&d2).to_string(),
-        "entry_0_of_draw_2": entry_pda(&d2, 0).to_string(),
-        "entry_7_of_draw_2": entry_pda(&d2, 7).to_string(),
-        "player_of_draw_2": { "wallet": w.to_string(), "player": player_pda(&d2, &w).to_string() },
+        "draw_3": v3_draw_pda(3).to_string(),
+        "vault_of_draw_2": legacy_pda(&[b"vault3", d2.as_ref()]).to_string(),
+        "entry_0_of_draw_2": legacy_pda(&[b"entry3", d2.as_ref(), &0u32.to_le_bytes()]).to_string(),
+        "entry_7_of_draw_2": legacy_pda(&[b"entry3", d2.as_ref(), &7u32.to_le_bytes()]).to_string(),
+        "player_of_draw_2": { "wallet": w.to_string(), "player": legacy_pda(&[b"player3", d2.as_ref(), w.as_ref()]).to_string() },
+        "profile": { "wallet": w.to_string(), "profile": profile_pda(&w).to_string() },
+    });
+
+    // --- v4: random ticket assignment over a pool state
+    let mut assign_cases = Vec::new();
+    let mut add_assign = |label: &str, cap: u32, pre: &[(u16, &str)], count: u16| {
+        // `pre`: earlier reveals (count, label) applied to a fresh 0..cap pool, so the pool state is
+        // non-trivial; the vector records the pool *before* the assignment under test.
+        let mut pool: Vec<u32> = (0..cap).collect();
+        let mut remaining = cap;
+        for (c, l) in pre {
+            assign_tickets(&rnd(l), *c, &mut pool, &mut remaining);
+        }
+        let pool_before = pool[..remaining as usize].to_vec();
+        let r = rnd(label);
+        let rolls: Vec<String> = (0..count as u32).map(|i| assign_roll(&r, i).to_string()).collect();
+        let tickets = assign_tickets(&r, count, &mut pool, &mut remaining);
+        assign_cases.push(json!({
+            "randomness": hex(&r),
+            "cap": cap,
+            "pool_before": pool_before,
+            "remaining_before": pool_before.len(),
+            "count": count,
+            "rolls": rolls,
+            "tickets": tickets,
+            "pool_after": pool[..remaining as usize].to_vec(),
+            "remaining_after": remaining,
+        }));
+    };
+    add_assign("assign-a", 10, &[], 1);
+    add_assign("assign-b", 10, &[], 10);
+    add_assign("assign-c", 300, &[(30, "assign-pre-1"), (25, "assign-pre-2")], 7);
+    add_assign("assign-d", 2000, &[(1000, "assign-pre-3")], 9);
+    add_assign("assign-e", 65_535, &[], 5);
+
+    // --- v4: winning position
+    let mut pos_cases = Vec::new();
+    for (label, n) in [("pos-a", 1u32), ("pos-b", 201), ("pos-c", 2000), ("pos-d", 65_535)] {
+        let r = rnd(label);
+        pos_cases.push(json!({ "randomness": hex(&r), "next_pos": n, "winning_pos": winning_position(&r, n) }));
+    }
+
+    // --- v4 seeds / PDAs (draw ids continue at 7 on devnet)
+    let entry_seeds_v4 = seeds_json(entry_vrf_seed, |i| draw_pda(7 + i as u64));
+    let draw_seeds_v4 = draw_seeds_json(draw_vrf_seed, |i| draw_pda(7 + i as u64), [1, 2000], "next_pos");
+    let d7 = draw_pda(7);
+    let pdas_v4 = json!({
+        "config": config_pda().to_string(),
+        "draw_7": d7.to_string(),
+        "draw_8": draw_pda(8).to_string(),
+        "vault_of_draw_7": vault_pda(&d7).to_string(),
+        "pool_of_draw_7": pool_pda(&d7).to_string(),
+        "schedule_of_draw_7": schedule_pda(&d7).to_string(),
+        "entry_0_of_draw_7": entry_pda(&d7, 0).to_string(),
+        "entry_7_of_draw_7": entry_pda(&d7, 7).to_string(),
+        "player_of_draw_7": { "wallet": w.to_string(), "player": player_pda(&d7, &w).to_string() },
         "profile": { "wallet": w.to_string(), "profile": profile_pda(&w).to_string() },
     });
 
     json!({
-        "description": "DrawSol v2 fairness vectors, generated by programs/drawsol/src/fairness.rs (SPEC §2.3). u64 values are decimal strings; byte arrays are lowercase hex; keys are base58.",
+        "description": "DrawSol fairness vectors, generated by programs/drawsol/src/fairness.rs. v4 sections: assign, winning_position, *_v4. v2/v3 sections verify the history of draws #0-#6. u64 values are decimal strings; byte arrays are lowercase hex; keys are base58.",
         "program_id": drawsol::ID.to_string(),
         "orao_program_id": orao_solana_vrf::ID.to_string(),
         "functions": {
@@ -218,6 +261,21 @@ fn build() -> Value {
         "entry_seed_v3": entry_seeds_v3,
         "draw_seed_v3": draw_seeds_v3,
         "pdas_v3": pdas_v3,
+        "functions_v4": {
+            "entry_vrf_seed": "sha256('drawsol:v4:entry' || draw || buyer || seq_le_u32 || client_nonce[16])",
+            "draw_vrf_seed": "sha256('drawsol:v4:draw' || draw || next_pos_le_u32 || client_nonce[16])",
+            "assign_roll": "u64_le(sha256(randomness64 || 'assign' || (i / 4)_le_u32)[8*(i % 4) .. 8*(i % 4) + 8]) for the i-th ticket of the entry (i from 0)",
+            "assign_index": "assign_roll(i) mod remaining",
+            "assign_tickets": "for i in 0..count: j = assign_index(i, remaining); ticket = pool[j]; pool[j] = pool[remaining - 1]; remaining -= 1  (pool = the draw's Pool account numbers[..remaining], before this entry)",
+            "schedule": "Schedule account byte[ticket]: 0 = no prize, t+1 = tier t, bit 7 = won",
+            "winning_pos": "(u64_le(sha256(randomness64 || 'draw')[0..8]) * next_pos) >> 64; winning_ticket = entry.tickets[winning_pos - entry.first_pos] of the entry with first_pos <= winning_pos < first_pos + count",
+            "pdas": "config ['config']; draw ['draw4', id_le_u64]; vault ['vault4', draw]; pool ['pool', draw]; schedule ['schedule', draw]; entry ['entry4', draw, seq_le_u32]; player ['player4', draw, wallet]; profile ['profile', wallet]"
+        },
+        "assign": assign_cases,
+        "winning_position": pos_cases,
+        "entry_seed_v4": entry_seeds_v4,
+        "draw_seed_v4": draw_seeds_v4,
+        "pdas_v4": pdas_v4,
     })
 }
 
@@ -238,15 +296,34 @@ fn fairness_properties() {
     assert_eq!(uniform_index(u64::MAX, 1), 0);
     assert_eq!(uniform_index(u64::MAX, u32::MAX), u32::MAX - 1);
     assert_eq!(uniform_index(0, 150), 0);
-    // empirical hit rate of the demo table ≈ 200/1000
+    assert_eq!(winning_position(&rnd("x"), 1), 0);
+    // assignment over a full pool is a permutation; every index is in range
+    let r = rnd("perm");
+    for cap in [1u32, 2, 7, 300, 2000] {
+        let mut pool: Vec<u32> = (0..cap).collect();
+        let mut rem = cap;
+        let t = assign_tickets(&r, cap as u16, &mut pool, &mut rem);
+        let mut sorted = t.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, (0..cap).collect::<Vec<u32>>(), "cap {cap}");
+        assert_eq!(rem, 0);
+    }
+    // the four rolls of one hash differ, and consecutive hashes differ
+    let rolls: Vec<u64> = (0..8).map(|i| assign_roll(&r, i)).collect();
+    assert_eq!(rolls.iter().collect::<std::collections::HashSet<_>>().len(), 8);
+    // assignment is uniform-ish: over many entries of 1 ticket from a 10-number pool each number ≈ 10%
+    let mut hits = [0u32; 10];
+    for k in 0..20_000u32 {
+        let mut pool: Vec<u32> = (0..10).collect();
+        let mut rem = 10;
+        let t = assign_tickets(&rnd(&format!("u{k}")), 1, &mut pool, &mut rem);
+        hits[t[0] as usize] += 1;
+    }
+    assert!(hits.iter().all(|&h| (1_800..2_200).contains(&h)), "hits = {hits:?}");
+    // v2/v3 history helpers still behave
     let tiers = odds(&demo_tiers());
     let r = rnd("hit-rate");
     let hits = (0..100_000u32).filter(|&t| ticket_tier(&r, t, 1000, &tiers) > 0).count();
     assert!((19_000..21_000).contains(&hits), "hits = {hits}");
-    // denominator 0 never wins
     assert_eq!(ticket_tier(&r, 0, 0, &tiers), 0);
-    // v3 devnet nightly table (15 + 60 + 150 per 1000): any instant result ≈ 1 in 4.4
-    let v3 = pot_params(T0).iw_tiers.map(|t| t.odds);
-    let hits = (0..100_000u32).filter(|&t| ticket_tier(&r, t, 1000, &v3) > 0).count();
-    assert!((21_500..23_500).contains(&hits), "v3 hits = {hits}");
 }
