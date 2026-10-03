@@ -3,14 +3,35 @@
 import { sol, ticketNo } from "@/lib/format";
 import { Stamp } from "./print/Stamp";
 
-export type StubState = "sealed" | "nowin" | "won" | "free" | "drawn" | "refunded";
+export type StubState = "sealed" | "nowin" | "won" | "credit" | "free" | "entered" | "drawn" | "refunded";
 
-/** A stub in a strip (Your tickets): 102×132 on desktop, a fifth of the row on phones. */
-export function Stub({ serial, state, amount, ink, prize }: { serial: number; state: StubState; amount?: bigint; ink: Uint8Array; prize?: string }) {
+/**
+ * A stub in a strip (Your tickets): 102×132 on desktop, a fifth of the row on phones. "credit": won a free
+ * ticket; "entered": a ticket with no instant roll (a headline draw), simply in the draw.
+ */
+export function Stub({
+  serial,
+  state,
+  amount,
+  credits,
+  ink,
+  prize,
+}: {
+  serial: number;
+  state: StubState;
+  amount?: bigint;
+  credits?: number;
+  ink: Uint8Array;
+  prize?: string;
+}) {
   const s = ticketNo(serial);
   const aria =
     state === "won"
       ? `${s}: won ${sol(amount ?? BigInt(0), 2, 4)} SOL, paid`
+      : state === "credit"
+        ? `${s}: won ${credits === 1 ? "a free ticket" : `${credits} free tickets`}`
+        : state === "entered"
+          ? `${s}: in the draw`
       : state === "drawn"
         ? `${s}: drawn, won the grand prize`
         : state === "sealed"
@@ -21,8 +42,8 @@ export function Stub({ serial, state, amount, ink, prize }: { serial: number; st
               ? `${s}: refunded`
               : `${s}: no win`;
   return (
-    <div className={`stubby ${state === "won" || state === "drawn" ? "win" : ""} ${state}`} role="listitem" aria-label={aria}>
-      <span className={`t-serial ${state === "won" || state === "drawn" ? "c-red" : ""}`} aria-hidden="true">
+    <div className={`stubby ${state === "won" || state === "drawn" || state === "credit" ? "win" : ""} ${state}`} role="listitem" aria-label={aria}>
+      <span className={`t-serial ${state === "won" || state === "drawn" || state === "credit" ? "c-red" : ""}`} aria-hidden="true">
         {s}
       </span>
       {state === "sealed" && (
@@ -31,12 +52,18 @@ export function Stub({ serial, state, amount, ink, prize }: { serial: number; st
         </span>
       )}
       {state === "won" && <Stamp kind="won" seed={ink} label={`Stamped: won ${sol(amount ?? BigInt(0), 2, 4)} SOL`} />}
+      {state === "credit" && <Stamp kind="won" seed={ink} label={`Stamped: won ${credits === 1 ? "a free ticket" : `${credits} free tickets`}`} />}
       {state === "drawn" && <Stamp kind="drawn" className="drawn" seed={ink} label="Stamped: drawn" mid="GRAND" bottom="PRIZE" />}
       <span className="res" aria-hidden="true">
         {state === "won" ? (
           <>
             <span className="t-stubamt">+{sol(amount ?? BigInt(0), 2, 3)}</span>
             <small>SOL, paid</small>
+          </>
+        ) : state === "credit" ? (
+          <>
+            <span className="t-stubamt">+{credits}</span>
+            <small>free {credits === 1 ? "ticket" : "tickets"}</small>
           </>
         ) : state === "drawn" ? (
           <>
@@ -47,6 +74,8 @@ export function Stub({ serial, state, amount, ink, prize }: { serial: number; st
           "sealed"
         ) : state === "free" ? (
           "free entry"
+        ) : state === "entered" ? (
+          "in the draw"
         ) : state === "refunded" ? (
           "refunded"
         ) : (
@@ -65,6 +94,7 @@ export function RevealStub({
   ticket,
   tier,
   amount,
+  credits = 0,
   shown,
   roll,
   denom,
@@ -78,6 +108,8 @@ export function RevealStub({
   /** undefined = not yet known from chain */
   tier: number | undefined;
   amount: bigint;
+  /** free tickets won by a credits tier (0 for SOL tiers) */
+  credits?: number;
   shown: boolean;
   roll: number | null;
   /** the draw's instant-win denominator; null when the draw isn't loaded (no roll is shown) */
@@ -93,11 +125,12 @@ export function RevealStub({
   const s = ticketNo(ticket);
   const amt = sol(amount, 2, 3);
   const big = won && amount >= BigInt(50_000_000);
+  const credit = won && credits > 0 && amount === BigInt(0);
   return (
     <div
       className={`rstub ${known ? "shown" : ""} ${won ? "win" : ""} ${big ? "big" : ""} ${even ? "even" : ""} ${rowFirst ? "row-first" : ""} ${rowLast ? "row-last" : ""}`}
       role="listitem"
-      aria-label={!known ? `${s}: sealed` : won ? `${s}: won ${amt} SOL` : `${s}: no win`}
+      aria-label={!known ? `${s}: sealed` : credit ? `${s}: won ${credits === 1 ? "a free ticket" : `${credits} free tickets`}` : won ? `${s}: won ${amt} SOL` : `${s}: no win`}
       style={width ? { width } : undefined}
     >
       <span className="sl" aria-hidden="true">
@@ -110,7 +143,12 @@ export function RevealStub({
       </span>
       <span className="res" aria-hidden="true">
         {known &&
-          (won ? (
+          (credit ? (
+            <>
+              <span className="t-stubamt">+{credits}</span>
+              <small>free {credits === 1 ? "ticket" : "tickets"}</small>
+            </>
+          ) : won ? (
             <>
               <span className="t-stubamt">{amt}</span>
               <small>
@@ -121,7 +159,7 @@ export function RevealStub({
             <span className="none">no win</span>
           ))}
       </span>
-      {won && <Stamp kind="won" className="wstamp" seed={ink} label={`Stamped: won ${amt} SOL`} />}
+      {won && <Stamp kind="won" className="wstamp" seed={ink} label={credit ? `Stamped: won ${credits === 1 ? "a free ticket" : `${credits} free tickets`}` : `Stamped: won ${amt} SOL`} />}
       <span className="cover" aria-hidden="true">
         <span>RESULT</span>
       </span>

@@ -8,16 +8,15 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { ActionsContext, DataContext, type ActionKey, type Actions, type DrawSolData, type RevealSession } from "@/hooks/context";
 import { useNow } from "@/hooks/useNow";
-import { revealSessionFor, scenario, SCENARIOS, type Scenario } from "./data";
+import { defaultDraw, liveDraw } from "@/lib/derive";
+import { FIXED_NOW, playerOf, revealSessionFor, scenario, SCENARIOS, type Scenario } from "./data";
 
 const NOTE = { message: "Fixture build — nothing is sent to devnet." };
 
 /**
- * The fixture clock starts at a fixed instant (Thu 1 Oct 2026, 22:41:48 UTC) so every shot shows the same
- * close time (Sun 4 Oct, 04:13 UTC) and countdown (2 d 5 h 31 min), then ticks for real from page load.
+ * The fixture clock starts at a fixed instant (Sat 3 Oct 2026, 16:28:48 UTC: tonight's pot draw is 5 h 31 min
+ * away) so every shot shows the same times, then ticks for real from page load.
  */
-const FIXED_NOW = Math.floor(Date.UTC(2026, 9, 1, 22, 41, 48) / 1000);
-
 export function FixtureProvider({ children }: { children: ReactNode }) {
   const realNow = useNow();
   const [offset] = useState(() => FIXED_NOW - Math.floor(Date.now() / 1000));
@@ -36,10 +35,27 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
     if (m === "loading" || m === "error") setMy(m);
   }, []);
   const fx = useMemo(() => scenario(name, FIXED_NOW), [name]);
+  const [selectedId, select] = useState<number | null>(null);
+  useEffect(() => select(fx.selected), [fx]);
   const [session, setSession] = useState<RevealSession | null>(fx.session);
   useEffect(() => setSession(fx.session), [fx]);
   const [errors, setErrors] = useState<Actions["errors"]>({});
   useEffect(() => setErrors(fx.errors ?? {}), [fx]);
+
+  // /live scenarios open on the next draw to be drawn, as the live page does
+  const fallback = name.startsWith("live-") ? liveDraw(fx.draws, now) : defaultDraw(fx.draws);
+  const current = (selectedId !== null ? fx.draws.find((d) => d.id === selectedId) : undefined) ?? fallback;
+  const world = current ? fx.worlds.get(current.address.toBase58()) : undefined;
+  const wallet = fx.wallet;
+  const mine = world && wallet ? world.entries.filter((e) => e.owner.equals(wallet.address)) : [];
+  const player = world && wallet ? playerOf(world, wallet.address) : null;
+  const vault = current
+    ? current.kind === "pot"
+      ? current.status === "settled"
+        ? current.houseLamports - current.houseWithdrawn
+        : current.houseLamports + current.potLamports + current.instantPoolLamports - current.refundedLamports
+      : current.revenueLamports - current.refundedLamports + (current.prizePaid ? BigInt(0) : current.prizeLamports)
+    : null;
 
   const data: DrawSolData = {
     load:
@@ -49,34 +65,36 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
           ? { kind: "loading" }
           : fx.load === "error"
             ? { kind: "error", message: "fixture" }
-            : { kind: "nodraw", reason: "no-program" },
-    config: fx.load === "ready" ? { admin: fx.draws[0]?.authority ?? PublicKey.default, nextDrawId: fx.nextDrawId } : null,
+            : { kind: "nodraw", reason: name === "nodraw-legacy" ? "no-draws" : "no-program" },
+    config: fx.load === "ready" || name === "nodraw-legacy" ? { admin: fx.draws[0]?.authority ?? PublicKey.default, keeper: PublicKey.default, nextDrawId: fx.nextDrawId } : null,
     draws: fx.draws,
-    current: fx.current,
-    vaultLamports: fx.vault,
-    entries: fx.entries,
+    legacyDraws: fx.legacyDraws,
+    current: current ?? null,
+    select,
+    vaultLamports: vault,
+    entries: world?.entries ?? [],
     entriesState: "ready",
-    wallet: fx.wallet,
-    player: my === "ready" ? fx.player : null,
-    myEntries: my === "ready" ? fx.mine : [],
+    wallet,
+    player: my === "ready" ? player : null,
+    profile: my === "ready" && wallet ? fx.profile : null,
+    profileState: my,
+    myEntries: my === "ready" ? mine : [],
     myState: my,
-    drawRandomness: fx.drawRandomness,
-    costs: { oraoFee: BigInt(500_000), entryRent: BigInt(2_276_160), playerRent: BigInt(1_545_600) },
+    drawRandomness: current ? fx.drawRandomness.get(current.address.toBase58()) ?? null : null,
+    costs: { oraoFee: BigInt(500_000), entryRent: BigInt(2_394_480), playerRent: BigInt(1_573_440), profileRent: BigInt(1_538_640) },
     now,
     refresh: () => {},
     staleSince: fx.staleSince ?? null,
     retryIn: fx.staleSince ? 60 - ((now - FIXED_NOW) % 60) : null,
     allEntries: fx.allEntries,
     allEntriesState: "ready",
-    fetchDrawEntries: async (addr: PublicKey) => fx.entriesByDraw.get(addr.toBase58()) ?? [],
-    findSettleTx: async (d) => {
-      if (fx.settleTxFails) throw new Error("429 Too Many Requests");
-      return fx.settleTx.get(d.address.toBase58()) ?? null;
+    fetchDrawEntries: async (d) => fx.entriesByDraw.get(d.address.toBase58()) ?? [],
+    findSettleTx: async (d) => fx.settleTx.get(d.address.toBase58()) ?? null,
+    stillRoll: fx.liveRollAt,
+    readOrao: async (addr: PublicKey) => {
+      for (const r of Array.from(fx.drawRandomness.values())) if (r.address.equals(addr)) return r.randomness;
+      return [...fx.draws, ...fx.legacyDraws].find((d) => d.drawVrfRequest.equals(addr))?.randomness ?? null;
     },
-    readOrao: async (addr: PublicKey) =>
-      fx.current && addr.equals(fx.current.drawVrfRequest)
-        ? fx.current.randomness
-        : fx.draws.find((d) => d.drawVrfRequest.equals(addr))?.randomness ?? null,
   };
 
   const fail = (k: ActionKey) => () => setErrors((e) => ({ ...e, [k]: NOTE }));
@@ -84,8 +102,10 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
     phase: fx.phase ?? {},
     errors,
     lastSig: fx.lastSig ?? {},
-    buy: fail("buy"),
+    buy: () => fail("buy")(),
     claimFree: fail("free"),
+    setLimit: () => fail("limit")(),
+    selfExclude: () => fail("exclude")(),
     airdrop: fail("airdrop"),
     runDraw: fail("run"),
     settle: fail("settle"),
@@ -94,8 +114,8 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
     // open a session for THAT entry; tiers recomputed with fairness.ts from its (fixture) randomness
     reveal: (e) => {
       const rand = fx.entryRandomness.get(e.address.toBase58());
-      if (!fx.current || !rand || e.isFree) return fail(`reveal:${e.address.toBase58()}`)();
-      setSession(revealSessionFor(e, fx.current, rand, String(e.seq)));
+      if (!current || !rand || !e.needsReveal) return fail(`reveal:${e.address.toBase58()}`)();
+      setSession(revealSessionFor(e, current, rand, String(e.seq)));
     },
     session,
     closeSession: () => setSession(null),
@@ -117,15 +137,14 @@ const CODES: Record<string, string> = {
   open: "op",
   confirm: "cf",
   stale: "sl",
-  due: "du",
-  drawing: "dr",
-  settled: "st",
-  cancelled: "cx",
+  credits: "cr",
+  limit: "lm",
+  excluded: "ex",
+  headline: "hl",
   nodraw: "nd",
   reveal: "rv",
   loading: "ld",
   error: "er",
-  empty: "em",
 };
 
 /** Sits inside the devnet strip's right end (z 101), never over page content. */

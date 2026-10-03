@@ -68,3 +68,14 @@ export function utcHhmm(unix: number) {
   const d = new Date(unix * 1000);
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
+
+/** "pot draw", "headline draw"; a legacy v2 draw was a "grand draw" */
+export const kindName = (k: "pot" | "headline" | "v2") => (k === "pot" ? "pot draw" : k === "headline" ? "headline draw" : "grand draw");
+/** "Pot draw Nº 9" */
+export const drawName = (d: { kind: "pot" | "headline" | "v2"; id: number }) => {
+  const k = kindName(d.kind);
+  return `${k[0].toUpperCase()}${k.slice(1)} Nº ${d.id}`;
+};
+
+/** "1 SOL" figures stay whole; a pot shows two decimals ("0.68"), never a misleading round number. */
+export const prizeFig = (l: bigint) => sol(l, 0, l < BigInt(1_000_000_000) ? 2 : 4);

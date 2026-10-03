@@ -53,20 +53,23 @@ export function Header({ away = false }: { away?: boolean }) {
           <nav className="nav" aria-label="Sections">
             {away ? (
               <>
-                <Link href="/">Current draw</Link>
+                <Link href="/">Draws on sale</Link>
                 <Link href="/draw/">All draws</Link>
+                <Link href="/live/">Live draw</Link>
                 <Link href="/#rules">How it works</Link>
               </>
             ) : (
               <>
                 <a href="#my-tickets">Your tickets</a>
                 <a href="#past">Past draws</a>
+                <a href="#limits">Play limits</a>
+                <Link href="/live/">Live draw</Link>
                 <a href="#rules">How it works</a>
               </>
             )}
           </nav>
         )}
-        <WalletButton />
+        <WalletButton away={away} />
       </div>
     </header>
   );

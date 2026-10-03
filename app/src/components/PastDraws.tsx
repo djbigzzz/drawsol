@@ -7,14 +7,16 @@ import type { DrawView } from "@/lib/types";
 import { Addr, ProofLink, SectionGrid } from "./bits";
 import { CarbonSlip } from "./print/CarbonSlip";
 import { SettledTicket, SettleTxLine, useSettleTx } from "./SettledTicket";
-import { plural } from "./fmt";
+import { drawName, plural, prizeFig } from "./fmt";
+import { cancelReason, grandPrize } from "@/lib/derive";
 import Link from "next/link";
 
 export function PastDraws() {
-  const { draws, current } = useDrawSol();
-  const past = draws
+  const { draws, legacyDraws, current } = useDrawSol();
+  // finished draws, newest first; the legacy v2 draws (Nº 0 and Nº 1) follow while their accounts exist
+  const past = [...draws, ...legacyDraws]
     .filter((d) => (d.status === "settled" || d.status === "cancelled") && !(current && d.address.equals(current.address)))
-    .sort((a, b) => b.id - a.id);
+    .sort((a, b) => (b.settledAt || b.drawAt) - (a.settledAt || a.drawAt) || b.id - a.id);
   const lead = past.find((d) => d.status === "settled") ?? null;
   const older = past.filter((d) => d !== lead);
   const [open, setOpen] = useState<string | null>(null);
@@ -30,7 +32,15 @@ export function PastDraws() {
     <SectionGrid
       id="past"
       title="Past draws"
-      sub={lead ? <>Draw Nº {lead.id} is settled. Here is its ticket, and the arithmetic to check it.</> : <>No past draw has been settled yet.</>}
+      sub={
+        lead ? (
+          <>
+            {drawName(lead)} is settled{lead.kind === "v2" ? " (a DrawSol v2 draw, before the upgrade)" : ""}. Here is its ticket, and the arithmetic to check it.
+          </>
+        ) : (
+          <>No past draw has been settled yet.</>
+        )
+      }
       aside={lead ? <LeadLedger d={lead} /> : undefined}
     >
       {lead && <Pair d={lead} />}
@@ -44,21 +54,21 @@ export function PastDraws() {
                 <div className="older-row">
                   <b>
                     <Link className="rowlink" href={`/draw/?n=${d.id}`}>
-                      Draw Nº {d.id}
+                      {drawName(d)}
                     </Link>
                   </b>
                   <span className="d nw">
-                    {d.status === "settled" ? `settled ${shortDate(d.settledAt)}` : `closed ${shortDate(d.closesAt)}`}
+                    {d.status === "settled" ? `settled ${shortDate(d.settledAt)}` : `cancelled ${shortDate(d.drawAt)}`}
                   </span>
                   <span className="d">
                     {d.status === "settled" ? (
                       <>
-                        Ticket <span className="c-red nw">{ticketNo(d.winningTicket)}</span> won {sol(d.prizeLamports, 0, 4)} SOL.
+                        Ticket <span className="c-red nw">{ticketNo(d.winningTicket)}</span> won {prizeFig(grandPrize(d))} SOL.
                       </>
                     ) : d.nextTicket === 0 ? (
-                      "No tickets sold; the prize went back to the operator."
+                      "No tickets sold."
                     ) : (
-                      `Refunded ${sol(d.refundedLamports, 2, 4)} of ${sol(d.proceedsLamports, 2, 4)} SOL.`
+                      `${cancelReason(d) === "undersold" ? `${d.paidTickets} of ${d.minTickets} sold. ` : ""}Refunded ${sol(d.refundedLamports, 2, 4)} of ${sol(d.revenueLamports, 2, 4)} SOL.`
                     )}
                   </span>
                   {d.status === "settled" ? (
@@ -113,7 +123,7 @@ function LeadLedger({ d }: { d: DrawView }) {
         </div>
         <div className="won">
           <dt>Prize</dt>
-          <dd>{sol(d.prizeLamports, 0, 4)} SOL, paid</dd>
+          <dd>{prizeFig(grandPrize(d))} SOL, paid</dd>
         </div>
       </dl>
       <p className="ledger-link t-small">
@@ -121,7 +131,7 @@ function LeadLedger({ d }: { d: DrawView }) {
       </p>
       <p className="sec-link">
         <Link className="tbtn" href={`/draw/?n=${d.id}`}>
-          Draw Nº {d.id}’s record and all {d.nextTicket} {plural(d.nextTicket, "ticket", "tickets")}
+          {drawName(d)}’s record and all {d.nextTicket} {plural(d.nextTicket, "ticket", "tickets")}
         </Link>
       </p>
     </>

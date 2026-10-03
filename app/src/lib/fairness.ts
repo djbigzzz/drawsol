@@ -1,22 +1,36 @@
 /**
- * DrawSol fairness functions — byte-for-byte the same as SPEC §2.3 and the program.
- * Anyone can run these in the browser to recompute a result from ORAO randomness.
+ * DrawSol fairness functions — byte-for-byte the same as SPEC §2.3 / SPEC-v3 §2.4 and the program
+ * (programs/drawsol/src/fairness.rs). Anyone can run these in the browser to recompute a result from ORAO
+ * randomness. v3 changed only the seed domains; the v2 seeds are kept for legacy history.
  */
 import { sha256 } from "@noble/hashes/sha256";
 import { PublicKey } from "@solana/web3.js";
 import { ORAO_PROGRAM_ID } from "./config";
 
 const enc = new TextEncoder();
-const ENTRY_DOMAIN = enc.encode("drawsol:v2:entry");
-const DRAW_DOMAIN = enc.encode("drawsol:v2:draw");
+const ENTRY_DOMAIN = enc.encode("drawsol:v3:entry");
+const DRAW_DOMAIN = enc.encode("drawsol:v3:draw");
+const ENTRY_DOMAIN_V2 = enc.encode("drawsol:v2:entry");
+const DRAW_DOMAIN_V2 = enc.encode("drawsol:v2:draw");
 const TICKET_TAG = enc.encode("ticket");
 const DRAW_TAG = enc.encode("draw");
 const TWO_64 = BigInt(64);
 
+/** IwTierV3.kind */
+export const TIER_NONE = 0;
+export const TIER_SOL_SHARE = 1;
+export const TIER_CREDITS = 2;
+/** UI only: a legacy v2 tier, a fixed amount in lamports (`amount`) */
+export const TIER_FIXED = 3;
+
 export interface TierSpec {
-  /** lamports */
-  amount: bigint;
+  /** winning outcomes out of the draw's denominator; the roll uses only this */
   odds: number;
+  /** 0 none, 1 sol_share (value = bps of the entry's pool snapshot), 2 credits (value = free tickets), 3 legacy fixed */
+  kind: number;
+  value: number;
+  /** legacy v2 only: the fixed amount in lamports */
+  amount?: bigint;
 }
 
 function concat(...parts: Uint8Array[]): Uint8Array {
@@ -50,26 +64,34 @@ function check(len: number, b: Uint8Array, what: string) {
   if (b.length !== len) throw new Error(`${what} must be ${len} bytes, got ${b.length}`);
 }
 
-/** sha256("drawsol:v2:entry" || draw || buyer || seq_le_u32 || client_nonce[16]) */
+/** sha256("drawsol:v3:entry" || draw || buyer || seq_le_u32 || client_nonce[16]) */
 export function entrySeed(
   draw: PublicKey | Uint8Array,
   buyer: PublicKey | Uint8Array,
   seq: number,
-  clientNonce: Uint8Array
+  clientNonce: Uint8Array,
+  domain = ENTRY_DOMAIN
 ): Uint8Array {
   check(16, clientNonce, "client nonce");
-  return sha256(concat(ENTRY_DOMAIN, asBytes(draw), asBytes(buyer), u32le(seq), clientNonce));
+  return sha256(concat(domain, asBytes(draw), asBytes(buyer), u32le(seq), clientNonce));
 }
 
-/** sha256("drawsol:v2:draw" || draw || next_ticket_le_u32 || client_nonce[16]) */
+/** sha256("drawsol:v3:draw" || draw || next_ticket_le_u32 || client_nonce[16]) */
 export function drawSeed(
   draw: PublicKey | Uint8Array,
   nextTicket: number,
-  clientNonce: Uint8Array
+  clientNonce: Uint8Array,
+  domain = DRAW_DOMAIN
 ): Uint8Array {
   check(16, clientNonce, "client nonce");
-  return sha256(concat(DRAW_DOMAIN, asBytes(draw), u32le(nextTicket), clientNonce));
+  return sha256(concat(domain, asBytes(draw), u32le(nextTicket), clientNonce));
 }
+
+/** v2 (legacy) seeds, for checking history only. */
+export const entrySeedV2 = (draw: PublicKey | Uint8Array, buyer: PublicKey | Uint8Array, seq: number, clientNonce: Uint8Array) =>
+  entrySeed(draw, buyer, seq, clientNonce, ENTRY_DOMAIN_V2);
+export const drawSeedV2 = (draw: PublicKey | Uint8Array, nextTicket: number, clientNonce: Uint8Array) =>
+  drawSeed(draw, nextTicket, clientNonce, DRAW_DOMAIN_V2);
 
 /** ORAO randomness request PDA: ["orao-vrf-randomness-request", seed] */
 export function oraoRandomnessPda(seed: Uint8Array): PublicKey {
@@ -99,7 +121,7 @@ export function rollTicket(
   rand64: Uint8Array,
   ticket: number,
   denominator: number,
-  tiers: TierSpec[]
+  tiers: { odds: number }[]
 ): number {
   if (denominator <= 0) return 0;
   const x = ticketX(rand64, ticket, denominator);
@@ -117,7 +139,7 @@ export function rollEntry(
   firstTicket: number,
   count: number,
   denominator: number,
-  tiers: TierSpec[]
+  tiers: { odds: number }[]
 ): number[] {
   const out: number[] = [];
   for (let i = 0; i < count; i++) out.push(rollTicket(rand64, firstTicket + i, denominator, tiers));

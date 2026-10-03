@@ -6,6 +6,10 @@ import { decodeDrawData, fetchDraw, vaultPda, type AnyProgram } from "@/lib/chai
 import type { DrawView } from "@/lib/types";
 
 const POLL_MS = 15_000;
+/** around the draw time (from 2 min before draw_at until settled) the draw is read every 5 s */
+const POLL_NEAR_MS = 5_000;
+const near = (d: DrawView | null) =>
+  !!d && (d.status === "drawing" || (d.status === "open" && Date.now() / 1000 >= d.drawAt - 120));
 
 /**
  * One Draw + its Vault balance, kept live with onAccountChange and a poll fallback (15 s while healthy).
@@ -34,6 +38,7 @@ export function useDraw(program: AnyProgram, initial: DrawView | null) {
     const vaultKey = vaultPda(drawKey);
     let alive = true;
     let fails = 0;
+    let latest: DrawView | null = initialRef.current;
     let t: ReturnType<typeof setTimeout> | undefined;
 
     const poll = async () => {
@@ -41,7 +46,10 @@ export function useDraw(program: AnyProgram, initial: DrawView | null) {
       try {
         const [d, v] = await Promise.all([fetchDraw(program, drawKey), conn.getBalance(vaultKey, "confirmed")]);
         if (!alive) return;
-        if (d) setDraw(d);
+        if (d) {
+          setDraw(d);
+          latest = d;
+        }
         setVault(BigInt(v));
         fails = 0;
         setFailures(0);
@@ -52,7 +60,7 @@ export function useDraw(program: AnyProgram, initial: DrawView | null) {
         setFailures(fails);
       }
       // 15 s, then 30 s and 60 s after consecutive failures
-      const delay = POLL_MS * 2 ** Math.min(fails, 2);
+      const delay = (fails === 0 && near(latest) ? POLL_NEAR_MS : POLL_MS) * 2 ** Math.min(fails, 2);
       setNextAt(Date.now() + delay);
       t = setTimeout(poll, delay);
     };

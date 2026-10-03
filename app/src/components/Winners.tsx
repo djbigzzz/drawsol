@@ -7,7 +7,7 @@ import { entryWins } from "@/lib/derive";
 import { clock, short, shortDate, sol, ticketNo } from "@/lib/format";
 import { solscanAccount } from "@/lib/config";
 import { SectionGrid } from "./bits";
-import { plural } from "./fmt";
+import { plural, prizeFig } from "./fmt";
 
 const PAGE = 8;
 
@@ -16,6 +16,7 @@ interface Win {
   at: number;
   owner: PublicKey;
   amount: bigint;
+  credits: number;
   drawId: number;
   account: PublicKey;
   /** instant: "3 of 10 tickets won, for 0.10 SOL"; grand: "grand prize, ticket #0006" */
@@ -32,25 +33,29 @@ export function Winners() {
   const [all, setAll] = useState(false);
   const byAddr = new Map(draws.map((d) => [d.address.toBase58(), d]));
 
-  // paid out, from the draw accounts themselves: instant wins paid + grand prizes paid
-  const paidOut = draws.reduce((n, d) => n + d.iwPaidLamports + (d.status === "settled" && d.prizePaid ? d.prizeLamports : BigInt(0)), BigInt(0));
   const settled = draws.filter((d) => d.status === "settled" && d.prizePaid);
   const ready = allEntriesState === "ready";
+  // paid out: instant SOL from the Entry accounts, grand prizes from the Draw accounts
+  const instantPaid = ready ? allEntries.reduce((n, e) => n + e.solPaid, BigInt(0)) : null;
+  const paidOut = settled.reduce((n, d) => n + d.prizePaidLamports, BigInt(0)) + (instantPaid ?? BigInt(0));
 
   const wins: Win[] = [];
   if (ready) {
     for (const e of allEntries) {
       const d = byAddr.get(e.draw.toBase58());
-      if (!d || e.isFree || !e.revealed || e.instantPaid === BigInt(0)) continue;
+      if (!d || !e.revealed || (e.solPaid === BigInt(0) && e.creditsWon === 0)) continue;
       const n = entryWins(e);
       wins.push({
         key: e.address.toBase58(),
         at: e.createdAt,
         owner: e.owner,
-        amount: e.instantPaid,
+        amount: e.solPaid,
+        credits: e.creditsWon,
         drawId: d.id,
         account: e.address,
-        what: `instant, ${n} of ${e.count} ${plural(e.count, "ticket", "tickets")} for ${sol(e.paidLamports, 2, 4)} SOL`,
+        what: e.isFree
+          ? "instant, on a free entry"
+          : `instant, ${n} of ${e.count} ${plural(e.count, "ticket", "tickets")}${e.paidLamports > BigInt(0) ? ` for ${sol(e.paidLamports, 2, 4)} SOL` : ""}`,
         grand: false,
       });
     }
@@ -60,7 +65,8 @@ export function Winners() {
       key: `grand-${d.address.toBase58()}`,
       at: d.settledAt,
       owner: d.winner,
-      amount: d.prizeLamports,
+      amount: d.prizePaidLamports,
+      credits: 0,
       drawId: d.id,
       account: d.winningEntry,
       what: `grand prize, ticket ${ticketNo(d.winningTicket)}`,
@@ -81,7 +87,7 @@ export function Winners() {
         <dl className="ledger big">
           <div className={paidOut > BigInt(0) ? "won" : ""}>
             <dt>Paid out</dt>
-            <dd>{sol(paidOut, 2, 4)} SOL</dd>
+            <dd>{instantPaid === null && settled.length === 0 ? <span className="c-ink-3">…</span> : `${sol(paidOut, 2, 4)} SOL`}</dd>
           </div>
           <div>
             <dt>Winning tickets, instant</dt>
@@ -135,7 +141,7 @@ export function Winners() {
                   target="_blank"
                   rel="noopener noreferrer"
                   className="erow"
-                  aria-label={`${short(w.owner.toBase58())}${mine ? " (you)" : ""} won ${sol(w.amount, 2, 4)} SOL in Draw Nº ${w.drawId}, ${w.what}. ${w.grand ? "Winning entry" : "Entry"} account on Solscan.`}
+                  aria-label={`${short(w.owner.toBase58())}${mine ? " (you)" : ""} won ${amountText(w)} in Draw Nº ${w.drawId}, ${w.what}. ${w.grand ? "Winning entry" : "Entry"} account on Solscan.`}
                 >
                   <span className="t">{sameDay(w.at) ? clock(w.at) : shortDate(w.at)}</span>
                   <span className="wcell">
@@ -152,7 +158,14 @@ export function Winners() {
                     Nº {w.drawId} · {w.what}
                   </span>
                   <span className="r">
-                    <span className="w nw">{sol(w.amount, 2, 4)} SOL</span>
+                    {amountText(w)
+                      .split(" + ")
+                      .map((part, i) => (
+                        <span key={i} className={`nw ${i === 0 && w.amount > BigInt(0) ? "w" : ""}`}>
+                          {i > 0 ? " + " : ""}
+                          {part}
+                        </span>
+                      ))}
                   </span>
                 </a>
               );
@@ -169,4 +182,11 @@ export function Winners() {
       )}
     </SectionGrid>
   );
+}
+
+/** "0.04 SOL", "1 free ticket", "0.04 SOL + 1 free" */
+function amountText(w: { amount: bigint; credits: number; grand: boolean }) {
+  const solPart = w.amount > BigInt(0) ? `${w.grand ? prizeFig(w.amount) : sol(w.amount, 2, 4)} SOL` : "";
+  const free = w.credits > 0 ? (solPart ? `${w.credits} free` : `${w.credits} free ${plural(w.credits, "ticket", "tickets")}`) : "";
+  return [solPart, free].filter(Boolean).join(" + ");
 }

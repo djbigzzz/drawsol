@@ -50,11 +50,15 @@ export function entriesCsv(d: DrawView, entries: EntryView[]): string {
     "last_ticket",
     "count",
     "kind",
+    "paid_count",
+    "credit_count",
     "paid_sol",
     "created_at_utc",
+    "pool_snapshot_sol",
     "revealed",
     "instant_wins",
-    "instant_paid_sol",
+    "sol_paid",
+    "credits_won",
     "refunded",
     "vrf_request",
   ];
@@ -69,14 +73,18 @@ export function entriesCsv(d: DrawView, entries: EntryView[]): string {
       e.firstTicket,
       e.firstTicket + e.count - 1,
       e.count,
-      e.isFree ? "free" : "paid",
+      e.isFree ? "free" : e.paidCount === 0 ? "credits" : e.creditCount > 0 ? "paid+credits" : "paid",
+      e.paidCount,
+      e.creditCount,
       lamportsToSol(e.paidLamports),
       iso(e.createdAt),
-      e.isFree ? "" : e.revealed ? "yes" : "no",
-      e.isFree || !e.revealed ? "" : entryWins(e),
-      e.isFree || !e.revealed ? "" : lamportsToSol(e.instantPaid),
+      e.needsReveal ? lamportsToSol(e.poolSnapshot) : "",
+      e.needsReveal ? (e.revealed ? "yes" : "no") : "",
+      e.needsReveal && e.revealed ? entryWins(e) : "",
+      e.needsReveal && e.revealed ? lamportsToSol(e.solPaid) : "",
+      e.needsReveal && e.revealed ? e.creditsWon : "",
       e.refunded ? "yes" : "no",
-      e.isFree ? "" : e.vrfRequest.toBase58(),
+      e.needsReveal ? e.vrfRequest.toBase58() : "",
     ]);
   return [head, ...rows].map((r) => r.join(",")).join("\r\n") + "\r\n";
 }
@@ -85,7 +93,8 @@ export function entriesCsv(d: DrawView, entries: EntryView[]): string {
 function Range({ e, hit }: { e: EntryView; hit: number | null }) {
   return (
     <>
-      <span className="nw">{ticketRange(e.firstTicket, e.count)}</span> <span className="x nw">×{e.count}</span>
+      <span className="nw">{ticketRange(e.firstTicket, e.count)}</span>{" "}
+      <span className="x nw">{e.isFree ? "free" : e.creditCount > 0 ? `×${e.count}, ${e.creditCount} on credits` : `×${e.count}`}</span>
       {hit !== null && <i className="has nw"> has {ticketNo(hit)}</i>}
     </>
   );
@@ -176,7 +185,7 @@ export function EntryLedger({
             <span>Time (UTC)</span>
             <span>Wallet</span>
             <span className="tix">Tickets</span>
-            <span className="r">Instant result</span>
+            <span className="r">{d.kind === "headline" ? "Result" : "Instant result"}</span>
           </div>
         )}
         {state === "loading" && entries.length === 0 ? (
@@ -204,7 +213,8 @@ export function EntryLedger({
             {rows.map((e) => {
               const wins = entryWins(e);
               const mine = !!me && e.owner.equals(me);
-              const result = e.isFree ? "free entry" : !e.revealed ? "sealed" : wins > 0 ? `+${sol(e.instantPaid, 2, 3)} SOL` : "no win";
+              const won = [e.solPaid > BigInt(0) ? `+${sol(e.solPaid, 2, 4)} SOL` : "", e.creditsWon > 0 ? `+${e.creditsWon} free ${plural(e.creditsWon, "ticket", "tickets")}` : ""].filter(Boolean).join(" ");
+              const result = !e.needsReveal ? (e.isFree ? "free entry" : "in the draw") : !e.revealed ? "sealed" : wins > 0 ? won || "won" : "no win";
               const drawn = d.status === "settled" && d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count;
               // a ticket-number search: say which ticket of a multi-ticket range matched
               const hit = qt !== null && e.count > 1 && qt >= e.firstTicket && qt < e.firstTicket + e.count ? qt : null;
@@ -233,7 +243,22 @@ export function EntryLedger({
                     <Range e={e} hit={hit} />
                   </span>
                   <span className="r">
-                    {e.isFree ? <i className="free">free entry</i> : !e.revealed ? <i>sealed</i> : wins > 0 ? <span className="w nw">+{sol(e.instantPaid, 2, 3)} SOL</span> : <i className="nw">no win</i>}
+                    {!e.needsReveal ? (
+                      <i className="free">{e.isFree ? "free entry" : "in the draw"}</i>
+                    ) : !e.revealed ? (
+                      <i>sealed</i>
+                    ) : wins > 0 ? (
+                      <span className="w">
+                        {won.split(" +").map((part, i) => (
+                          <span key={i} className="nw">
+                            {i > 0 ? " +" : ""}
+                            {part}
+                          </span>
+                        ))}
+                      </span>
+                    ) : (
+                      <i className="nw">no win</i>
+                    )}
                     {/* phones: the drawn ticket gets a line of its own, so the wallet and range keep their width */}
                     {drawn && (
                       <span className="w drawn nw dmark">

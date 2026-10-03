@@ -3,13 +3,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useActions, useDrawSol, type RevealSession } from "@/hooks/context";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
-import { phaseOf, tierAmount } from "@/lib/derive";
+import { pct, phaseOf, tierCredits, tierLabel, tierSol } from "@/lib/derive";
+import { TIER_SOL_SHARE } from "@/lib/fairness";
 import { rollTicket, ticketX } from "@/lib/fairness";
 import { sol, ticketNo, ticketRange, utcLabel } from "@/lib/format";
 import { inkAt, ticketInk } from "@/lib/print";
 import { Addr, Busy, Check, ErrorNote, ProofLink } from "./bits";
 import { useBuy } from "./BuyContext";
 import { andList, plural } from "./fmt";
+
+/** One ticket's prize in a session: SOL owed from the pool snapshot, or free tickets. */
+function prizeOf(s: RevealSession, tier: number) {
+  const t = tier > 0 ? s.tierSpecs[tier - 1] : undefined;
+  if (!t) return { sol: BigInt(0), credits: 0 };
+  return { sol: tierSol(t, s.poolSnapshot ?? BigInt(0)), credits: tierCredits(t) };
+}
+const prizeText = (p: { sol: bigint; credits: number }, short = false) =>
+  p.sol > BigInt(0) ? `${sol(p.sol, 2, short ? 3 : 4)}${short ? "" : " SOL"}` : p.credits === 1 ? "1 free ticket" : `${p.credits} free tickets`;
 import { Mark } from "./print/Mark";
 import { MoneyTotal } from "./print/MoneyTotal";
 import { ReceiptBars } from "./print/ReceiptBars";
@@ -165,13 +175,16 @@ export function RevealSheet() {
     if (!s?.tiers || paused || shown === 0) return;
     const i = shown - 1;
     const t = s.tiers[i];
-    if (t > 0 && !reduced) setAnnounce(`${ticketNo(s.firstTicket + i)} wins ${sol(tierAmount(s, t), 2, 4)} SOL.`);
+    if (t > 0 && !reduced) setAnnounce(`${ticketNo(s.firstTicket + i)} wins ${prizeText(prizeOf(s, t))}.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shown]);
   useEffect(() => {
     if (!s || !finished || paused) return;
-    const total = s.instantPaid ?? BigInt(0);
-    if (total > BigInt(0)) setAnnounce(`Paid: ${sol(total, 2, 4)} SOL${wallet ? ` to ${short(wallet.address.toBase58())}` : ""}, in the reveal transaction.`);
+    const total = s.solPaid ?? BigInt(0);
+    const cr = s.creditsWon ?? 0;
+    if (total > BigInt(0))
+      setAnnounce(`Paid: ${sol(total, 2, 4)} SOL${wallet ? ` to ${short(wallet.address.toBase58())}` : ""}, in the reveal transaction.${cr ? ` Plus ${cr} free ${cr === 1 ? "ticket" : "tickets"}.` : ""}`);
+    else if (cr > 0) setAnnounce(`Won ${cr} free ${cr === 1 ? "ticket" : "tickets"}, added to your credits.`);
     else setAnnounce(`All ${s.count} revealed. No instant wins this time.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finished]);
@@ -266,12 +279,14 @@ export function RevealSheet() {
   const count = s.count;
   const n = d ? `Draw Nº ${d.id}` : "the draw";
   const tiers = s.tiers;
-  const total = s.instantPaid ?? BigInt(0);
+  const total = s.solPaid ?? BigInt(0);
+  const creditsWon = s.creditsWon ?? 0;
   const wins = tiers ? tiers.map((t, i) => ({ t, i })).filter((x) => x.t > 0) : [];
-  const wonSoFar = tiers ? tiers.slice(0, shown).reduce((a, t) => a + tierAmount(s, t), BigInt(0)) : BigInt(0);
+  const wonSoFar = tiers ? tiers.slice(0, shown).reduce((a, t) => a + prizeOf(s, t).sol, BigInt(0)) : BigInt(0);
+  const creditsSoFar = tiers ? tiers.slice(0, shown).reduce((a, t) => a + prizeOf(s, t).credits, 0) : 0;
   const retryEntry = myEntries.find((e) => e.address.equals(s.entry));
   const selling = d ? phaseOf(d, now) === "selling" : false;
-  const price = d ? d.ticketPrice * BigInt(count) : null;
+  const price = retryEntry ? retryEntry.paidLamports : d && !s.free ? d.ticketPrice * BigInt(count) : null;
   const inkFor = (ticket: number) => (s.randomness && s.randomness.length ? ticketInk(s.randomness, ticket) : ticketInk(s.entry.toBytes(), ticket));
 
   // Before any result is known, the slot says what's happening (with the busy dot) and the status row
@@ -293,22 +308,27 @@ export function RevealSheet() {
         : finished
           ? `All ${count} revealed`
           : "Tearing off the covers, one at a time";
-  const canRetry = !!retryEntry && !retryEntry.revealed && !retryEntry.isFree;
+  const canRetry = !!retryEntry && !retryEntry.revealed && retryEntry.needsReveal;
   // the VRF timeout message already says the tickets are safe
   const safeNote = s.stage === "failed" && !/safe/i.test(s.error?.message ?? "");
 
-  // cumulative thresholds for the roll key
+  // cumulative thresholds for the roll key, with each SOL tier's share of this purchase's pool snapshot
   const key = (() => {
     if (!d) return null;
     let cum = 0;
-    const parts: { under: number; amt: string }[] = [];
-    d.iwTiers.forEach((t) => {
-      if (t.odds <= 0 || t.amount <= BigInt(0)) return;
+    const parts: string[] = [];
+    s.tierSpecs.forEach((t) => {
+      if (t.odds <= 0 || t.kind === 0) return;
       cum += t.odds;
-      parts.push({ under: cum, amt: sol(t.amount, 2, 4) });
+      const amt = prizeOf(s, s.tierSpecs.indexOf(t) + 1);
+      parts.push(
+        t.kind === TIER_SOL_SHARE
+          ? `under ${cum} pays ${pct(t.value)} of the pool snapshot${s.poolSnapshot !== undefined ? ` (${sol(amt.sol, 2, 4)} SOL)` : ""}`
+          : `under ${cum} ${tierLabel(t).startsWith("1 ") ? "wins a free ticket" : `wins ${tierLabel(t)}`}`
+      );
     });
     if (!parts.length) return null;
-    return `Demo odds, boosted: a roll under ${cum} wins. Under ${parts.map((p, i) => `${p.under} pays ${p.amt}${i === 0 ? " SOL" : ""}`).join(", under ")}. Each roll is sha256(randomness + ticket number), scaled to ${d.iwDenominator}.`;
+    return `Odds set in the draw account: a roll under ${cum} wins. ${parts.join(", ").replace(/^u/, "U")}. Each roll is sha256(randomness + ticket number), scaled to ${d.iwDenominator}.`;
   })();
 
   const revealing = s.stage === "revealed" && hasTiers && !finished && shown < count;
@@ -327,7 +347,9 @@ export function RevealSheet() {
     s.vrfRequest && s.stage !== "confirming" ? <ProofLink account={s.vrfRequest}>Request</ProofLink> : null,
     s.revealTx ? <ProofLink tx={s.revealTx}>Reveal tx</ProofLink> : null,
   ];
-  const bought = (
+  const bought = s.free ? (
+    <>1 free entry</>
+  ) : (
     <>
       {count} {plural(count, "ticket", "tickets")}
       {price !== null && (
@@ -341,9 +363,9 @@ export function RevealSheet() {
   // `short` is the one-line form for short phones ("Bought · ORAO 1.8 s · Revealed & paid")
   const stepDetail = [
     s.buyTx || s.stage === "confirming"
-      ? { title: "Bought", short: "Bought", body: s.buyTx ? bought : "confirming…" }
+      ? { title: s.free ? "Claimed" : "Bought", short: s.free ? "Claimed" : "Bought", body: s.buyTx ? bought : "confirming…" }
       : // a later reveal (from Your tickets): what was bought, not the word twice
-        { title: "Bought earlier", short: "Bought", body: bought },
+        { title: s.free ? "Claimed earlier" : "Bought earlier", short: s.free ? "Claimed" : "Bought", body: bought },
     {
       title: "ORAO randomness",
       short: s.vrfMs !== undefined ? `ORAO ${(s.vrfMs / 1000).toFixed(1)} s` : "ORAO",
@@ -381,7 +403,7 @@ export function RevealSheet() {
           <aside className="rv-side">
             <div className="rv-h">
               <h1 className="t-sec" id="reveal-title" tabIndex={-1} ref={titleRef}>
-                {count === 1 ? "Your ticket" : `Your ${count} tickets`}
+                {s.free ? "Your free entry" : count === 1 ? "Your ticket" : `Your ${count} tickets`}
               </h1>
               <p className="sub t-small">
                 {/* the top bar already names the draw on phones */}
@@ -460,7 +482,8 @@ export function RevealSheet() {
                         key={i}
                         ticket={s.firstTicket + i}
                         tier={tier}
-                        amount={tier ? tierAmount(s, tier) : BigInt(0)}
+                        amount={tier ? prizeOf(s, tier).sol : BigInt(0)}
+                        credits={tier ? prizeOf(s, tier).credits : 0}
                         shown={i < shown || (finished && hasTiers)}
                         roll={rolls ? rolls[i] : null}
                         denom={d ? d.iwDenominator : null}
@@ -488,44 +511,57 @@ export function RevealSheet() {
             {/* failed: the slot is empty and folds away, so the one next step comes up under the strip */}
             <div className={`slot ${finished && hasTiers ? "done" : ""} ${s.stage === "failed" ? "failed" : ""}`} ref={slotRef}>
               {finished && hasTiers ? (
-                total > BigInt(0) ? (
+                total > BigInt(0) || creditsWon > 0 ? (
                   <div className="end fin">
                     <div className="total-col">
-                      <MoneyTotal amount={sol(total, 2, 4)} mobile={mobile} size={fit.size} maxW={fit.maxW} />
+                      {total > BigInt(0) ? (
+                        <MoneyTotal amount={sol(total, 2, 4)} mobile={mobile} size={fit.size} maxW={fit.maxW} />
+                      ) : (
+                        <MoneyTotal amount={String(creditsWon)} unit={creditsWon === 1 ? "free ticket" : "free tickets"} mobile={mobile} size={fit.size} maxW={fit.maxW} />
+                      )}
                     </div>
                     <div className="detail t-body">
                       <p>
                         <strong>
                           {wins.length} winning {plural(wins.length, "ticket", "tickets")}:
                         </strong>{" "}
-                        {andList(wins.map((w) => `${ticketNo(s.firstTicket + w.i)} +${sol(tierAmount(s, w.t), 2, 3)}`))}.{" "}
-                        {wallet ? (
+                        {andList(wins.map((w) => `${ticketNo(s.firstTicket + w.i)} +${prizeText(prizeOf(s, w.t), true)}`))}.{" "}
+                        {total > BigInt(0) ? (
+                          wallet ? (
+                            <>
+                              Paid to <Addr k={wallet.address} /> from the instant pool, in the reveal transaction.
+                            </>
+                          ) : (
+                            <>Paid from the instant pool in the reveal transaction.</>
+                          )
+                        ) : null}{" "}
+                        {creditsWon > 0 && (
                           <>
-                            Paid to <Addr k={wallet.address} /> in the reveal transaction.
+                            {creditsWon === 1 ? "The free ticket is" : `The ${creditsWon} free tickets are`} added to your credits, for any later draw.{" "}
                           </>
-                        ) : (
-                          <>Paid in the reveal transaction.</>
-                        )}{" "}
-                        {s.revealTx && <ProofLink tx={s.revealTx}>Payout transaction</ProofLink>}
+                        )}
+                        {s.revealTx && <ProofLink tx={s.revealTx}>{total > BigInt(0) ? "Payout transaction" : "Reveal transaction"}</ProofLink>}
                       </p>
                     </div>
                     <div className="paid-cell">
-                      <Stamp
-                        kind="paid"
-                        seed={s.randomness && s.randomness.length ? inkAt(s.randomness, 0) : inkAt(s.entry.toBytes(), 24)}
-                        label="Stamped: paid in the same transaction"
-                        top={d ? `DRAW Nº ${d.id}` : "DRAWSOL"}
-                        bottom="SAME TX"
-                        baseAngle={-12}
-                        padded
-                      />
+                      {total > BigInt(0) && (
+                        <Stamp
+                          kind="paid"
+                          seed={s.randomness && s.randomness.length ? inkAt(s.randomness, 0) : inkAt(s.entry.toBytes(), 24)}
+                          label="Stamped: paid in the same transaction"
+                          top={d ? `DRAW Nº ${d.id}` : "DRAWSOL"}
+                          bottom="SAME TX"
+                          baseAngle={-12}
+                          padded
+                        />
+                      )}
                     </div>
                   </div>
                 ) : (
                   <div className="nowin fin">
-                    <p className="t-voice">No instant wins this time.</p>
+                    <p className="t-voice">No instant win this time.</p>
                     <p className="t-body">
-                      All {count} {plural(count, "ticket is", "tickets are")} still in the grand draw{d ? ` for ${sol(d.prizeLamports, 0, 4)} SOL` : ""}.
+                      {count === 1 ? "It is" : `All ${count} are`} still in the draw for the pot{d ? <>, <span className="nw">{sol(d.potLamports + d.instantPoolLamports, 2, 4)} SOL</span> right now</> : ""}.
                     </p>
                   </div>
                 )
@@ -540,10 +576,17 @@ export function RevealSheet() {
                     {nowTier > 0 ? (
                       <>
                         <span className="t-now">{ticketNo(s.firstTicket + nowIdx)}</span>
-                        <span className="t-now won">
-                          +{sol(tierAmount(s, nowTier), 2, 3)}
-                          <span className="u">SOL</span>
-                        </span>
+                        {prizeOf(s, nowTier).sol > BigInt(0) ? (
+                          <span className="t-now won">
+                            +{sol(prizeOf(s, nowTier).sol, 2, 3)}
+                            <span className="u">SOL</span>
+                          </span>
+                        ) : (
+                          <span className="t-now won">
+                            +{prizeOf(s, nowTier).credits}
+                            <span className="u">free</span>
+                          </span>
+                        )}
                       </>
                     ) : (
                       <>
@@ -553,7 +596,10 @@ export function RevealSheet() {
                     )}
                   </div>
                   <p className="tally t-ui">
-                    Won so far<b className={wonSoFar > BigInt(0) ? "" : "zero"}>{sol(wonSoFar, 2, 4)} SOL</b>
+                    Won so far
+                    <b className={wonSoFar > BigInt(0) || creditsSoFar > 0 ? "" : "zero"}>
+                      {sol(wonSoFar, 2, 4)} SOL{creditsSoFar > 0 ? ` + ${creditsSoFar} free` : ""}
+                    </b>
                   </p>
                 </div>
               )}
@@ -564,14 +610,14 @@ export function RevealSheet() {
               <div className="slip receipt-slip">
                 <p className="t-label">Your receipt</p>
                 <ReceiptBars
-                  wins={Array.from({ length: count }, (_, i) => (tiers ? Number(tierAmount(s, tiers[i] ?? 0)) / 1e9 : 0))}
+                  wins={Array.from({ length: count }, (_, i) => (tiers ? Number(prizeOf(s, tiers[i] ?? 0).sol) / 1e9 : 0))}
                   shown={hasTiers ? (finished ? count : shown) : 0}
                   first={s.firstTicket}
                   label={
                     !hasTiers
                       ? `Receipt: ${count} ${plural(count, "ticket", "tickets")}, still sealed.`
                       : wins.length
-                        ? `Receipt: ${andList(wins.map((w) => `${ticketNo(s.firstTicket + w.i)} won ${sol(tierAmount(s, w.t), 2, 3)}`))} SOL; the other ${count - wins.length} won nothing.`
+                        ? `Receipt: ${andList(wins.map((w) => `${ticketNo(s.firstTicket + w.i)} won ${prizeText(prizeOf(s, w.t))}`))}; the other ${count - wins.length} won nothing.`
                         : `Receipt: none of the ${count} tickets won an instant prize.`
                   }
                 />
@@ -624,10 +670,10 @@ export function RevealSheet() {
                 <div className="rv-notes t-fine">
                   {safeNote && <p className="c-ink-2">Your tickets are safe; you can reveal them later from Your tickets.</p>}
                   <p>
-                    All {count} {plural(count, "ticket stays", "tickets stay")} in the grand draw{d ? <> for <span className="nw">{sol(d.prizeLamports, 0, 4)} SOL</span></> : ""}
+                    {count === 1 ? "It stays" : `All ${count} stay`} in the draw for the pot
                     {d ? (
                       <>
-                        , drawn at sell-out or on <span className="nw">{utcLabel(d.closesAt)}</span>.
+                        , drawn on <span className="nw">{utcLabel(d.drawAt)}</span>.
                       </>
                     ) : (
                       "."

@@ -33,17 +33,26 @@ export function Barcode({
   free = [],
   mine = [],
   drawn = -1,
+  cursor = -1,
+  minAt,
+  minLabel,
   label,
   showKey = true,
   leftLabel,
   compact = false,
   spread = true,
+  big = false,
 }: {
   slots: number;
   taken: number;
   free?: number[];
   mine?: number[];
   drawn?: number;
+  /** the /live roll's cursor (raised ink) */
+  cursor?: number;
+  /** headline draws: the ticket number where the minimum would be reached, keyed "min 120" with a tick */
+  minAt?: number;
+  minLabel?: string;
   label: string;
   showKey?: boolean;
   /** "50 left" */
@@ -51,12 +60,14 @@ export function Barcode({
   compact?: boolean;
   /** run the meter to the full width (hero); off for the past ticket's fixed 3px pitch */
   spread?: boolean;
+  /** the /live page: tall bars for a 1080p frame */
+  big?: boolean;
 }) {
   const [ref, width] = useWidth<HTMLDivElement>();
   const mobile = width > 0 && width < 420;
-  const h = compact ? 32 : mobile ? 34 : 40;
-  const rise = mobile ? 6 : 8;
-  const L = width > 0 ? barcodeMarks({ slots, taken, free, mine, drawn, width, h, rise, spread }) : null;
+  const h = big ? 128 : compact ? 32 : mobile ? 34 : 40;
+  const rise = big ? 24 : mobile ? 6 : 8;
+  const L = width > 0 ? barcodeMarks({ slots, taken, free, mine, drawn, cursor, width, h, rise, spread, wide: big }) : null;
 
   // key candidates, positioned under the bars they name, in priority order: yours > "N left" > #0000 >
   // sell-out (with nothing sold, "150 left" sits at x 0 and is the useful count; "#0000" yields to it)
@@ -66,6 +77,7 @@ export function Barcode({
     const px = (t: number) => L.xAt(Math.floor(t / L.group));
     const mineR = ranges(mine);
     if (mineR.length) cands.push({ x: px(mineR[0][0]), text: "yours", cls: "yours", align: "l" });
+    if (minAt !== undefined && minLabel && minAt < slots) cands.push({ x: px(minAt), text: minLabel, cls: "min", align: "l" });
     if (taken < slots && leftLabel) cands.push({ x: px(taken), text: leftLabel, cls: "", align: "l" });
     cands.push({ x: 0, text: ticketNo(0), cls: "", align: "l" });
     cands.push({ x: L.w, text: "sell-out", cls: "", align: "r" });

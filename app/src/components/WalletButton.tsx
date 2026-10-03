@@ -1,15 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useDrawSol } from "@/hooks/context";
 import { short, sol } from "@/lib/format";
 import { solscanAccount } from "@/lib/config";
+import { limitsOf } from "@/lib/derive";
 
 /** The wallet-adapter button, rebuilt as a plain underlined address with a stock-slip menu. */
-export function WalletButton() {
-  const { wallet, myEntries, myState, player } = useDrawSol();
+export function WalletButton({ away = false }: { away?: boolean }) {
+  const { wallet, myEntries, myState, player, profile, profileState, now } = useDrawSol();
   const { disconnect, connecting } = useWallet();
   const { setVisible } = useWalletModal();
   const [open, setOpen] = useState(false);
@@ -66,9 +68,12 @@ export function WalletButton() {
             <i>Devnet balance</i>
             <span className="tab">{wallet.balance !== null ? `${sol(wallet.balance, 2, 4)} SOL` : "—"}</span>
           </div>
-          <a role="menuitem" href="#my-tickets" onClick={() => setOpen(false)}>
+          <Link role="menuitem" href={away ? "/#my-tickets" : "#my-tickets"} onClick={() => setOpen(false)}>
             Your tickets{myState === "ready" ? ` (${tickets})` : ""}
-          </a>
+          </Link>
+          <Link role="menuitem" href={away ? "/#limits" : "#limits"} onClick={() => setOpen(false)}>
+            Play limits{profileState === "ready" && profile && limitsOf(profile, now).excluded ? " (on a break)" : ""}
+          </Link>
           <a role="menuitem" href={solscanAccount(addr)} target="_blank" rel="noopener noreferrer">
             <span className="proof" style={{ textDecoration: "none" }}>
               View wallet on Solscan

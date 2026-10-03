@@ -19,7 +19,7 @@ import { SheetPicks } from "./Picks";
 export function ConfirmStep({ headingId, inStub = false }: { headingId: string; inStub?: boolean }) {
   const { current: d } = useDrawSol();
   const { buy, phase, errors, clearError, disabledReason } = useActions();
-  const { qty, closeConfirm, adultRemembered, rememberAdult, forgetAdult } = useBuy();
+  const { qty, closeConfirm, adultRemembered, rememberAdult, forgetAdult, creditPart, paidPart } = useBuy();
   const [adult, setAdult] = useState(false);
   const hint = useId();
 
@@ -35,7 +35,8 @@ export function ConfirmStep({ headingId, inStub = false }: { headingId: string; 
   }, [closeConfirm, headingId]);
 
   if (!d) return null;
-  const subtotal = d.ticketPrice * BigInt(qty);
+  const subtotal = d.ticketPrice * BigInt(paidPart);
+  const rolls = d.kind === "pot" && d.iwDenominator > 0;
   const ageOk = adultRemembered || adult;
   const bp = phase.buy;
   const busy = inFlight(bp);
@@ -44,11 +45,11 @@ export function ConfirmStep({ headingId, inStub = false }: { headingId: string; 
   const pay = () => {
     if (!ready) return;
     if (adult) rememberAdult();
-    buy(qty);
+    buy(qty, creditPart);
   };
 
   const label =
-    bp === "simulating" ? "Checking with the program…" : bp === "signing" ? "Approve in your wallet…" : bp === "confirming" ? "Confirming on devnet…" : `Pay ${sol(subtotal, 2, 4)} SOL`;
+    bp === "simulating" ? "Checking with the program…" : bp === "signing" ? "Approve in your wallet…" : bp === "confirming" ? "Confirming on devnet…" : paidPart === 0 ? `Use ${qty} free ${plural(qty, "ticket", "tickets")}` : `Pay ${sol(subtotal, 2, 4)} SOL`;
 
   return (
     <div className={`confirm stub-in ${inStub ? "in-stub" : ""}`}>
@@ -65,9 +66,19 @@ export function ConfirmStep({ headingId, inStub = false }: { headingId: string; 
       )}
       <div className="c-sum">
         <span className="k">
-          {qty} {plural(qty, "ticket", "tickets")} × {sol(d.ticketPrice, 2, 4)} SOL
+          {paidPart > 0 && (
+            <>
+              {paidPart} {plural(paidPart, "ticket", "tickets")} × {sol(d.ticketPrice, 2, 4)} SOL
+            </>
+          )}
+          {creditPart > 0 && (
+            <span className={paidPart > 0 ? "c-credit" : ""}>
+              {paidPart > 0 ? "+ " : ""}
+              {creditPart} free {plural(creditPart, "ticket", "tickets")} from your credits
+            </span>
+          )}
         </span>
-        <b className="t-rowtotal">{sol(subtotal, 2, 4)} SOL</b>
+        <b className="t-rowtotal">{paidPart > 0 ? `${sol(subtotal, 2, 4)} SOL` : "free"}</b>
       </div>
       {!inStub && !busy && <SheetPicks />}
       <FeeLine />
@@ -96,7 +107,15 @@ export function ConfirmStep({ headingId, inStub = false }: { headingId: string; 
           <ErrorNote onDismiss={() => clearError("buy")}>{errors.buy.message}</ErrorNote>
         </div>
       )}
-      <p className="c-fine t-fine">Then sign in your wallet. About <span className="nw">2 s</span> later it asks once more, to reveal your results and pay any wins.</p>
+      <p className="c-fine t-fine">
+        {rolls ? (
+          <>
+            Then sign in your wallet. About <span className="nw">2 s</span> later it asks once more, to reveal your results and pay any wins.
+          </>
+        ) : (
+          <>Then sign in your wallet. Your tickets go straight into the draw; a headline draw has no instant results.</>
+        )}
+      </p>
       <Guarantee d={d} />
     </div>
   );
@@ -134,16 +153,22 @@ export function AdultRow({
 }
 
 /**
- * The draw guarantee, scoped to the grand prize (research P0-4), as the spec words it. Every figure is the
- * draw account's, and the locked prize links to the vault that holds it: on phones this line sits in the
- * stub and the confirm sheet, far from the ticket face's own vault link.
- * "Never reduced" covers the grand prize only: instant wins are paid up to what is left in the reserve.
+ * The draw guarantee (research P0-4), as each kind of draw can promise it. Every figure is the draw account's.
+ * Pot: the draw time is fixed and the pot only grows until then (unwon instant pool joins it). Headline: the
+ * escrowed prize, and the minimum or a full refund. "Never reduced" is never extended to instant wins.
  */
 export function Guarantee({ d, className = "" }: { d: DrawView; className?: string }) {
+  if (d.kind === "headline")
+    return (
+      <p className={`guarantee t-small ${className}`}>
+        Draws on <span className="nw">{utcLabel(d.drawAt)}</span> once {d.minTickets} tickets sell. Otherwise everyone is refunded in full. Grand prize already
+        escrowed: <ProofLink account={vaultPda(d.address)}>{sol(d.prizeLamports, 0, 4)} SOL</ProofLink>.
+      </p>
+    );
   return (
     <p className={`guarantee t-small ${className}`}>
-      Drawn at <span className="nw">{utcLabel(d.closesAt)}</span> or when all {d.ticketCap} tickets sell, whichever comes first. Grand prize already locked:{" "}
-      <ProofLink account={vaultPda(d.address)}>{sol(d.prizeLamports, 0, 4)} SOL</ProofLink>. The draw is never extended and the grand prize is never reduced.
+      Draws on <span className="nw">{utcLabel(d.drawAt)}</span>, never early, never extended. Until then the pot in the{" "}
+      <ProofLink account={vaultPda(d.address)}>vault</ProofLink> only grows, and the instant pool left at the draw joins it.
     </p>
   );
 }

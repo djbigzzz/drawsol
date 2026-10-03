@@ -39,15 +39,19 @@ export const QUESTION_TERMS_HASHES = [
 ];
 export const GAMBLE_AWARE_URL = "https://www.begambleaware.org";
 
+// SPEC-v3 §2.1
 export const MAX_PER_TX = 25;
+/** a draw stuck in Drawing this long after draw_at may be cancelled by anyone (refunds) */
 export const CANCEL_GRACE_SECS = 48 * 3600;
-/** The program's RESERVE_UNLOCK_SECS: from close + 7 days the operator may withdraw the unwon reserve of a settled
- * or cancelled draw even if paid entries are still unrevealed; after that withdrawal they can't be revealed. */
-export const RESERVE_UNLOCK_SECS = 7 * 86400;
+/** raising (or removing) a play limit takes effect this long after it is asked for */
+export const LIMIT_INCREASE_DELAY = 72 * 3600;
+/** the play-limit period */
+export const PERIOD_SECS = 30 * 86400;
 
-/** Account sizes (8-byte discriminator + InitSpace) for rent estimates. */
-export const ENTRY_SPACE = 8 + 32 + 32 + 4 + 4 + 2 + 1 + 8 + 8 + 32 + 32 + 1 + 25 + 8 + 1 + 1;
-export const PLAYER_SPACE = 8 + 32 + 32 + 4 + 8 + 8 + 1 + 1;
+/** Account sizes (8-byte discriminator + InitSpace of EntryV3 / PlayerV3 / Profile) for rent estimates. */
+export const ENTRY_SPACE = 8 + 32 + 32 + 4 + 4 + 2 + 2 + 2 + 1 + 8 + 8 + 8 + 32 + 32 + 1 + 1 + 25 + 8 + 4 + 1 + 1;
+export const PLAYER_SPACE = 8 + 32 + 32 + 4 + 8 + 8 + 4 + 1 + 1;
+export const PROFILE_SPACE = 8 + 32 + 4 + 8 + 8 + 8 + 8 + 8 + 8 + 1;
 
 export const solscanAccount = (addr: string) =>
   `https://solscan.io/account/${addr}?cluster=devnet`;

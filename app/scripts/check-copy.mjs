@@ -12,6 +12,12 @@ const rules = [
   [/[A-Za-z]'[a-z]/, "typewriter apostrophe (use ’)"],
   [/&apos;|&quot;/, "HTML quote entity (use ’ or “ ”)"],
   [/>[^<{]*\bverify\b/i, "the word “verify” in copy"],
+  // research P0: a prize draw is never called a competition or a skill game, nor claimed legal or compliant
+  [/\bcompetitions?\b/i, "the word “competition”"],
+  [/\bskill[- ]based\b/i, "“skill-based”"],
+  [/\blegal(ly)?\b/i, "a legality claim (“legal”)"],
+  [/\bcompliant\b|\bcompliance\b/i, "a compliance claim (“compliant”)"],
+  [/\bDCMS\b/, "a DCMS reference"],
 ];
 let bad = 0;
 for (const f of files) {

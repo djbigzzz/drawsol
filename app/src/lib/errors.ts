@@ -1,33 +1,39 @@
 import { idlErrorName } from "./chain";
 
-/** Human copy for every DrawSol program error (SPEC §2.6). */
+/** Human copy for every DrawSol v3 program error (SPEC-v3 §6, Errors). */
 const COPY: Record<string, string> = {
-  Unauthorized: "Only the draw authority can do that.",
+  Unauthorized: "Only the operator’s keeper can run this draw in its first minutes after the draw time. After that, anyone can.",
   InvalidParams: "The program rejected these parameters.",
   SalesClosed: "Sales have closed for this draw.",
-  SalesStillOpen: "The draw can't run yet — sales are still open and tickets remain.",
-  SoldOut: "Not enough tickets left for that quantity. Lower it and try again.",
-  ExceedsPerTx: "That's more than the per-purchase limit.",
+  SalesStillOpen: "The draw can’t run yet: sales are still open.",
+  DrawNotDue: "It isn’t the draw time yet. The draw can be run from its draw time on.",
+  SoldOut: "Not enough paid tickets left for that quantity. Lower it and try again.",
+  ExceedsPerTx: "That’s more than the per-purchase limit.",
   ExceedsWalletCap: "That would take this wallet past its ticket limit for the draw.",
   FreeCapReached: "All free entries for this draw have been claimed.",
   FreeAlreadyClaimed: "This wallet has already claimed its free entry.",
-  WrongStatus: "The draw has moved on since this page loaded. It has refreshed — check the board.",
-  VrfWrongOwner: "The randomness account isn't owned by ORAO VRF.",
-  VrfWrongAccount: "That isn't the randomness account recorded for this draw.",
-  VrfSeedMismatch: "The randomness seed doesn't match. Someone may have bought at the same moment — try again.",
-  VrfNotFulfilled: "ORAO hasn't delivered the randomness yet. Give it a few seconds and retry.",
+  WrongStatus: "The draw has moved on since this page loaded. It has refreshed; check the ticket.",
+  VrfWrongOwner: "The randomness account isn’t owned by ORAO VRF.",
+  VrfWrongAccount: "That isn’t the randomness account recorded for this draw.",
+  VrfSeedMismatch: "The randomness seed doesn’t match. Someone may have bought at the same moment; try again.",
+  VrfNotFulfilled: "ORAO hasn’t delivered the randomness yet. Give it a few seconds and retry.",
   AlreadyRevealed: "These tickets are already revealed.",
-  FreeEntryNoReveal: "Free entries go straight into the grand draw; there's nothing to reveal.",
-  WrongWinningEntry: "That entry doesn't hold the winning ticket.",
-  NotCancellable: "The draw can only be cancelled 48 hours after closing if randomness never arrived.",
+  NoInstantRoll: "These tickets have no instant roll, so there’s nothing to reveal.",
+  WrongWinningEntry: "That entry doesn’t hold the winning ticket.",
+  NotCancellable: "The draw can only be cancelled 48 hours after its draw time if the randomness never arrived.",
   AlreadyRefunded: "This entry has already been refunded.",
+  NothingToRefund: "There’s nothing to refund on this entry: a free entry costs nothing.",
   NothingToWithdraw: "Nothing is withdrawable right now.",
-  MathOverflow: "The numbers overflowed — the program refused the transaction.",
+  MathOverflow: "The numbers overflowed; the program refused the transaction.",
+  InsufficientCredits: "This wallet doesn’t have that many free tickets any more. Lower the number of credits and try again.",
+  SpendLimitExceeded: "That would take this wallet over its play limit for this 30-day period, so the program refused it. Nothing was charged.",
+  SelfExcluded: "This wallet is taking a break, so the program won’t sell it tickets or free entries until the break ends.",
+  VaultShortfall: "The vault can’t cover this right now. Refunds never pay one player with another’s money, so this one waits until the operator tops the vault up.",
   // Anchor framework errors we can hit in practice
   ConstraintSeeds: "Someone bought at the same moment and took this entry slot. Try again.",
   AccountAlreadyInitialized: "Someone bought at the same moment and took this entry slot. Try again.",
-  ConstraintAddress: "An account didn't match what the program expected. Refresh and try again.",
-  AccountNotInitialized: "An account this needs doesn't exist yet. Refresh and try again.",
+  ConstraintAddress: "An account didn’t match what the program expected. Refresh and try again.",
+  AccountNotInitialized: "An account this needs doesn’t exist yet. Refresh and try again.",
 };
 
 export interface HumanError {
@@ -63,7 +69,7 @@ export function humanize(err: unknown, logs?: string[] | null): HumanError {
   if (/insufficient (lamports|funds)|Attempt to debit an account but found no record/i.test(msg))
     return { code: "InsufficientFunds", message: "Not enough devnet SOL in this wallet." };
   if (/blockhash not found|block height exceeded|expired/i.test(msg))
-    return { code: "Expired", message: "The network didn't confirm in time. Nothing was charged if it isn't in your wallet history — try again." };
+    return { code: "Expired", message: "The network didn’t confirm in time. Nothing was charged if it isn’t in your wallet history; try again." };
 
   const hex = msg.match(/custom program error: 0x([0-9a-f]+)/i);
   if (hex) {

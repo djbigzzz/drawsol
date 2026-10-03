@@ -106,27 +106,34 @@ export function barcodeMarks({
   free = [],
   mine = [],
   drawn = -1,
+  cursor = -1,
   width,
   h = 40,
   rise = 8,
   spread = false,
+  wide = false,
 }: {
   slots: number;
   taken: number;
   free?: number[];
   mine?: number[];
   drawn?: number;
+  /** the /live roll: the ticket the roll is passing, raised in ink (not a result, so never red) */
+  cursor?: number;
   width: number;
   h?: number;
   rise?: number;
   /** distribute the leftover width as 1px extra gaps (integer x), so the meter ends at the body edge */
   spread?: boolean;
+  /** /live: bars as wide as the frame allows (half the pitch, up to a 10px pitch), so a 1080p stream can read them */
+  wide?: boolean;
 }): BarcodeLayout {
   // one bar per ticket; above 400 slots one bar = 25 tickets; on very narrow screens, the fewest tickets per bar that fit
   const group = slots > 400 ? 25 : slots * 2 - 1 > width ? Math.ceil((slots * 2) / Math.max(1, width)) : 1;
   const units = Math.ceil(slots / group);
-  const pitch = units * 3 <= width ? 3 : 2;
-  const bar = pitch - 1;
+  const fit = Math.floor((width + 1) / Math.max(1, units));
+  const pitch = wide && fit > 3 ? Math.min(10, fit) : units * 3 <= width ? 3 : 2;
+  const bar = wide && pitch > 3 ? Math.max(2, Math.round(pitch / 2)) : pitch - 1;
   const natural = units * pitch - 1;
   const span = spread ? Math.max(natural, Math.floor(width)) : natural;
   const xAt = (i: number) => (spread && units > 1 ? Math.floor((i * (span - bar)) / (units - 1)) : i * pitch);
@@ -148,10 +155,11 @@ export function barcodeMarks({
     let isFree = group === 1 && F.has(lo);
     for (let t = lo; t < hi && !isMine; t++) if (M.has(t)) isMine = true;
     const isDrawn = drawn >= lo && drawn < hi;
-    if (isDrawn) isFree = false;
-    const up = isDrawn || isMine;
+    const isCursor = cursor >= lo && cursor < hi;
+    if (isDrawn || isCursor) isFree = false;
+    const up = isDrawn || isMine || isCursor;
     const top = up ? 0 : rise;
-    const fill: BarFill = isDrawn ? "red" : isMine ? "blue" : "ink";
+    const fill: BarFill = isDrawn ? "red" : isCursor ? "ink" : isMine ? "blue" : "ink";
     if (isFree) {
       const len = H - top;
       const gap = 6;

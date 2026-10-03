@@ -1,20 +1,26 @@
 /**
- * FIXTURE DATA — screenshots only. This module is reachable only when the app is
- * built with NEXT_PUBLIC_FIXTURES=1; the production bundle never includes it.
- * Results are still computed with fairness.ts from (fixture) randomness, so the
- * screenshots exercise the real result code paths.
+ * FIXTURE DATA — screenshots only. This module is reachable only when the app is built with
+ * NEXT_PUBLIC_FIXTURES=1; the production bundle never includes it.
+ *
+ * The money follows the v3 program's arithmetic (SPEC-v3 §2.3–2.4): every paid ticket is split house / pot /
+ * instant pool by the draw's bps, an entry's pool snapshot is the pool right after its purchase, a SOL tier
+ * pays a share of that snapshot (capped by the pool), a credits tier adds free tickets, and the winning ticket
+ * comes from fairness.ts. Results are computed with fairness.ts from (fixture) randomness, so the shots
+ * exercise the real result code paths.
  */
 import { PublicKey } from "@solana/web3.js";
 import { sha256 } from "@noble/hashes/sha256";
 import { utils } from "@coral-xyz/anchor";
-import { rollEntry, winningTicket } from "@/lib/fairness";
-import type { DrawStatus, DrawView, EntryView, PlayerView, RandomnessView } from "@/lib/types";
+import { rollEntry, TIER_CREDITS, TIER_FIXED, TIER_SOL_SHARE, winningTicket, type TierSpec } from "@/lib/fairness";
+import { tierCredits, tierSol } from "@/lib/derive";
+import type { DrawKind, DrawStatus, DrawView, EntryView, PlayerView, ProfileView, RandomnessView } from "@/lib/types";
 import type { Actions, RevealSession } from "@/hooks/context";
-import { drawPda, entryPda, playerPda } from "@/lib/chain";
-import { QUESTION_TERMS_HASHES } from "@/lib/config";
+import { drawPda, entryPda, legacyDrawPda, legacyEntryPda, playerPda, profilePda } from "@/lib/pdas";
 
 const enc = new TextEncoder();
 const LAMPORTS = BigInt(1_000_000_000);
+const Z = BigInt(0);
+const B = (n: number) => BigInt(n);
 const sol = (x: number) => (BigInt(Math.round(x * 1e6)) * LAMPORTS) / BigInt(1e6);
 
 export const fxKey = (label: string) => new PublicKey(sha256(enc.encode(`fixture:${label}`)));
@@ -32,42 +38,66 @@ export const fxSig = (label: string) => {
   out.set(sha256(enc.encode(`fixture-sig-b:${label}`)), 32);
   return utils.bytes.bs58.encode(out);
 };
+const hash32 = (label: string) => sha256(enc.encode(`fixture-terms:${label}`));
 
 export const ME = fxKey("me");
 const OPERATOR = fxKey("operator");
 
-const TIERS = [
-  { amount: sol(0.2), odds: 10 },
-  { amount: sol(0.05), odds: 40 },
-  { amount: sol(0.01), odds: 150 },
-  { amount: BigInt(0), odds: 0 },
-];
+/**
+ * The fixture clock: Sat 3 Oct 2026, 16:28:48 UTC. Tonight's pot draw closes and draws at 22:00 UTC
+ * (5 h 31 min left); this week's headline draw is Sun 4 Oct, 20:00 UTC.
+ */
+export const FIXED_NOW = Math.floor(Date.UTC(2026, 9, 3, 16, 28, 48) / 1000);
+const TONIGHT = Math.floor(Date.UTC(2026, 9, 3, 22, 0, 0) / 1000);
+const SUNDAY = Math.floor(Date.UTC(2026, 9, 4, 20, 0, 0) / 1000);
+const DAY = 86400;
 
-function baseDraw(id: number, now: number, status: DrawStatus): DrawView {
+/** SPEC-v3 §3: the devnet nightly pot draw's instant tiers (/1000). */
+const POT_TIERS: TierSpec[] = [
+  { odds: 15, kind: TIER_SOL_SHARE, value: 2000 },
+  { odds: 60, kind: TIER_SOL_SHARE, value: 400 },
+  { odds: 150, kind: TIER_CREDITS, value: 1 },
+  { odds: 0, kind: 0, value: 0 },
+];
+const NO_TIERS: TierSpec[] = Array.from({ length: 4 }, () => ({ odds: 0, kind: 0, value: 0 }));
+
+function baseDraw(id: number, kind: DrawKind, drawAt: number): DrawView {
+  const pot = kind === "pot";
   return {
     address: drawPda(id),
     id,
+    kind,
     authority: OPERATOR,
-    status,
+    status: "open",
     ticketPrice: sol(0.01),
-    ticketCap: 150,
+    ticketCap: pot ? 300 : 230,
     maxPerTx: 25,
     maxPerWallet: 50,
     freeCap: 15,
-    createdAt: now - 3 * 86400 - 4 * 3600,
-    closesAt: now + 2 * 86400 + 5 * 3600 + 31 * 60 + 12,
-    prizeLamports: sol(1),
-    iwReserveLamports: sol(2),
-    iwPaidLamports: BigInt(0),
-    iwDenominator: 1000,
-    iwTiers: TIERS,
-    proceedsLamports: BigInt(0),
-    refundedLamports: BigInt(0),
+    createdAt: pot ? drawAt - 22 * 3600 : drawAt - 7 * DAY,
+    closesAt: drawAt,
+    drawAt,
+    publicGraceSecs: 30 * 60,
+    houseBps: 5500,
+    potBps: pot ? 3500 : 0,
+    instantBps: pot ? 1000 : 0,
+    prizeLamports: pot ? Z : sol(1),
+    minTickets: pot ? 0 : 120,
+    floorMarginBps: pot ? 0 : 2000,
+    potLamports: Z,
+    instantPoolLamports: Z,
+    houseLamports: Z,
+    houseWithdrawn: Z,
+    revenueLamports: Z,
+    refundedLamports: Z,
+    iwDenominator: pot ? 1000 : 0,
+    iwTiers: pot ? POT_TIERS : NO_TIERS,
     paidTickets: 0,
     freeTickets: 0,
+    creditTickets: 0,
     nextTicket: 0,
     entryCount: 0,
-    paidEntries: 0,
+    rolledEntries: 0,
     revealedEntries: 0,
     drawVrfRequest: PublicKey.default,
     drawVrfSeed: new Uint8Array(32),
@@ -75,102 +105,186 @@ function baseDraw(id: number, now: number, status: DrawStatus): DrawView {
     winningTicket: 0,
     winningEntry: PublicKey.default,
     winner: PublicKey.default,
+    prizePaidLamports: Z,
     settledAt: 0,
     prizePaid: false,
-    proceedsWithdrawn: false,
-    reserveWithdrawn: false,
-    // Draw 1's real published terms hash (they mention the since-removed question), so the note shows
-    termsHash: Uint8Array.from(QUESTION_TERMS_HASHES[1].match(/../g)!.map((x) => parseInt(x, 16))),
+    termsHash: hash32(`draw-${id}`),
   };
 }
 
-/** [owner label, count, free?, revealed?, minutes ago] */
-const SCRIPT: [string, number, boolean, boolean, number][] = [
-  ["a", 5, false, true, 3900],
-  ["b", 1, false, true, 3600],
-  ["c", 25, false, true, 3100],
-  ["me", 10, false, true, 2900],
-  ["d", 1, true, true, 2500],
-  ["e", 3, false, true, 1900],
-  ["f", 12, false, true, 1500],
-  ["g", 2, false, true, 980],
-  ["me", 1, true, true, 640],
-  ["h", 8, false, true, 410],
-  ["i", 25, false, true, 180],
-  ["j", 4, false, false, 42],
-  ["me", 5, false, false, 6],
+/** [owner, paid, credits, free?, revealed?, minutes before the newest purchase] */
+type Row = [string, number, number, boolean, boolean, number];
+
+const POT_SCRIPT: Row[] = [
+  ["a", 25, 0, false, true, 1290],
+  ["b", 10, 0, false, true, 1180],
+  ["c", 25, 0, false, true, 1010],
+  ["me", 10, 0, false, true, 940],
+  ["d", 0, 0, true, true, 900],
+  ["e", 5, 0, false, true, 830],
+  ["f", 20, 0, false, true, 700],
+  ["g", 2, 0, false, true, 610],
+  ["me", 0, 0, true, true, 560],
+  ["h", 15, 0, false, true, 480],
+  ["i", 25, 0, false, true, 390],
+  ["j", 8, 0, false, true, 300],
+  ["k", 2, 1, false, true, 240],
+  ["l", 12, 0, false, true, 200],
+  ["m", 21, 4, false, true, 150],
+  ["n", 1, 0, false, true, 90],
+  ["me", 1, 2, false, true, 60],
+  ["o", 4, 0, false, false, 9],
+  ["me", 5, 0, false, false, 2],
+];
+
+const HEADLINE_SCRIPT: Row[] = [
+  ["p", 10, 0, false, false, 9000],
+  ["q", 25, 0, false, false, 7400],
+  ["me", 5, 0, false, false, 6100],
+  ["r", 2, 0, false, false, 5000],
+  ["s", 0, 0, true, false, 4300],
+  ["t", 12, 0, false, false, 3000],
+  ["me", 0, 0, true, false, 2100],
+  ["u", 20, 0, false, false, 900],
 ];
 
 export interface FxWorld {
   draw: DrawView;
   entries: EntryView[];
-  mine: EntryView[];
-  player: PlayerView;
   entryRandomness: Map<string, Uint8Array>;
 }
 
-export function buildWorld(id: number, now: number, status: DrawStatus, sell = 1, alsoMine: string[] = [], freeNotMine = false): FxWorld {
-  const d = baseDraw(id, now, status);
+const owner = (who: string) => (who === "me" ? ME : fxKey(`player-${who}`));
+
+/** The program's split of one payment (SPEC-v3 §2.3): house and instant by bps, the pot takes the remainder. */
+function buyInto(d: DrawView, cost: bigint) {
+  d.revenueLamports += cost;
+  if (d.kind !== "pot") return;
+  const house = (cost * B(d.houseBps)) / B(10_000);
+  const instant = (cost * B(d.instantBps)) / B(10_000);
+  d.houseLamports += house;
+  d.instantPoolLamports += instant;
+  d.potLamports += cost - house - instant;
+}
+
+/** reveal_entry: tiers from the randomness, SOL owed from the snapshot (capped by the pool), credits. */
+function revealInto(d: DrawView, e: EntryView, rand: Uint8Array) {
+  e.tiers = rollEntry(rand, e.firstTicket, e.count, d.iwDenominator, d.iwTiers);
+  let owed = Z;
+  let credits = 0;
+  for (const k of e.tiers) {
+    if (!k) continue;
+    owed += tierSol(d.iwTiers[k - 1], e.poolSnapshot);
+    credits += tierCredits(d.iwTiers[k - 1]);
+  }
+  e.solPaid = owed < d.instantPoolLamports ? owed : d.instantPoolLamports;
+  e.creditsWon = credits;
+  e.revealed = true;
+  d.instantPoolLamports -= e.solPaid;
+  d.revealedEntries += 1;
+}
+
+/** `newest`: unix time of the last purchase; `scale` (0–1) keeps that share of the script (an earlier evening). */
+export function buildWorld(
+  id: number,
+  kind: "pot" | "headline",
+  drawAt: number,
+  newest: number,
+  opts: { scale?: number; status?: DrawStatus; extra?: Row[] } = {}
+): FxWorld {
+  const d = baseDraw(id, kind, drawAt);
+  d.status = opts.status ?? "open";
+  const base = kind === "pot" ? POT_SCRIPT : HEADLINE_SCRIPT;
+  const script = [...base.slice(0, Math.round(base.length * (opts.scale ?? 1))), ...(opts.extra ?? [])];
   const entries: EntryView[] = [];
   const entryRandomness = new Map<string, Uint8Array>();
-  let next = 0;
-  const script = SCRIPT.slice(0, Math.max(0, Math.round(SCRIPT.length * sell)));
-  script.forEach(([who, count, free, revealed, minsAgo], seq) => {
-    // freeNotMine: this wallet's scripted free entry belongs to another wallet, so this one can still claim
-    const owner = who === "me" && free && freeNotMine ? fxKey("player-k") : who === "me" || alsoMine.includes(who) ? ME : fxKey(`player-${who}`);
+  const rolls = d.kind === "pot" && d.iwDenominator > 0;
+  script.forEach(([who, paid, credits, free, revealed, minsAgo], seq) => {
     const address = entryPda(d.address, seq);
     const rand = fxRand(`entry-${id}-${seq}`);
     entryRandomness.set(address.toBase58(), rand);
-    const tiers = free || !revealed ? new Array(count).fill(0) : rollEntry(rand, next, count, d.iwDenominator, d.iwTiers);
-    const instantPaid = tiers.reduce((n, t) => n + (t > 0 ? d.iwTiers[t - 1].amount : BigInt(0)), BigInt(0));
-    entries.push({
+    const count = free ? 1 : paid + credits;
+    const cost = d.ticketPrice * B(paid);
+    buyInto(d, cost);
+    const e: EntryView = {
       address,
       draw: d.address,
-      owner,
+      owner: owner(who),
       seq,
-      firstTicket: next,
+      firstTicket: d.nextTicket,
       count,
+      paidCount: free ? 0 : paid,
+      creditCount: free ? 0 : credits,
       isFree: free,
-      paidLamports: free ? BigInt(0) : d.ticketPrice * BigInt(count),
-      createdAt: now - minsAgo * 60,
-      vrfRequest: free ? PublicKey.default : fxKey(`vrf-${id}-${seq}`),
+      paidLamports: cost,
+      createdAt: newest - minsAgo * 60,
+      poolSnapshot: d.instantPoolLamports,
+      vrfRequest: rolls ? fxKey(`vrf-${id}-${seq}`) : PublicKey.default,
       vrfSeed: new Uint8Array(32),
-      revealed: free || revealed,
-      tiers,
-      instantPaid,
+      needsReveal: rolls,
+      revealed: false,
+      tiers: new Array(count).fill(0),
+      solPaid: Z,
+      creditsWon: 0,
       refunded: false,
-    });
-    next += count;
-  });
-  for (const e of entries) {
-    if (e.isFree) d.freeTickets += e.count;
+    };
+    d.nextTicket += count;
+    d.entryCount += 1;
+    if (free) d.freeTickets += 1;
     else {
-      d.paidTickets += e.count;
-      d.paidEntries += 1;
-      d.proceedsLamports += e.paidLamports;
-      if (e.revealed) d.revealedEntries += 1;
-      d.iwPaidLamports += e.instantPaid;
+      d.paidTickets += paid;
+      d.creditTickets += credits;
     }
-  }
-  d.nextTicket = next;
-  d.entryCount = entries.length;
-  const mine = entries.filter((e) => e.owner.equals(ME));
-  const player: PlayerView = {
-    address: playerPda(d.address, ME),
-    tickets: mine.reduce((n, e) => n + e.count, 0),
-    spent: mine.reduce((n, e) => n + e.paidLamports, BigInt(0)),
-    won: mine.reduce((n, e) => n + e.instantPaid, BigInt(0)),
-    freeClaimed: mine.some((e) => e.isFree),
-  };
-  return { draw: d, entries: entries.sort((a, b) => b.seq - a.seq), mine: mine.sort((a, b) => b.seq - a.seq), player, entryRandomness };
+    if (rolls) {
+      d.rolledEntries += 1;
+      if (revealed) revealInto(d, e, rand);
+    }
+    entries.push(e);
+  });
+  return { draw: d, entries: entries.sort((a, b) => b.seq - a.seq), entryRandomness };
 }
 
-/**
- * The program never sells a ticket after the close: once a scenario has moved closesAt into the
- * past, slide the whole purchase history (and the draw's opening) back so the newest entry lands
- * a minute before the close. `mine` holds the same objects as `entries`, so both move together.
- */
-export function fitBeforeClose(w: FxWorld) {
+/** Reveal whatever is still sealed (the keeper reveals everything before it requests the draw). */
+function revealAll(w: FxWorld) {
+  for (const e of w.entries.slice().sort((a, b) => a.seq - b.seq))
+    if (e.needsReveal && !e.revealed) revealInto(w.draw, e, w.entryRandomness.get(e.address.toBase58())!);
+}
+
+/** request_draw → ORAO → settle_draw, with the winner from fairness.ts. */
+function settleWorld(w: FxWorld, label: string, settledAt: number) {
+  const d = w.draw;
+  revealAll(w);
+  const r = fxRand(label);
+  d.status = "settled";
+  d.drawVrfRequest = fxKey(`drawvrf-${label}`);
+  d.randomness = r;
+  d.winningTicket = winningTicket(r, d.nextTicket);
+  const hit = w.entries.find((e) => e.firstTicket <= d.winningTicket && d.winningTicket < e.firstTicket + e.count)!;
+  d.winningEntry = hit.address;
+  d.winner = hit.owner;
+  d.prizePaidLamports = d.kind === "pot" ? d.potLamports + d.instantPoolLamports : d.prizeLamports;
+  if (d.kind === "pot") d.instantPoolLamports = Z;
+  else d.houseLamports = d.revenueLamports;
+  d.settledAt = settledAt;
+  d.prizePaid = true;
+  return w;
+}
+
+/** request_draw on a headline draw below its minimum: cancelled, the escrow straight back, refunds open. */
+function cancelUndersold(w: FxWorld, refundedBy: (e: EntryView) => boolean) {
+  const d = w.draw;
+  d.status = "cancelled";
+  d.prizePaid = true;
+  for (const e of w.entries) {
+    if (e.isFree || !refundedBy(e)) continue;
+    e.refunded = true;
+    d.refundedLamports += e.paidLamports;
+  }
+  return w;
+}
+
+/** A purchase is never shown after the close: slide every purchase (and the opening) back to fit. */
+function fitBeforeClose(w: FxWorld) {
   if (!w.entries.length) return w;
   const latest = Math.max(...w.entries.map((e) => e.createdAt));
   const shift = latest - (w.draw.closesAt - 60);
@@ -181,99 +295,169 @@ export function fitBeforeClose(w: FxWorld) {
   return w;
 }
 
-export function settle(w: FxWorld, now: number, label: string) {
+function moveDraw(w: FxWorld, drawAt: number) {
   const d = w.draw;
-  const r = fxRand(label);
-  d.status = "settled";
-  d.closesAt = now - 2 * 86400;
-  d.drawVrfRequest = fxKey(`drawvrf-${label}`);
-  d.randomness = r;
-  d.winningTicket = winningTicket(r, d.nextTicket);
-  const hit = w.entries.find((e) => e.firstTicket <= d.winningTicket && d.winningTicket < e.firstTicket + e.count)!;
-  d.winningEntry = hit.address;
-  d.winner = hit.owner;
-  d.settledAt = now - 2 * 86400 + 95;
-  d.prizePaid = true;
-  for (const e of w.entries) {
-    if (!e.revealed) {
-      e.revealed = true;
-      const rand = w.entryRandomness.get(e.address.toBase58())!;
-      e.tiers = rollEntry(rand, e.firstTicket, e.count, d.iwDenominator, d.iwTiers);
-      e.instantPaid = e.tiers.reduce((n, t) => n + (t > 0 ? d.iwTiers[t - 1].amount : BigInt(0)), BigInt(0));
-    }
-  }
+  const span = d.drawAt - d.createdAt;
+  const shift = d.drawAt - drawAt;
+  d.drawAt = drawAt;
+  d.closesAt = drawAt;
+  d.createdAt = drawAt - span;
+  for (const e of w.entries) e.createdAt -= shift;
   return w;
+}
+
+/** The legacy v2 Draw Nº 0 (settled), as the read-only history shows it. */
+function legacyDraw(now: number): { draw: DrawView; entries: EntryView[] } {
+  const address = legacyDrawPda(0);
+  const tiers: TierSpec[] = [
+    { odds: 10, kind: TIER_FIXED, value: 0, amount: sol(0.2) },
+    { odds: 40, kind: TIER_FIXED, value: 0, amount: sol(0.05) },
+    { odds: 150, kind: TIER_FIXED, value: 0, amount: sol(0.01) },
+    { odds: 0, kind: 0, value: 0, amount: Z },
+  ];
+  const counts: [string, number, boolean][] = [["v1", 5, false], ["v2", 10, false], ["me", 3, false], ["v3", 1, true]];
+  const entries: EntryView[] = [];
+  let next = 0;
+  let paid = 0;
+  let iwPaid = Z;
+  const closesAt = now - 13 * DAY;
+  counts.forEach(([who, count, free], seq) => {
+    const rand = fxRand(`legacy-0-${seq}`);
+    const t = free ? [0] : rollEntry(rand, next, count, 1000, tiers);
+    const won = t.reduce((n, k) => n + (k ? tiers[k - 1].amount! : Z), Z);
+    iwPaid += won;
+    entries.push({
+      address: legacyEntryPda(address, seq),
+      draw: address,
+      owner: owner(who),
+      seq,
+      firstTicket: next,
+      count,
+      paidCount: free ? 0 : count,
+      creditCount: 0,
+      isFree: free,
+      paidLamports: free ? Z : sol(0.01) * B(count),
+      createdAt: closesAt - (4 - seq) * 3600,
+      poolSnapshot: Z,
+      vrfRequest: free ? PublicKey.default : fxKey(`legacy-vrf-${seq}`),
+      vrfSeed: new Uint8Array(32),
+      needsReveal: !free,
+      revealed: true,
+      tiers: t,
+      solPaid: won,
+      creditsWon: 0,
+      refunded: false,
+    });
+    next += count;
+    if (!free) paid += count;
+  });
+  const r = fxRand("legacy-0-draw");
+  const w = winningTicket(r, next);
+  const hit = entries.find((e) => e.firstTicket <= w && w < e.firstTicket + e.count)!;
+  const draw: DrawView = {
+    ...baseDraw(0, "headline", closesAt),
+    address,
+    kind: "v2",
+    status: "settled",
+    ticketCap: 150,
+    createdAt: closesAt - 6 * DAY,
+    publicGraceSecs: 0,
+    houseBps: 0,
+    minTickets: 0,
+    floorMarginBps: 0,
+    iwDenominator: 1000,
+    iwTiers: tiers,
+    paidTickets: paid,
+    freeTickets: 1,
+    nextTicket: next,
+    entryCount: entries.length,
+    rolledEntries: 3,
+    revealedEntries: 3,
+    revenueLamports: sol(0.01) * B(paid),
+    drawVrfRequest: fxKey("legacy-0-drawvrf"),
+    randomness: r,
+    winningTicket: w,
+    winningEntry: hit.address,
+    winner: hit.owner,
+    prizePaidLamports: sol(1),
+    settledAt: closesAt + 600,
+    prizePaid: true,
+    legacyIwPaid: iwPaid,
+  };
+  return { draw, entries: entries.sort((a, b) => b.seq - a.seq) };
 }
 
 export type Scenario =
   | "open"
   | "open-guest"
-  | "open-low"
-  | "open-cap"
-  | "open-max"
   | "open-free"
-  | "open-free-claimed"
-  | "open-free-out"
-  | "open-free-guest"
-  | "confirm-free"
-  | "open-lowish"
-  | "open-low-pending"
-  | "open-low-failed"
-  | "open-low-done"
-  | "empty"
-  | "due"
-  | "drawing"
-  | "drawing-wait"
-  | "settled"
-  | "cancelled"
-  | "nodraw"
-  | "loading"
-  | "error"
+  | "open-low"
+  | "credits"
+  | "limit"
+  | "excluded"
+  | "limits-pending"
   | "confirm"
+  | "confirm-credits"
+  | "pot-empty"
+  | "pot-closed"
+  | "pot-due"
+  | "pot-public"
+  | "pot-drawing"
+  | "pot-settled"
+  | "headline"
+  | "headline-free"
+  | "headline-cancelled"
+  | "headline-settled"
   | "reveal"
   | "reveal-done"
-  | "reveal-5"
-  | "reveal-buying"
-  | "reveal-wait"
-  | "reveal-approve"
-  | "reveal-failed"
-  | "reveal-nowin"
-  | "open-free-pending"
-  | "open-free-failed"
-  | "confirm-free-claimed"
-  | "confirm-max"
+  | "reveal-free"
   | "stale"
-  | "winners-empty"
-  | "settle-error"
-  | "draw-settled"
-  | "draw-open"
-  | "draw-empty"
-  | "draw-missing";
+  | "nodraw"
+  | "nodraw-legacy"
+  | "loading"
+  | "error"
+  | "live-countdown"
+  | "live-due"
+  | "live-public"
+  | "live-drawing"
+  | "live-rolling"
+  | "live-paid";
 
-/** Every scenario the fixture build understands (anything else falls back to "open"). */
 export const SCENARIOS: Scenario[] = [
-  "open", "open-guest", "open-low", "open-cap", "open-max", "open-free", "open-free-claimed", "open-free-out", "open-free-guest",
-  "confirm-free", "open-lowish", "open-low-pending", "open-low-failed", "open-low-done", "empty", "due", "drawing", "drawing-wait", "settled",
-  "cancelled", "nodraw", "loading", "error", "confirm", "reveal", "reveal-done", "reveal-5",
-  "reveal-buying", "reveal-wait", "reveal-approve", "reveal-failed", "reveal-nowin",
-  "open-free-pending", "open-free-failed", "confirm-free-claimed", "confirm-max", "stale", "winners-empty", "settle-error",
-  "draw-settled", "draw-open", "draw-empty", "draw-missing",
+  "open", "open-guest", "open-free", "open-low", "credits", "limit", "excluded", "limits-pending", "confirm", "confirm-credits",
+  "pot-empty", "pot-closed", "pot-due", "pot-public", "pot-drawing", "pot-settled",
+  "headline", "headline-free", "headline-cancelled", "headline-settled",
+  "reveal", "reveal-done", "reveal-free", "stale", "nodraw", "nodraw-legacy", "loading", "error",
+  "live-countdown", "live-due", "live-public", "live-drawing", "live-rolling", "live-paid",
 ];
 
-/** The first other wallet whose revealed, paid entry won nothing (computed by fairness.ts, not chosen). */
-function noWinLabel(now: number): string | null {
-  const w = buildWorld(3, now, "open");
-  const e = w.entries
-    .slice()
-    .sort((a, b) => a.seq - b.seq)
-    .find((x) => !x.owner.equals(ME) && !x.isFree && x.revealed && x.count >= 2 && x.instantPaid === BigInt(0));
-  return e ? SCRIPT[e.seq][0] : null;
+export interface FxState {
+  load: "ready" | "loading" | "error" | "nodraw";
+  draws: DrawView[];
+  legacyDraws: DrawView[];
+  /** the draw the page opens on (null: the catalogue's default) */
+  selected: number | null;
+  worlds: Map<string, FxWorld>;
+  wallet: { address: PublicKey; balance: bigint | null } | null;
+  profile: ProfileView | null;
+  /** ORAO request of each drawing draw, by draw address */
+  drawRandomness: Map<string, RandomnessView>;
+  session: RevealSession | null;
+  settleTx: Map<string, string>;
+  entryRandomness: Map<string, Uint8Array>;
+  entriesByDraw: Map<string, EntryView[]>;
+  allEntries: EntryView[];
+  staleSince?: number;
+  nextDrawId: number;
+  phase?: Actions["phase"];
+  errors?: Actions["errors"];
+  lastSig?: Actions["lastSig"];
+  /** /live fixtures only: hold the barcode roll at this point (0–1) for a still frame */
+  liveRollAt?: number;
 }
 
 /** A revealed session for one entry, with tiers recomputed by fairness.ts from its randomness. */
 export function revealSessionFor(e: EntryView, d: DrawView, rand: Uint8Array, label: string): RevealSession {
-  const tiers = rollEntry(rand, e.firstTicket, e.count, d.iwDenominator, d.iwTiers);
-  const instantPaid = tiers.reduce((n, t) => n + (t > 0 ? d.iwTiers[t - 1].amount : BigInt(0)), BigInt(0));
   return {
     entry: e.address,
     firstTicket: e.firstTicket,
@@ -282,236 +466,171 @@ export function revealSessionFor(e: EntryView, d: DrawView, rand: Uint8Array, la
     vrfRequest: e.vrfRequest,
     vrfMs: 1800,
     revealTx: fxSig(`reveal-${label}`),
-    tiers,
-    instantPaid,
-    tierAmounts: d.iwTiers.map((t) => t.amount),
+    tiers: rollEntry(rand, e.firstTicket, e.count, d.iwDenominator, d.iwTiers),
+    solPaid: e.revealed ? e.solPaid : undefined,
+    creditsWon: e.revealed ? e.creditsWon : undefined,
+    poolSnapshot: e.poolSnapshot,
+    free: e.isFree,
+    tierSpecs: d.iwTiers,
     randomness: rand,
   };
 }
 
-export interface FxState {
-  load: "ready" | "loading" | "error" | "nodraw";
-  draws: DrawView[];
-  current: DrawView | null;
-  vault: bigint | null;
-  entries: EntryView[];
-  mine: EntryView[];
-  player: PlayerView | null;
-  wallet: { address: PublicKey; balance: bigint | null } | null;
-  drawRandomness: RandomnessView | null;
-  session: RevealSession | null;
-  settleTx: Map<string, string>;
-  /** settle-error: the settlement search itself fails (an RPC error), as opposed to finding nothing */
-  settleTxFails?: boolean;
-  entryRandomness: Map<string, Uint8Array>;
-  /** every draw's Entry accounts, keyed by draw address (the per-draw page) */
-  entriesByDraw: Map<string, EntryView[]>;
-  /** every Entry account of every draw (winners feed) */
-  allEntries: EntryView[];
-  /** stale: unix time of the last good read while polls fail */
-  staleSince?: number;
-  nextDrawId: number;
-  /** in-flight, failed or finished actions to start from (airdrop states) */
-  phase?: Actions["phase"];
-  errors?: Actions["errors"];
-  lastSig?: Actions["lastSig"];
+export function playerOf(w: FxWorld, wallet: PublicKey): PlayerView | null {
+  const mine = w.entries.filter((e) => e.owner.equals(wallet));
+  if (!mine.length) return null;
+  return {
+    address: playerPda(w.draw.address, wallet),
+    tickets: mine.reduce((n, e) => n + e.count, 0),
+    spent: mine.reduce((n, e) => n + e.paidLamports, Z),
+    won: mine.reduce((n, e) => n + e.solPaid, Z),
+    wonCredits: mine.reduce((n, e) => n + e.creditsWon, 0),
+    freeClaimed: mine.some((e) => e.isFree),
+  };
 }
 
 export function scenario(s: Scenario, now: number): FxState {
-  const past2 = fitBeforeClose(settle(buildWorld(2, now - 9 * 86400, "open"), now - 9 * 86400, "draw-2"));
-  const past1 = buildWorld(1, now - 20 * 86400, "cancelled", 0);
-  past1.draw.closesAt = now - 18 * 86400;
-  const settleTx = new Map([[past2.draw.address.toBase58(), fxSig("settle-2")]]);
-
-  const vaultOf = (d: DrawView) =>
-    d.prizeLamports * BigInt(d.prizePaid ? 0 : 1) + d.iwReserveLamports - d.iwPaidLamports + d.proceedsLamports - d.refundedLamports;
-
   const fx: FxState = {
     load: "ready",
     draws: [],
-    current: null,
-    vault: null,
-    entries: [],
-    mine: [],
-    player: null,
+    legacyDraws: [],
+    selected: null,
+    worlds: new Map(),
     wallet: { address: ME, balance: sol(4.2137) },
-    drawRandomness: null,
+    profile: null,
+    drawRandomness: new Map(),
     session: null,
-    settleTx,
+    settleTx: new Map(),
     entryRandomness: new Map(),
     entriesByDraw: new Map(),
     allEntries: [],
-    nextDrawId: 4,
+    nextDrawId: 11,
   };
   if (s === "loading" || s === "error" || s === "nodraw") return { ...fx, load: s, wallet: null };
 
-  let w: FxWorld;
-  // a purchase that won nothing: one of the scripted no-win entries is this wallet's
-  const nowin = s === "reveal-nowin" ? noWinLabel(now) : null;
-  if (s === "empty" || s === "winners-empty") w = buildWorld(3, now, "open", 0);
-  else if (nowin) w = buildWorld(3, now, "open", 1, [nowin]);
-  // wallet at its limit: three more of the scripted purchases are this wallet's, so it really holds 50
-  else if (s === "open-cap") w = buildWorld(3, now, "open", 1, ["b", "c", "h"]);
-  // the free-entry tab, claimable: this wallet's scripted free entry (#0059) belongs to someone else
-  else if (
-    s === "open-free" ||
-    s === "open-free-out" ||
-    s === "confirm-free" ||
-    s === "open-free-guest" ||
-    s === "open-lowish" ||
-    s === "open-free-pending" ||
-    s === "open-free-failed"
-  )
-    w = buildWorld(3, now, "open", 1, [], true);
-  else w = buildWorld(3, now, "open");
+  // ---- the catalogue: tonight's pot Nº 9, Sunday's headline Nº 8, Sunday night's pot Nº 10 (just opened),
+  // ---- and the history: last night's pot Nº 7 (settled), last Sunday's headline Nº 6 (cancelled, undersold)
+  const potScale = s === "pot-empty" ? 0 : 1;
+  const pot = buildWorld(9, "pot", TONIGHT, now - 60, { scale: potScale });
+  const head = buildWorld(8, "headline", SUNDAY, now - 25 * 60);
+  const next = buildWorld(10, "pot", TONIGHT + DAY, now - 40, { scale: 0 });
+  next.draw.createdAt = now - 40 * 60;
+  const last = settleWorld(fitBeforeClose(moveDraw(buildWorld(7, "pot", TONIGHT - DAY, TONIGHT - DAY - 120), TONIGHT - DAY)), "draw-7", TONIGHT - DAY + 94);
+  const lastHead = cancelUndersold(fitBeforeClose(moveDraw(buildWorld(6, "headline", SUNDAY - 7 * DAY, SUNDAY - 7 * DAY - 300, { scale: 0.75 }), SUNDAY - 7 * DAY)), (e) => e.seq % 2 === 0);
+  fx.settleTx.set(last.draw.address.toBase58(), fxSig("settle-7"));
+  const legacy = legacyDraw(now);
+  fx.legacyDraws = [legacy.draw];
+  fx.settleTx.set(legacy.draw.address.toBase58(), fxSig("settle-legacy-0"));
 
-  if (s === "due") {
-    w.draw.closesAt = now - 40 * 60;
+  // ---- pot Nº 9, tonight
+  if (s === "pot-closed") {
+    // sold out at 21:10, the draw still waits for 22:00
+    pot.draw.paidTickets = pot.draw.ticketCap;
   }
-  if (s === "drawing" || s === "drawing-wait") {
-    w.draw.status = "drawing";
-    w.draw.closesAt = now - 12 * 60;
-    w.draw.drawVrfRequest = fxKey("drawvrf-3");
-    fx.drawRandomness = {
-      address: w.draw.drawVrfRequest,
-      fulfilled: s === "drawing",
-      randomness: s === "drawing" ? fxRand("draw-3-final") : null,
-    };
+  if (s === "pot-due" || s === "live-due") moveDraw(pot, now - 12 * 60);
+  if (s === "pot-public" || s === "live-public") moveDraw(pot, now - 47 * 60);
+  if (s === "live-countdown") moveDraw(pot, now + 4 * 60 + 12);
+  if (s === "pot-drawing" || s === "live-drawing" || s === "live-rolling") {
+    moveDraw(pot, now - 3 * 60);
+    revealAll(pot);
+    pot.draw.status = "drawing";
+    pot.draw.drawVrfRequest = fxKey("drawvrf-9");
+    const fulfilled = s !== "live-drawing";
+    fx.drawRandomness.set(pot.draw.address.toBase58(), {
+      address: pot.draw.drawVrfRequest,
+      fulfilled,
+      randomness: fulfilled ? fxRand("draw-9-final") : null,
+    });
+    if (s === "live-rolling") fx.liveRollAt = 0.72;
   }
-  if (s === "settled") {
-    settle(w, now, "draw-3-final");
-    w.draw.settledAt = now - 3 * 3600;
-    w.draw.closesAt = now - 3 * 3600 - 300;
-    settleTx.set(w.draw.address.toBase58(), fxSig("settle-3"));
+  if (s === "pot-settled" || s === "live-paid") {
+    moveDraw(pot, now - (s === "live-paid" ? 6 : 95) * 60);
+    settleWorld(pot, "draw-9-final", pot.draw.drawAt + 118);
+    fx.settleTx.set(pot.draw.address.toBase58(), fxSig("settle-9"));
   }
-  if (s === "cancelled") {
-    w.draw.status = "cancelled";
-    w.draw.closesAt = now - 3 * 86400;
-    // three entries already refunded
-    let n = 0;
-    for (const e of w.entries) {
-      if (!e.isFree && !e.owner.equals(ME) && n < 3) {
-        e.refunded = true;
-        w.draw.refundedLamports += e.paidLamports;
-        n++;
-      }
-    }
+  fitBeforeClose(pot);
+
+  // ---- headline Nº 8, Sunday
+  if (s === "headline-cancelled") {
+    moveDraw(head, now - 2 * 3600);
+    fitBeforeClose(head);
+    cancelUndersold(head, (e) => !e.owner.equals(ME) && e.seq % 3 === 0);
+  }
+  if (s === "headline-settled") {
+    // a week that sold past its minimum: four more buyers came in on the last day
+    const extra: Row[] = [0, 1, 2, 3].map((i) => [`x${i}`, 25, 0, false, false, 120 - i * 30]);
+    const big = buildWorld(8, "headline", SUNDAY, now - 25 * 60, { extra });
+    moveDraw(big, now - 3 * 3600);
+    fitBeforeClose(big);
+    settleWorld(big, "draw-8-final", big.draw.drawAt + 140);
+    head.draw = big.draw;
+    head.entries = big.entries;
+    fx.settleTx.set(big.draw.address.toBase58(), fxSig("settle-8"));
   }
 
-  // no purchase after the close (due, drawing, settled, cancelled)
-  fitBeforeClose(w);
-
-  // keep the Player account consistent with entries revealed during settlement
-  w.player.won = w.mine.reduce((n, e) => n + e.instantPaid, BigInt(0));
-  fx.current = w.draw;
-  fx.entries = w.entries;
-  fx.mine = w.mine;
-  fx.player = w.player;
-  fx.vault = vaultOf(w.draw);
-  fx.draws = [w.draw, past2.draw, past1.draw];
-  fx.entryRandomness = w.entryRandomness;
-  fx.entriesByDraw = new Map([
-    [w.draw.address.toBase58(), w.entries],
-    [past2.draw.address.toBase58(), past2.entries],
-    [past1.draw.address.toBase58(), past1.entries],
-  ]);
-  // no winners anywhere yet: only the empty open draw and the cancelled one with no tickets
-  if (s === "winners-empty") {
-    fx.draws = [w.draw, past1.draw];
-    fx.entriesByDraw.delete(past2.draw.address.toBase58());
+  const worlds = [pot, head, next, last, lastHead];
+  for (const w of worlds) {
+    fx.worlds.set(w.draw.address.toBase58(), w);
+    fx.entriesByDraw.set(w.draw.address.toBase58(), w.entries);
+    w.entryRandomness.forEach((v, k) => fx.entryRandomness.set(k, v));
   }
-  fx.allEntries = Array.from(fx.entriesByDraw.values())
-    .flat()
-    .sort((a, b) => b.createdAt - a.createdAt);
-  if (s === "settle-error") fx.settleTxFails = true;
-  // the last good read was four minutes ago; two polls since have failed
-  if (s === "stale") fx.staleSince = now - 4 * 60;
-  // a free claim in flight, and one the wallet declined
-  if (s === "open-free-pending") fx.phase = { free: "confirming" };
-  if (s === "open-free-failed") fx.errors = { free: { code: "Rejected", message: "You declined in your wallet. Nothing was sent." } };
+  fx.entriesByDraw.set(legacy.draw.address.toBase58(), legacy.entries);
+  fx.draws = worlds.map((w) => w.draw).sort((a, b) => b.id - a.id);
+  fx.allEntries = worlds.flatMap((w) => w.entries).sort((a, b) => b.createdAt - a.createdAt);
 
-  // free entries all claimed: the draw's cap is the two already taken (#0041 and #0059), none by this wallet
-  if (s === "open-free-out") w.draw.freeCap = w.draw.freeTickets;
-  if (s === "open-guest" || s === "open-free-guest") {
+  // ---- the wallet's Profile: credits it won less the credits it spent, and its play limits
+  const all = worlds.flatMap((w) => w.entries).filter((e) => e.owner.equals(ME));
+  const spent = all.filter((e) => e.createdAt > now - 20 * DAY).reduce((n, e) => n + e.paidLamports, Z);
+  fx.profile = {
+    address: profilePda(ME),
+    // the credits this wallet won here went on earlier purchases; the credit scenarios hand it three
+    credits: 0,
+    limitLamports: Z,
+    pendingLimit: Z,
+    pendingFrom: 0,
+    periodStart: now - 20 * DAY,
+    periodSpent: spent,
+    excludedUntil: 0,
+  };
+  if (s === "credits" || s === "confirm-credits") fx.profile.credits = 3;
+  if (s === "limit") fx.profile.limitLamports = spent;
+  if (s === "limits-pending") {
+    fx.profile.limitLamports = sol(0.5);
+    fx.profile.pendingLimit = sol(2);
+    fx.profile.pendingFrom = now + 61 * 3600;
+  }
+  if (s === "excluded") fx.profile.excludedUntil = now + 6 * DAY + 7 * 3600;
+
+  // ---- which draw the page opens on
+  if (s.startsWith("headline")) fx.selected = 8;
+  // the settled pot draw itself (the home page would otherwise move on to the next one, Nº 10)
+  if (s === "pot-settled") fx.selected = 9;
+
+  if (s === "nodraw-legacy") {
+    // the program has been upgraded but no v3 draw is open yet: the legacy draw is still on chain
+    return { ...fx, load: "nodraw", draws: [], worlds: new Map(), allEntries: [], entriesByDraw: new Map([[legacy.draw.address.toBase58(), legacy.entries]]) };
+  }
+
+  if (s === "open-guest") {
     fx.wallet = null;
-    fx.mine = [];
-    fx.player = null;
+    fx.profile = null;
   }
-  // low balance: below one ticket plus fees (open-low*), or enough for a ticket but under 0.05 SOL (open-lowish)
-  if (s === "open-low" || s === "open-low-pending" || s === "open-low-failed") fx.wallet = { address: ME, balance: sol(0.0123) };
-  if (s === "open-lowish") fx.wallet = { address: ME, balance: sol(0.031) };
-  if (s === "open-low-pending") fx.phase = { airdrop: "confirming" };
-  if (s === "open-low-failed")
-    fx.errors = {
-      airdrop: { code: "RateLimited", message: "The devnet faucet is turning away requests from this connection for now (429 Too Many Requests). No SOL was sent." },
-    };
-  // the faucet's 0.5 SOL has landed: 0.0123 + 0.5
-  if (s === "open-low-done") {
-    fx.wallet = { address: ME, balance: sol(0.5123) };
-    fx.phase = { airdrop: "done" };
-    fx.lastSig = { airdrop: fxSig("airdrop") };
-  }
+  if (s === "open-low") fx.wallet = { address: ME, balance: sol(0.0123) };
+  if (s === "stale") fx.staleSince = now - 4 * 60;
 
+  // ---- the reveal: this wallet's 10-ticket purchase (mid-way, then at the end), and its free entry
   if (s === "reveal" || s === "reveal-done") {
-    // the wallet's 10-ticket entry, revealed on-chain; the still frame pauses mid-way (or at the end)
-    const e = w.mine.find((m) => !m.isFree && m.count === 10)!;
-    const rand = w.entryRandomness.get(e.address.toBase58())!;
+    const e = pot.entries.find((m) => m.owner.equals(ME) && m.paidCount === 10)!;
     fx.session = {
-      entry: e.address,
-      firstTicket: e.firstTicket,
-      count: e.count,
-      stage: "revealed",
+      ...revealSessionFor(e, pot.draw, pot.entryRandomness.get(e.address.toBase58())!, "buy"),
       buyTx: fxSig("buy"),
-      vrfRequest: e.vrfRequest,
       vrfMs: 1840,
-      revealTx: fxSig("reveal"),
-      tiers: e.tiers,
-      instantPaid: e.instantPaid,
-      tierAmounts: w.draw.iwTiers.map((t) => t.amount),
-      randomness: rand,
       initialShown: s === "reveal" ? 6 : 10,
     };
   }
-  // the stages before any result is known, on a fresh purchase of 10 (#0031–#0040): covers on, no tiers
-  if (s === "reveal-buying" || s === "reveal-wait" || s === "reveal-approve") {
-    const e = w.mine.find((m) => !m.isFree && m.count === 10)!;
-    const stage = s === "reveal-buying" ? "confirming" : s === "reveal-wait" ? "vrf" : "revealing";
-    fx.session = {
-      entry: e.address,
-      firstTicket: e.firstTicket,
-      count: e.count,
-      stage,
-      buyTx: stage === "confirming" ? undefined : fxSig("buy"),
-      vrfRequest: stage === "confirming" ? undefined : e.vrfRequest,
-      vrfMs: stage === "revealing" ? 1840 : undefined,
-      randomness: stage === "revealing" ? w.entryRandomness.get(e.address.toBase58()) : undefined,
-      tierAmounts: w.draw.iwTiers.map((t) => t.amount),
-    };
-  }
-  // "Reveal 5 tickets" on the sealed entry, declined in the wallet: covers stay on, "Try the reveal again"
-  if (s === "reveal-failed") {
-    const e = w.mine.find((m) => !m.isFree && !m.revealed)!;
-    fx.session = {
-      entry: e.address,
-      firstTicket: e.firstTicket,
-      count: e.count,
-      stage: "failed",
-      vrfRequest: e.vrfRequest,
-      vrfMs: 1800,
-      randomness: w.entryRandomness.get(e.address.toBase58()),
-      tierAmounts: w.draw.iwTiers.map((t) => t.amount),
-      error: { code: "Rejected", message: "You declined in your wallet. Nothing was sent." },
-    };
-  }
-  // a fresh purchase whose results (fairness.ts, from its fixture randomness) are all "no win", at the end
-  if (s === "reveal-nowin" && nowin) {
-    const e = w.mine.find((m) => !m.isFree && m.revealed && m.instantPaid === BigInt(0) && m.count >= 2)!;
-    fx.session = { ...revealSessionFor(e, w.draw, w.entryRandomness.get(e.address.toBase58())!, String(e.seq)), buyTx: fxSig("buy-nowin"), initialShown: e.count };
-  }
-  if (s === "reveal-5") {
-    // the sealed entry (#0097–#0101), opened with "Reveal 5 tickets"
-    const e = w.mine.find((m) => !m.isFree && !m.revealed)!;
-    fx.session = revealSessionFor(e, w.draw, w.entryRandomness.get(e.address.toBase58())!, String(e.seq));
+  if (s === "reveal-free") {
+    const e = pot.entries.find((m) => m.owner.equals(ME) && m.isFree)!;
+    fx.session = { ...revealSessionFor(e, pot.draw, pot.entryRandomness.get(e.address.toBase58())!, "free"), buyTx: fxSig("free"), initialShown: 1 };
   }
   return fx;
 }

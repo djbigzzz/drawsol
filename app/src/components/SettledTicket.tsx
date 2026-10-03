@@ -6,7 +6,8 @@ import { sol, ticketNo } from "@/lib/format";
 import { inkAt } from "@/lib/print";
 import type { DrawView } from "@/lib/types";
 import { Addr, Busy, ProofLink } from "./bits";
-import { stampDay, longDay } from "./fmt";
+import { kindName, longDay, prizeFig, stampDay } from "./fmt";
+import { cancelReason, grandPrize } from "@/lib/derive";
 import { Barcode } from "./print/Barcode";
 import { Stamp } from "./print/Stamp";
 
@@ -73,7 +74,7 @@ export function Holes() {
 
 /** A past draw's ticket: DRAWN date stamp, punched holes, the winning serial and the PAID seal on its stub. */
 export function SettledTicket({ d }: { d: DrawView }) {
-  const prize = sol(d.prizeLamports, 0, 4);
+  const prize = prizeFig(grandPrize(d));
   return (
     <div className="oldticket" role="group" aria-label={`Draw Nº ${d.id} ticket, stamped drawn and paid`}>
       <div className="ob">
@@ -82,7 +83,7 @@ export function SettledTicket({ d }: { d: DrawView }) {
             <span className="th-brand">
               DrawSol<span className="th-sep"> · </span>
             </span>
-            grand draw
+            {kindName(d.kind)}
           </span>
           <span className="t-serial">Nº {String(d.id).padStart(4, "0")}</span>
         </div>
@@ -103,7 +104,7 @@ export function SettledTicket({ d }: { d: DrawView }) {
           />
         </div>
         <p className="otext t-small">
-          Grand prize, paid to <Addr k={d.winner} />
+          {d.kind === "pot" ? "The pot, paid to" : "Grand prize, paid to"} <Addr k={d.winner} />
         </p>
         <div className="tk-bar">
           <Barcode
@@ -133,8 +134,9 @@ export function SettledTicket({ d }: { d: DrawView }) {
  * stub what was refunded. Its ink is seeded from the draw account (a cancelled draw has no randomness).
  */
 export function CancelledTicket({ d }: { d: DrawView }) {
-  const prize = sol(d.prizeLamports, 0, 4);
+  const prize = prizeFig(d.kind === "pot" ? d.potLamports : d.prizeLamports);
   const none = d.nextTicket === 0;
+  const why = cancelReason(d);
   return (
     <div className="oldticket cancelled" role="group" aria-label={`Draw Nº ${d.id} ticket, stamped cancelled`}>
       <div className="ob">
@@ -143,7 +145,7 @@ export function CancelledTicket({ d }: { d: DrawView }) {
             <span className="th-brand">
               DrawSol<span className="th-sep"> · </span>
             </span>
-            grand draw
+            {kindName(d.kind)}
           </span>
           <span className="t-serial">Nº {String(d.id).padStart(4, "0")}</span>
         </div>
@@ -155,7 +157,15 @@ export function CancelledTicket({ d }: { d: DrawView }) {
           </p>
           <Stamp kind="cancelled" seed={inkAt(d.address.toBytes(), 16)} label="Stamped: cancelled" top={`DRAW Nº ${d.id}`} />
         </div>
-        <p className="otext t-small">{none ? "No tickets sold. The grand prize and the reserve went back to the operator." : "Grand prize returned to the operator. Every paid ticket can be refunded in full."}</p>
+        <p className="otext t-small">
+          {none
+            ? "No tickets sold, so there was nothing to draw."
+            : why === "undersold"
+              ? `Only ${d.paidTickets} of the ${d.minTickets} tickets it needed sold. The prize went back to the operator; every paid ticket is refunded in full.`
+              : d.kind === "pot"
+                ? "The randomness never arrived. Every paid ticket can be refunded, less any instant SOL it won."
+                : "The randomness never arrived. The prize went back to the operator; every paid ticket is refunded in full."}
+        </p>
         {!none && (
           <div className="tk-bar">
             <Barcode
@@ -174,7 +184,7 @@ export function CancelledTicket({ d }: { d: DrawView }) {
           {none ? "Tickets" : "Refunded"}
         </p>
         <span className="t-serial">{none ? "0" : `${sol(d.refundedLamports, 2, 4)}`}</span>
-        {!none && <p className="t-small c-ink-2">of {sol(d.proceedsLamports, 2, 4)} SOL</p>}
+        {!none && <p className="t-small c-ink-2">of {sol(d.revenueLamports, 2, 4)} SOL</p>}
       </div>
     </div>
   );

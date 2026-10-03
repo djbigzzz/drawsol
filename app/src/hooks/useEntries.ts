@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import type { PublicKey } from "@solana/web3.js";
-import { fetchAllEntries, fetchEntries, fetchPlayer, type AnyProgram } from "@/lib/chain";
-import type { DrawView, EntryView, PlayerView } from "@/lib/types";
+import { fetchAllEntries, fetchEntries, fetchPlayer, fetchProfile, type AnyProgram } from "@/lib/chain";
+import type { DrawView, EntryView, PlayerView, ProfileView } from "@/lib/types";
 
 /** Change-detector for a draw: refetch entries whenever any of these move. */
 function drawKey(d: DrawView | null) {
   return d
-    ? `${d.address.toBase58()}:${d.entryCount}:${d.revealedEntries}:${d.status}:${d.refundedLamports}`
+    ? `${d.address.toBase58()}:${d.entryCount}:${d.revealedEntries}:${d.status}:${d.refundedLamports}:${d.instantPoolLamports}`
     : "";
 }
 
@@ -107,4 +107,38 @@ export function useAllEntries(program: AnyProgram, draws: DrawView[], nonce = 0)
   }, [program, key, nonce]);
 
   return { entries, state };
+}
+
+/**
+ * The wallet's global Profile (credits and play limits). Re-read whenever the current draw's entries move
+ * (a purchase spends credits and limit; a reveal may win credits) and on refresh. null = never created.
+ */
+export function useProfile(program: AnyProgram, draw: DrawView | null, wallet: PublicKey | null, nonce = 0) {
+  const [profile, setProfile] = useState<ProfileView | null>(null);
+  const [state, setState] = useState<"loading" | "error" | "ready">("loading");
+  const w = wallet?.toBase58() ?? "";
+  const key = drawKey(draw);
+
+  useEffect(() => {
+    setProfile(null);
+    setState("loading");
+  }, [w]);
+
+  useEffect(() => {
+    if (!wallet) return;
+    let alive = true;
+    fetchProfile(program, wallet)
+      .then((p) => {
+        if (!alive) return;
+        setProfile(p);
+        setState("ready");
+      })
+      .catch(() => alive && setState((s) => (s === "ready" ? s : "error")));
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [program, w, key, nonce]);
+
+  return { profile, state };
 }

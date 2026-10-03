@@ -1316,3 +1316,197 @@ a.erow:hover { background: var(--stock-2); box-shadow: -8px 0 0 var(--stock-2), 
 /* a cancelled draw's ticket: the refund on its stub is a figure, not a winning number, so ink, not red */
 .oldticket.cancelled .ostub .t-serial { color: var(--ink); font-size: 22px; }
 @media (min-width: 761px) { .oldticket.cancelled .ostub .t-serial { font-size: 32px; } }
+
+/* ==========================================================================
+   v3: the catalogue, pot and headline tickets, the prize board, credits, play limits, /live
+   ========================================================================== */
+.rack-tk, .live-ticket, .limits-grid { background-color: var(--stock); background-image: var(--grain-stock); background-size: 180px 180px; }
+
+/* ---------- the rack: draws on sale, each a small ticket with its kind on its head ---------- */
+.rack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; margin-bottom: 24px; }
+.rack > * { min-width: 0; }
+.rack-voice { order: 2; }
+@media (min-width: 1336px) { .rack { grid-template-columns: 248px minmax(0, 1fr); gap: 40px; align-items: end; } .rack-voice { order: 0; } }
+.rack-voice .t-label { display: block; font-size: 17px; }
+.rack-note { margin-top: 4px; max-width: 30em; }
+.rack-more { list-style: none; margin: 4px 0 0; padding: 0; border-top: 1px solid var(--rule); }
+.rack-more li { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; min-height: 36px; padding: 4px 0; border-bottom: 1px solid var(--rule); }
+.rack-more .tbtn { font-size: 15px; }
+.rack-more .tbtn[aria-current="true"] { color: var(--ink); text-decoration: none; }
+.rack-tickets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.rack-tickets.n-1 { grid-template-columns: minmax(0, 1fr); max-width: 512px; }
+@media (min-width: 761px) { .rack-tickets { gap: 24px; } }
+.rack-tk { position: relative; display: flex; flex-direction: column; gap: 0; min-width: 0; text-align: left; border: 0; border-radius: 4px; box-shadow: var(--shadow-slip); padding: 12px 12px 16px; cursor: pointer; color: var(--ink); }
+@media (min-width: 761px) { .rack-tk { padding: 16px 24px 16px; } }
+.rack-tk:hover { background-color: var(--stock-2); }
+/* a perforated right edge with its two notches: the mini is a stub torn from the draw's ticket */
+.rack-tk::before { content: ""; position: absolute; right: 0; top: 8px; bottom: 8px; width: 6px; background-image: radial-gradient(circle at 4px 50%, var(--paper) 1.6px, transparent 2.2px); background-size: 6px 8px; background-repeat: repeat-y; }
+.rk-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; column-gap: 8px; row-gap: 2px; padding-bottom: 8px; border-bottom: 1px solid var(--ink); }
+.rk-head .t-ticket-head { white-space: normal; font-size: 12px; }
+.rk-head .t-serial { font-size: 16px; }
+@media (min-width: 761px) { .rk-head .t-ticket-head { font-size: 13px; } .rk-head .t-serial { font-size: 18px; } }
+.rk-fig { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; padding-top: 8px; }
+.rk-fig .t-rowtotal { font-size: 28px; }
+.rk-fig .t-label { font-size: 15px; }
+@media (min-width: 761px) { .rk-fig .t-rowtotal { font-size: 34px; } .rk-fig .t-label { font-size: 17px; } }
+.rk-foot { margin-top: 4px; color: var(--ink-2); }
+/* the ticket on the counter: lifted, with the open tab's 3px ink rule standing on its foot */
+.rack-tk.on { box-shadow: var(--shadow-ticket); cursor: default; }
+.rack-tk.on:hover { background-color: var(--stock); }
+.rack-tk.on::after { content: ""; position: absolute; left: 12px; right: 16px; bottom: 0; height: 3px; background: var(--ink); }
+@media (min-width: 761px) { .rack-tk.on::after { left: 24px; right: 24px; } }
+
+/* ---------- pot / headline lines on the hero ticket ---------- */
+.tk-pool { margin-top: 16px; color: var(--ink-2); max-width: 34em; }
+.tk-pool .b { color: var(--ink); font-family: var(--grot); font-stretch: 88%; font-weight: 800; }
+.kind-headline .tk-pool { color: var(--ink); font-weight: 600; }
+.tk-split { margin-top: 8px; font-family: var(--grot); font-stretch: 88%; font-weight: 700; font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums lining-nums; }
+@media (max-width: 760px) { .tk-split { order: 4; } }
+.t-prize.long { font-size: 112px; }
+@media (min-width: 761px) { .t-prize.long { font-size: 176px; } }
+@media (min-width: 1024px) and (max-height: 780px) { .tk-prize .t-prize.long { font-size: 144px; } }
+.barcode-key .min { border-left: 1px solid var(--ink); padding-left: 4px; color: var(--ink); top: -6px; padding-top: 6px; }
+
+/* ---------- the lede's tables (pot: instant wins; headline: how it pays) ---------- */
+.odds td .odds-now { display: block; font-family: var(--serif); font-weight: 400; font-stretch: normal; font-size: 14px; color: var(--ink-3); line-height: 1.2; padding-bottom: 6px; }
+.odds td:first-child:has(.odds-now) { padding-top: 6px; }
+.odds-ledger { margin-top: 0; }
+.odds-ledger > div:first-child { border-top: 1px solid var(--ink); }
+
+/* ---------- credits in the stub ---------- */
+.credits { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--rule-2); }
+.credits-have b { font-family: var(--grot); font-stretch: 88%; font-weight: 800; }
+.credits-use { padding-top: 4px; }
+.c-credit { display: block; color: var(--ink-2); font-size: 15px; }
+.limit-note { margin-top: 16px; color: var(--ink); }
+.limit-note .tbtn { margin-left: -4px; }
+
+/* ---------- instant prize board ---------- */
+.tiers { width: 100%; margin-top: 24px; border-collapse: collapse; font-variant-numeric: tabular-nums lining-nums; }
+.tiers th { text-align: left; padding: 0 0 6px; border-bottom: 2px solid var(--ink); font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 15px; color: var(--ink-2); }
+.tiers th:not(:first-child), .tiers td:not(:first-child) { text-align: right; }
+.tiers td { height: 36px; padding: 0 8px 0 0; border-bottom: 1px solid var(--rule); font-family: var(--grot); font-stretch: 88%; font-size: 15px; font-weight: 600; }
+.tiers td:last-child { padding-right: 0; font-weight: 800; }
+.tiers td:nth-child(2) { color: var(--ink-2); font-weight: 500; }
+.board-sum { margin-top: 24px; }
+.erow .r .capped { display: block; font-size: 14px; }
+
+/* ---------- play limits ---------- */
+.limits-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+@media (min-width: 1024px) { .limits-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; } }
+.limit-box { border-radius: 4px; box-shadow: var(--shadow-slip); padding: 24px 16px; min-width: 0; }
+@media (min-width: 761px) { .limit-box { padding: 24px 32px 32px; } }
+.limit-box .t-stub-head { padding-bottom: 8px; border-bottom: 1px solid var(--ink); margin-bottom: 16px; }
+.limit-box .pending { margin-top: 16px; padding: 8px 0; border-top: 1px dashed var(--rule-2); border-bottom: 1px dashed var(--rule-2); }
+.limit-form { margin-top: 24px; }
+.limit-form .t-label { display: block; margin-bottom: 8px; font-size: 17px; }
+.limit-row { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.sol-in { display: inline-flex; align-items: baseline; gap: 8px; height: 48px; padding: 0 16px; border-radius: 3px; box-shadow: inset 0 0 0 1.5px var(--ink), inset 0 3px 0 rgba(60,45,20,.08); background: var(--paper); }
+.sol-in input { width: 120px; border: 0; background: transparent; font-family: var(--grot); font-stretch: 85%; font-weight: 800; font-size: 24px; line-height: 48px; color: var(--ink); font-variant-numeric: tabular-nums lining-nums; padding: 0; }
+.sol-in input:focus { outline: 0; }
+.sol-in:focus-within { outline: 2px solid var(--blue); outline-offset: 3px; }
+.sol-in span { font-family: var(--serif); font-style: italic; color: var(--ink-2); }
+.limit-form .t-fine { margin-top: 8px; }
+.limit-form > .tbtn { margin-top: 8px; margin-left: -10px; }
+.breaks { display: flex; flex-wrap: wrap; gap: 0 24px; margin: 16px 0; }
+.brk { display: flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; font-family: var(--grot); font-stretch: 88%; font-weight: 600; font-size: 16px; }
+.brk input { width: 18px; height: 18px; margin: 0; accent-color: var(--blue); cursor: pointer; }
+.confirm-break { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--red-ink); }
+.confirm-break b { color: var(--ink); }
+.cb-act { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 16px; }
+.limit-help { margin-top: 24px; }
+.ledger.big dd.small { font-size: 16px; font-weight: 700; }
+
+/* ---------- stubs: a credit win and a ticket with no roll ---------- */
+.stubby.entered .res { color: var(--ink-2); font-style: italic; }
+
+/* ---------- /live: streamed at 1920×1080, no presenter ---------- */
+.live-page { padding-bottom: 32px; }
+.live-mast .nav { display: none; }
+@media (min-width: 1024px) { .live-mast .nav { display: flex; } }
+.live-ticket { position: relative; border-radius: 6px; box-shadow: var(--shadow-ticket); padding: 16px 16px 24px; }
+@media (min-width: 761px) { .live-ticket { padding: 24px 40px 32px; } }
+@media (min-width: 1600px) { .live-ticket { padding: 32px 56px 40px; } }
+.live-main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; padding-top: 24px; }
+@media (min-width: 1024px) { .live-main { grid-template-columns: minmax(0, 1fr) minmax(280px, 30%); gap: 64px; padding-top: 32px; } }
+.live-voice { display: flex; align-items: center; gap: 12px; font-size: clamp(22px, 2.2vw, 44px); color: var(--ink-2); }
+.live-voice .busy { width: 12px; height: 12px; }
+.t-live { font-family: var(--grot); font-weight: 900; font-stretch: 62%; font-size: clamp(96px, 15.5vw, 300px); line-height: .82; letter-spacing: -.01em; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; margin: 0; }
+.live-figure { position: relative; display: flex; align-items: flex-start; gap: 24px; margin-top: 16px; min-height: .86em; }
+.live-figure .fig { display: flex; align-items: baseline; flex-wrap: nowrap; }
+.live-figure .fig .unit { font-family: var(--serif); font-style: italic; font-size: clamp(22px, 2.6vw, 52px); color: var(--ink-2); margin: 0 .4em 0 .08em; white-space: nowrap; }
+.live-won { width: clamp(96px, 9vw, 176px); margin-top: .1em; }
+.live-sub { margin-top: 24px; max-width: 40em; color: var(--ink-2); font-size: clamp(17px, 1.2vw, 24px); }
+.live-right { border-top: 2px solid var(--ink); padding-top: 16px; }
+@media (min-width: 1024px) { .live-right { border-top: 0; border-left: 1px solid var(--rule); padding: 8px 0 0 40px; } }
+.live-right .t-label { font-size: clamp(17px, 1.3vw, 26px); }
+.t-live-prize { font-family: var(--grot); font-weight: 900; font-stretch: 62%; font-size: clamp(64px, 7.2vw, 140px); line-height: .86; font-variant-numeric: proportional-nums lining-nums; white-space: nowrap; margin: 8px 0 16px; }
+.t-live-prize .u { font-size: .5em; margin-left: .04em; }
+.live-right .t-body { font-size: clamp(16px, 1.1vw, 22px); }
+.live-paid { display: flex; align-items: center; gap: 24px; }
+.live-paid-stamp { width: clamp(96px, 7.5vw, 144px); flex: none; }
+.live-cx { width: clamp(160px, 12vw, 240px); }
+.live-bar { margin-top: 32px; }
+@media (min-width: 1600px) { .live-bar { margin-top: 40px; } }
+.live-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px 32px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--rule); }
+.live-foot .t-small { color: var(--ink-2); font-size: clamp(15px, 1vw, 20px); }
+.live-run { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
+.live-run .err { flex-basis: 100%; }
+.live-slip { margin-top: 32px; max-width: 640px; }
+/* a streamed frame: the roll repaints only the bars, so nothing else moves while it runs */
+.stage-rolling .t-live { color: var(--ink); }
+
+/* ---------- v3 fix round 1 ---------- */
+/* a pot's two-decimal figure ("0.77 SOL") is wider than "1 SOL": the stamp sits closer and a little smaller */
+@media (min-width: 761px) { .kind-pot .tk-prize-row { gap: 32px; } .kind-pot .t-prize.long + .stamp-hero { width: 168px; } }
+@media (max-width: 760px) {
+  .t-prize.long { font-size: 92px; }
+  .t-prize.long + .stamp-hero { width: 104px; }
+  .tk-prize-row { flex-wrap: wrap; }
+}
+@media (max-width: 359px) { .t-prize.long { font-size: 84px; } .t-prize.long + .stamp-hero { margin-top: 0; } }
+/* the rack's foot wraps between its two facts, never inside one */
+.rk-foot { display: flex; flex-wrap: wrap; column-gap: 8px; }
+.rk-foot .rk-sold::before { content: "· "; }
+@media (max-width: 760px) { .rk-foot { flex-direction: column; } .rk-foot .rk-sold::before { content: none; } }
+
+/* play limits: one slip of paper, its two halves joined by a perforation (a form with its counterfoil) */
+.limits-grid { border-radius: 6px; box-shadow: var(--shadow-ticket); gap: 0; }
+@media (min-width: 1024px) { .limits-grid { gap: 0; } }
+.limit-box { box-shadow: none; border-radius: 0; background: none; }
+.limit-box + .limit-box { background-image: radial-gradient(circle at 50% 2px, var(--paper) 2px, transparent 2.6px); background-size: 11px 6px; background-repeat: repeat-x; background-position: 4px -1px; }
+@media (min-width: 1024px) {
+  .limit-box + .limit-box { background-image: radial-gradient(circle at 2px 50%, var(--paper) 2px, transparent 2.6px); background-size: 6px 11px; background-repeat: repeat-y; background-position: -1px 6px; }
+}
+
+/* /live: one 1920×1080 frame, wider than the reading page */
+@media (min-width: 1600px) { .live-page, .live-mast { max-width: 1792px; } }
+.live-ticket .tk-head { flex-wrap: wrap; row-gap: 4px; }
+.live-ticket .tk-head .t-ticket-head { white-space: normal; }
+.live-figure .fig, .live-figure .wheel .ch { line-height: .8; }
+.live-figure .t-live { line-height: .8; }
+.t-live { font-size: clamp(88px, 13.5vw, 264px); }
+.live-main { padding-top: 24px; }
+@media (min-width: 1600px) { .live-ticket { padding-top: 24px; } .live-bar { margin-top: 32px; } }
+.live-page { padding-top: 16px; }
+
+/* ---------- v3 fix round 2 ---------- */
+@media (min-width: 761px) { .t-prize.long { font-size: 160px; } .kind-pot .t-prize.long + .stamp-hero { width: 160px; } }
+@media (max-width: 760px) { .t-prize.long { font-size: 86px; } }
+.rk-foot { column-gap: 0; }
+.rk-foot .rk-sold::before { content: "\00a0· "; }
+/* /live, paid: the recompute slip is the frame's third column at stream width, under the result below that */
+.live-slip { margin-top: 0; max-width: 640px; grid-column: 1 / -1; }
+.live-slip .slip { transform: none; }
+@media (min-width: 1600px) {
+  .stage-paid .live-main { grid-template-columns: minmax(0, 1fr) minmax(260px, 24%) minmax(400px, 31%); gap: 48px; }
+  .stage-paid .live-slip { grid-column: auto; max-width: none; }
+  .stage-paid .t-live { font-size: clamp(88px, 10.5vw, 208px); }
+  .stage-paid .live-won { width: 136px; }
+  .stage-paid .live-right { padding-left: 32px; }
+}
+.erow .r .nw + .nw { margin-left: 0; }
+@media (max-width: 760px) { .live-figure { flex-wrap: wrap; } .live-won { width: 88px; } }
+/* phones: "+0.0313 SOL" and "+6 free tickets" take a line each in the result column */
+@media (max-width: 760px) { .erow .r .w > .nw { display: block; } }
+@media (max-width: 760px) { .rk-foot .rk-sold::before { content: none; } }

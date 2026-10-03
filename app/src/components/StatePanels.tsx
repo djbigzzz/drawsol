@@ -10,7 +10,7 @@ function Head() {
   return (
     <>
       <div className="tk-head">
-        <span className="t-ticket-head">DrawSol · grand draw</span>
+        <span className="t-ticket-head">DrawSol · ticket office</span>
         <span className="t-serial c-ink-3">Nº ––––</span>
       </div>
       <span className="tk-headrule" aria-hidden="true">
@@ -65,10 +65,11 @@ export function RpcError() {
   );
 }
 
-export function NoDraw({ reason }: { reason: "no-program" | "no-config" | "no-draws" }) {
+export function NoDraw({ reason }: { reason: "no-program" | "no-config" | "upgrading" | "no-draws" }) {
   const copy = {
     "no-program": "The DrawSol program isn’t deployed on devnet yet.",
     "no-config": "The program is deployed but not set up yet.",
+    upgrading: "The program on devnet is still the previous version; this page reads the new one, so it shows no draw until the upgrade is done.",
     "no-draws": "The program is live, but no draw has been opened yet.",
   }[reason];
   return (
@@ -82,14 +83,14 @@ export function NoDraw({ reason }: { reason: "no-program" | "no-config" | "no-dr
               No draw is open yet.
             </h1>
             <p className="t-body c-ink-2" style={{ marginTop: 16, maxWidth: "34em" }}>
-              {copy} When one opens, its prize is locked in the vault before the first ticket sells, and this page shows it straight from the chain.
+              {copy} When one opens, this page shows it straight from the chain: its pot or escrowed prize, its tickets and its draw time.
             </p>
           </div>
           <div>
             <p className="t-label">Every draw promises</p>
             <ul className="promise-list">
-              <li>The prize is locked before the first ticket sells.</li>
-              <li>It is drawn at sell-out or a fixed deadline.</li>
+              <li>Every paid ticket is split on-chain, house share included.</li>
+              <li>It is drawn at a fixed time, never early, never extended.</li>
               <li>Nobody chooses the randomness (ORAO VRF).</li>
               <li>Anyone can run and settle it.</li>
             </ul>

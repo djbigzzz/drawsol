@@ -8,8 +8,10 @@ import type {
   EntryView,
   LoadState,
   PlayerView,
+  ProfileView,
   RandomnessView,
 } from "@/lib/types";
+import type { TierSpec } from "@/lib/fairness";
 import type { HumanError } from "@/lib/errors";
 import type { TxPhase } from "@/lib/tx";
 
@@ -23,18 +25,29 @@ export interface Costs {
   oraoFee: bigint | null;
   entryRent: bigint | null;
   playerRent: bigint | null;
+  /** the wallet's Profile account (credits, play limits), created on its first entry */
+  profileRent: bigint | null;
 }
 
 export interface DrawSolData {
   load: LoadState;
   config: ConfigView | null;
+  /** every v3 draw, newest id first */
   draws: DrawView[];
+  /** legacy v2 draws still on chain (read-only history; closed at the cutover, then empty) */
+  legacyDraws: DrawView[];
+  /** the draw this page shows: chosen with select(), else the catalogue's default */
   current: DrawView | null;
+  /** show another draw (home: the catalogue; /live: ?n=). null returns to the default. */
+  select: (id: number | null) => void;
   vaultLamports: bigint | null;
   entries: EntryView[];
   entriesState: "loading" | "error" | "ready";
   wallet: WalletView | null;
   player: PlayerView | null;
+  /** the wallet's global Profile: free-ticket credits and play limits (null = never created) */
+  profile: ProfileView | null;
+  profileState: "loading" | "error" | "ready";
   myEntries: EntryView[];
   /** read state of `player` + `myEntries` for the connected wallet; show no wallet counts unless "ready" */
   myState: "loading" | "error" | "ready";
@@ -54,8 +67,8 @@ export interface DrawSolData {
   /** every Entry account of the program, all draws (winners feed and counters) */
   allEntries: EntryView[];
   allEntriesState: "loading" | "error" | "ready";
-  /** every Entry account of one draw (the per-draw page) */
-  fetchDrawEntries: (draw: PublicKey) => Promise<EntryView[]>;
+  /** every Entry account of one draw (the per-draw page; legacy v2 draws read through the v2 IDL) */
+  fetchDrawEntries: (draw: DrawView) => Promise<EntryView[]>;
   /**
    * finds the settle_draw transaction of a settled draw (signature); null when the RPC has no such
    * transaction indexed. Throws when the search itself fails, so the UI can say so instead.
@@ -63,6 +76,8 @@ export interface DrawSolData {
   findSettleTx: (draw: DrawView) => Promise<string | null>;
   /** reads an ORAO request account's randomness (for recompute) */
   readOrao: (address: PublicKey) => Promise<Uint8Array | null>;
+  /** fixture builds only: hold the /live barcode roll at this point (0–1) for a still frame */
+  stillRoll?: number;
 }
 
 export const DataContext = createContext<DrawSolData | null>(null);
@@ -87,24 +102,46 @@ export interface RevealSession {
   revealTx?: string;
   /** read from Entry.tiers after the reveal tx; never invented */
   tiers?: number[];
-  instantPaid?: bigint;
+  /** instant SOL paid, read from Entry.sol_paid */
+  solPaid?: bigint;
+  /** free-ticket credits won, read from Entry.credits_won */
+  creditsWon?: number;
+  /** the pool snapshot read from the entry: SOL tiers pay a share of it */
+  poolSnapshot?: bigint;
+  /** a free entry (one ticket) rather than a purchase */
+  free?: boolean;
   error?: HumanError;
-  /** tier amounts in lamports from the draw account */
-  tierAmounts: bigint[];
+  /** the draw's instant tiers (odds, kind, value) */
+  tierSpecs: TierSpec[];
   /** the entry's fulfilled ORAO randomness (64 bytes), for per-ticket rolls and stamp ink */
   randomness?: Uint8Array;
   /** fixtures only: how many stubs are already turned */
   initialShown?: number;
 }
 
-export type ActionKey = "buy" | "free" | "airdrop" | "run" | "settle" | "cancel" | `refund:${string}` | `reveal:${string}`;
+export type ActionKey =
+  | "buy"
+  | "free"
+  | "airdrop"
+  | "run"
+  | "settle"
+  | "cancel"
+  | "limit"
+  | "exclude"
+  | `refund:${string}`
+  | `reveal:${string}`;
 
 export interface Actions {
   phase: Partial<Record<ActionKey, TxPhase>>;
   errors: Partial<Record<ActionKey, HumanError | null>>;
   lastSig: Partial<Record<ActionKey, string>>;
-  buy: (quantity: number) => void;
+  /** quantity tickets, of which useCredits are paid with free-ticket credits */
+  buy: (quantity: number, useCredits: number) => void;
   claimFree: () => void;
+  /** set_limit: lamports per 30-day period, 0 = none (a raise or removal waits 72 h) */
+  setLimit: (lamports: bigint) => void;
+  /** self_exclude until a unix time; it can only be extended */
+  selfExclude: (until: number) => void;
   /** devnet only: ask the faucet for SOL from this browser (connection.requestAirdrop), then confirm it */
   airdrop: () => void;
   runDraw: () => void;

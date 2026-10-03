@@ -3,16 +3,16 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
-import { canCancel, phaseOf, remaining, walletAllowance } from "@/lib/derive";
-import { oneIn, sol, ticketNo, ticketRange, utcLabel } from "@/lib/format";
+import { anyoneCanRun, cancelReason, cancelsAtRequest, canCancel, grandPrize, limitsOf, phaseOf, publicFrom, remaining, walletAllowance, type Limits } from "@/lib/derive";
+import { clock, oneIn, shortDate, sol, ticketNo, ticketRange, utcLabel } from "@/lib/format";
 import { AIRDROP_LAMPORTS, CANCEL_GRACE_SECS, FAUCET_URL, LOW_BALANCE_LAMPORTS, SOLFAUCET_URL } from "@/lib/config";
 import { inkAt } from "@/lib/print";
-import type { DrawView } from "@/lib/types";
+import type { DrawView, EntryView } from "@/lib/types";
 import { Busy, Check, ErrorNote, inFlight, Minus, Plus, ProofLink } from "./bits";
 import { useBuy, type BuyMode } from "./BuyContext";
 import { AdultRow, ConfirmStep, Guarantee } from "./ConfirmStep";
 import { FeeLine, useFees } from "./Fee";
-import { plural, solRound, stampDay } from "./fmt";
+import { kindName, plural, solRound, stampDay, prizeFig } from "./fmt";
 import { Stamp } from "./print/Stamp";
 import { PenLoop, PICKS } from "./Picks";
 import { CarbonSlip } from "./print/CarbonSlip";
@@ -21,20 +21,96 @@ const AIRDROP_SOL = sol(BigInt(AIRDROP_LAMPORTS), 0, 2);
 
 /** Which buy button the stub and the bar show, in priority order (DESIGN.md §5.5). */
 export function useBuyButton() {
-  const { current: d, wallet, player } = useDrawSol();
+  const { current: d, wallet, player, profile, now } = useDrawSol();
   const { disabledReason } = useActions();
-  const { qty } = useBuy();
+  const { paidPart, creditPart } = useBuy();
   const fees = useFees();
   if (!d) return null;
-  const allowance = walletAllowance(d, player);
-  const subtotal = d.ticketPrice * BigInt(qty);
+  const allowance = walletAllowance(d, player, creditPart);
+  // only the paid part costs SOL; credit tickets are free
+  const subtotal = d.ticketPrice * BigInt(paidPart);
+  const lim = limitsOf(wallet ? profile : null, now);
   if (!wallet) return { kind: "connect" as const, subtotal };
+  if (lim.excluded) return { kind: "excluded" as const, subtotal, lim };
   if (allowance.wallet === 0) return { kind: "cap" as const, subtotal, held: allowance.held };
+  if (lim.headroom !== null && subtotal > lim.headroom) return { kind: "limit" as const, subtotal, lim };
   if (wallet.balance !== null && wallet.balance < subtotal + (fees ?? BigInt(0)))
     return { kind: "low" as const, subtotal, balance: wallet.balance, need: fees !== null ? subtotal + fees : null };
   if (disabledReason) return { kind: "disabled" as const, subtotal, reason: disabledReason };
-  if (remaining(d) === 0) return { kind: "disabled" as const, subtotal, reason: "Every ticket has sold." };
+  if (remaining(d) === 0) return { kind: "disabled" as const, subtotal, reason: "Every paid ticket has sold." };
   return { kind: "buy" as const, subtotal };
+}
+
+/** "Buy 5 tickets · 0.02 SOL", or with only credits "Use 3 free tickets" (the total is the paid part only). */
+export function buyLabel(qty: number, paid: number, subtotal: bigint, short = false) {
+  if (paid === 0) return short ? `Use ${qty} free` : `Use ${qty} free ${plural(qty, "ticket", "tickets")}`;
+  return short ? `Buy ${qty} · ${sol(subtotal, 2, 4)} SOL` : `Buy ${qty} ${plural(qty, "ticket", "tickets")} · ${sol(subtotal, 2, 4)} SOL`;
+}
+
+/** Why a wallet can't buy right now because of its own play limits, in plain words, with the way to them. */
+export function LimitNote({ kind, lim, price }: { kind: "excluded" | "limit"; lim: Limits; price: bigint }) {
+  if (kind === "excluded")
+    return (
+      <p className="helper t-small limit-note">
+        This wallet is taking a break until <span className="nw">{utcLabel(lim.excludedUntil)}</span>, as it asked. The program won’t sell it tickets or free
+        entries before then.{" "}
+        <a className="tbtn" href="#limits">
+          Play limits
+        </a>
+      </p>
+    );
+  const left = lim.headroom ?? BigInt(0);
+  return (
+    <p className="helper t-small limit-note">
+      You’ve spent <span className="nw">{sol(lim.spent, 2, 4)}</span> of your <span className="nw">{sol(lim.limit, 2, 4)} SOL</span> play limit in this 30-day
+      period
+      {left >= price ? (
+        <>
+          , so you can pay for {Number(left / price)} more {plural(Number(left / price), "ticket", "tickets")} until it resets
+        </>
+      ) : (
+        <>, so there’s no room for a paid ticket until it resets</>
+      )}
+      {lim.periodEnd ? (
+        <>
+          {" "}
+          on <span className="nw">{shortDate(lim.periodEnd)}</span>
+        </>
+      ) : null}
+      .{" "}
+      <a className="tbtn" href="#limits">
+        Play limits
+      </a>
+    </p>
+  );
+}
+
+/** "You have 3 free tickets" and the "use credits" control: the quantity splits between credits and paid. */
+function CreditsRow() {
+  const { credits, useCredits, setUseCredits, creditPart, paidPart, qty } = useBuy();
+  if (credits <= 0) return null;
+  return (
+    <div className="credits">
+      <p className="t-body credits-have">
+        You have <b className="nw">{credits} free {plural(credits, "ticket", "tickets")}</b>, won as instant prizes.
+      </p>
+      <label className="age credits-use">
+        <input type="checkbox" checked={useCredits} onChange={(e) => setUseCredits(e.target.checked)} />
+        <span>
+          Use credits{" "}
+          <span className="sub">
+            {useCredits
+              ? paidPart === 0
+                ? qty === 1
+                  ? "this ticket is free"
+                  : `all ${qty} are free`
+                : `${creditPart} free, ${paidPart} paid`
+              : "pay for every ticket"}
+          </span>
+        </span>
+      </label>
+    </div>
+  );
 }
 
 /**
@@ -58,7 +134,8 @@ export function BuyPanel() {
   return (
     <div className="stub" id="buy" aria-label={ph === "selling" ? "Enter the draw" : "The draw"}>
       {ph === "selling" && <Selling d={d} />}
-      {ph === "due" && <Due d={d} />}
+      {ph === "closed" && <Closed d={d} />}
+      {ph === "due" && <Due d={d} now={now} />}
       {ph === "drawing" && <Drawing d={d} now={now} />}
       {ph === "settled" && <Settled d={d} />}
       {ph === "cancelled" && <Cancelled d={d} />}
@@ -157,14 +234,14 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
   // this wallet's counts are shown only once its accounts have been read
   const mineRead = myState === "ready";
   const spent = player?.spent ?? myEntries.reduce((n, e) => n + e.paidLamports, BigInt(0));
-  const won = player?.won ?? myEntries.reduce((n, e) => n + e.instantPaid, BigInt(0));
-  const { qty, setQty, maxQ, openConfirm, connectThenConfirm } = useBuy();
+  const won = player?.won ?? myEntries.reduce((n, e) => n + e.solPaid, BigInt(0));
+  const { qty, setQty, maxQ, openConfirm, connectThenConfirm, paidPart, creditPart } = useBuy();
   const bb = useBuyButton();
   const low = useLowBalance();
-  const allowance = walletAllowance(d, player);
+  const allowance = walletAllowance(d, player, creditPart);
   const held = player?.tickets ?? myEntries.reduce((n, e) => n + e.count, 0);
-  const subtotal = d.ticketPrice * BigInt(qty);
-  const total = `${sol(subtotal, 2, 4)} SOL`;
+  const subtotal = d.ticketPrice * BigInt(paidPart);
+  const label = buyLabel(qty, paidPart, subtotal);
   // the pen only draws on when you choose; not on load
   const [inked, setInked] = useState(false);
   const choose = (n: number) => {
@@ -199,11 +276,17 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
     case "cap":
       btn = { label: `Wallet limit reached (${bb.held} of ${d.maxPerWallet})`, disabled: true };
       break;
+    case "excluded":
+      btn = { label: `Taking a break until ${shortDate(bb.lim.excludedUntil)}`, disabled: true };
+      break;
+    case "limit":
+      btn = { label: "Over your play limit", disabled: true };
+      break;
     case "disabled":
-      btn = { label: `Buy ${qty} ${plural(qty, "ticket", "tickets")} · ${total}`, disabled: true };
+      btn = { label, disabled: true };
       break;
     default:
-      btn = { label: `Buy ${qty} ${plural(qty, "ticket", "tickets")} · ${total}`, onClick: openConfirm, disabled: false };
+      btn = { label, onClick: openConfirm, disabled: false };
   }
   const airLabel = ap === "simulating" ? "Asking the devnet faucet…" : ap === "confirming" ? "Confirming on devnet…" : "Get devnet SOL";
   const arrived = ap === "done" && lastSig.airdrop && !low;
@@ -225,6 +308,8 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
       )}
       {/* below 1024px the bar holds the buttons; the stub states the guarantee and explains */}
       {!controls && !capped && <Guarantee d={d} className="g-top" />}
+      {!controls && (bb?.kind === "excluded" || bb?.kind === "limit") && <LimitNote kind={bb.kind} lim={bb.lim} price={d.ticketPrice} />}
+      {!controls && !capped && bb?.kind !== "excluded" && <CreditsRow />}
       {!controls && low && <DevnetSol low={low.balance} help={lowHelp} action={bb?.kind !== "low"} />}
       {controls && !capped && (
         <div>
@@ -258,6 +343,7 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
               </li>
             )}
           </ul>
+          {bb?.kind !== "excluded" && <CreditsRow />}
           <div className="fee-row">
             <FeeLine />
           </div>
@@ -279,6 +365,7 @@ function Pick({ d, controls }: { d: DrawView; controls: boolean }) {
           ) : (
             <>
               {bb?.kind === "disabled" && <p className="helper t-fine">{bb.reason}</p>}
+              {(bb?.kind === "excluded" || bb?.kind === "limit") && <LimitNote kind={bb.kind} lim={bb.lim} price={d.ticketPrice} />}
               <Guarantee d={d} />
               {low && <DevnetSol low={low.balance} action />}
             </>
@@ -406,8 +493,10 @@ function DevnetSol({ low, help, action }: { low: bigint; help?: ReactNode; actio
  * interim copy for today's program: a free entry is one ticket in the grand draw and has no instant roll.
  */
 function FreeEntry({ d, controls, sheet = false, headingId }: { d: DrawView; controls: boolean; sheet?: boolean; headingId?: string }) {
-  const { wallet, player, myEntries, myState, costs } = useDrawSol();
+  const { wallet, player, myEntries, myState, costs, profile, profileState, now } = useDrawSol();
   const { claimFree, phase, errors, clearError, disabledReason } = useActions();
+  const lim = limitsOf(wallet ? profile : null, now);
+  const rolls = d.kind === "pot" && d.iwDenominator > 0;
   const { adultRemembered, rememberAdult, forgetAdult, closeConfirm } = useBuy();
   const { setVisible } = useWalletModal();
   const low = useLowBalance();
@@ -433,7 +522,11 @@ function FreeEntry({ d, controls, sheet = false, headingId }: { d: DrawView; con
   const busy = inFlight(fp);
   const ageOk = adultRemembered || adult;
   // what the claimant's wallet pays: rent for the entry record (+ the player record the first time), from chain
-  const rent = costs.entryRent !== null && read && (player || costs.playerRent !== null) ? costs.entryRent + (player ? BigInt(0) : costs.playerRent ?? BigInt(0)) : null;
+  const rent =
+    costs.entryRent !== null && read && profileState === "ready" && (player || costs.playerRent !== null) && (profile || costs.profileRent !== null)
+      ? costs.entryRent + (player ? BigInt(0) : costs.playerRent ?? BigInt(0)) + (profile ? BigInt(0) : costs.profileRent ?? BigInt(0))
+      : null;
+  const fee = rolls && costs.oraoFee !== null ? costs.oraoFee : null;
 
   const claim = () => {
     if (!ageOk || busy) return;
@@ -457,8 +550,14 @@ function FreeEntry({ d, controls, sheet = false, headingId }: { d: DrawView; con
       <p className="free-done t-body">
         {mine ? (
           <>
-            Your free entry is ticket <span className="nw">{ticketNo(mine.firstTicket)}</span>, in the grand draw for{" "}
-            <span className="nw">{sol(d.prizeLamports, 0, 4)} SOL</span>.
+            Your free entry is ticket <span className="nw">{ticketNo(mine.firstTicket)}</span>,{" "}
+            {d.kind === "pot" ? (
+              <>in the draw for the pot{mine.revealed ? "" : ", with its instant result still sealed"}.</>
+            ) : (
+              <>
+                in the draw for <span className="nw">{prizeFig(grandPrize(d))} SOL</span>.
+              </>
+            )}
           </>
         ) : (
           <>This wallet has claimed its free entry for Draw Nº {d.id}.</>
@@ -480,7 +579,9 @@ function FreeEntry({ d, controls, sheet = false, headingId }: { d: DrawView; con
         </button>
       );
     } else {
-      const reason = atCap
+      const reason = lim.excluded
+        ? `This wallet is taking a break until ${utcLabel(lim.excludedUntil)}, so it can’t claim a free entry before then.`
+        : atCap
         ? `This wallet holds ${d.maxPerWallet} of ${d.maxPerWallet} tickets, the most one wallet can hold, so there’s no room for a free entry.`
         : !read
           ? myState === "error"
@@ -495,7 +596,7 @@ function FreeEntry({ d, controls, sheet = false, headingId }: { d: DrawView; con
             id={sheet ? undefined : "stub-buy"}
             className="btn btn-block btn-56 claim"
             onClick={claim}
-            disabled={!ageOk || busy || atCap || !read || !!disabledReason}
+            disabled={!ageOk || busy || atCap || lim.excluded || !read || !!disabledReason}
           >
             {busy && <Busy />}
             {fp === "simulating" ? "Checking with the program…" : fp === "signing" ? "Approve in your wallet…" : fp === "confirming" ? "Confirming on devnet…" : "Claim free entry"}
@@ -503,7 +604,11 @@ function FreeEntry({ d, controls, sheet = false, headingId }: { d: DrawView; con
           {!ageOk && !busy && !reason && <p className="c-hint t-fine">Confirm you’re 18 or older to claim.</p>}
           {reason && <p className="c-hint t-fine">{reason}</p>}
           {disabledReason && <p className="c-hint t-fine">{disabledReason}</p>}
-          <p className="c-fine t-fine">One signature. The entry goes straight into the grand draw; there is nothing to reveal.</p>
+          <p className="c-fine t-fine">
+            {rolls
+              ? "Then sign once more, about 2 s later, to reveal its instant result and take any win."
+              : "One signature. The entry goes straight into the draw; there is nothing to reveal."}
+          </p>
         </>
       );
     }
@@ -521,7 +626,11 @@ function FreeEntry({ d, controls, sheet = false, headingId }: { d: DrawView; con
           </button>
         </div>
       )}
-      <p className="free-lead t-body">A free entry has the same chance of the grand prize as one paid ticket. Free entries don’t get an instant-win roll yet.</p>
+      <p className="free-lead t-body">
+        {rolls
+          ? "A free entry has the same chance as a paid ticket, including instant wins."
+          : "A free entry has the same chance of the grand prize as one paid ticket."}
+      </p>
       <dl className="ledger">
         <div>
           <dt>Free entries left in Draw Nº {d.id}</dt>
@@ -535,14 +644,20 @@ function FreeEntry({ d, controls, sheet = false, headingId }: { d: DrawView; con
         </div>
       </dl>
       <p className="free-rules t-small">
-        One per wallet while sales are open, no purchase needed. It’s one ticket in the grand draw, numbered like any other, and counts toward the{" "}
-        <span className="nw">{d.maxPerWallet}-ticket</span> wallet limit.{" "}
+        One per wallet while sales are open, no purchase needed. It’s one ticket, numbered like any other, and counts toward the{" "}
+        <span className="nw">{d.maxPerWallet}-ticket</span> wallet limit{d.kind === "headline" ? " but not toward the minimum the draw needs" : ""}.{" "}
         {rent !== null ? (
           <>
-            There’s no ticket price: your wallet pays only Solana rent for the entry record, <span className="nw">≈{solRound(rent, 4, 1)} SOL</span>, plus the network fee.
+            There’s no ticket price: your wallet pays only Solana rent for the entry record, <span className="nw">≈{solRound(rent, 4, 1)} SOL</span>
+            {fee !== null ? (
+              <>
+                , ORAO’s randomness fee, <span className="nw">≈{solRound(fee, 4, 1)} SOL</span>,
+              </>
+            ) : null}{" "}
+            and the network fee.
           </>
         ) : (
-          <>There’s no ticket price: your wallet pays only Solana rent for the entry record and the network fee, shown before you sign.</>
+          <>There’s no ticket price: your wallet pays only Solana rent for the entry record{rolls ? ", the randomness fee" : ""} and the network fee, shown before you sign.</>
         )}
       </p>
       {action}
@@ -562,7 +677,7 @@ function YourEntry() {
   if (!wallet) return null;
   const n = myEntries.reduce((s, e) => s + e.count, 0);
   if (n === 0) return null;
-  const won = myEntries.reduce((s, e) => s + e.instantPaid, BigInt(0));
+  const won = myEntries.reduce((s, e) => s + e.solPaid, BigInt(0));
   return (
     <dl className="ledger">
       <div>
@@ -581,16 +696,72 @@ function YourEntry() {
   );
 }
 
-function Due({ d }: { d: DrawView }) {
+/** What one entry gets back from claim_refund: what it paid less any instant SOL it already won. */
+export const refundOf = (e: EntryView) => (e.paidLamports > e.solPaid ? e.paidLamports - e.solPaid : BigInt(0));
+
+/** Sales are over and the draw waits for its time (sell-out ends sales early; the draw is never early). */
+function Closed({ d }: { d: DrawView }) {
+  const soldOut = d.paidTickets >= d.ticketCap;
+  const undersold = d.kind === "headline" && d.paidTickets < d.minTickets;
+  return (
+    <>
+      <div className="stub-head">
+        <h2 className="t-stub-head">Sales closed</h2>
+      </div>
+      <span className="dbl" aria-hidden="true" />
+      <Stamp
+        kind="closed"
+        className="stamp-closed"
+        seed={inkAt(d.address.toBytes(), 8)}
+        label="Stamped: sales closed"
+        top={`SALES · DRAW Nº ${d.id}`}
+        bottom={soldOut ? "SOLD OUT" : stampDay(d.closesAt, true)}
+      />
+      <p className="stub-body t-small due-body">
+        {soldOut ? "Every paid ticket has sold." : "Sales closed at the deadline."} The draw waits for its time,{" "}
+        <span className="nw">{utcLabel(d.drawAt)}</span>: it is never drawn early.
+        {undersold && (
+          <>
+            {" "}
+            With fewer than {d.minTickets} paid tickets then, it is cancelled and everyone is refunded in full.
+          </>
+        )}
+      </p>
+      <ol className="steps">
+        <li className="todo">
+          <span className="mk" aria-hidden="true">1</span>
+          <p className="ttl">At the draw time the keeper asks ORAO for randomness</p>
+        </li>
+        <li className="todo">
+          <span className="mk" aria-hidden="true">2</span>
+          <p className="ttl">Randomness lands, usually in a few seconds</p>
+        </li>
+        <li className="todo">
+          <span className="mk" aria-hidden="true">3</span>
+          <p className="ttl">
+            Anyone settles; <span className="nw">{prizeFig(grandPrize(d))} SOL</span> to the winning ticket
+          </p>
+        </li>
+      </ol>
+      <YourEntry />
+    </>
+  );
+}
+
+/** The draw time has passed: the keeper (or the operator) runs it first, then anyone may. */
+function Due({ d, now }: { d: DrawView; now: number }) {
   const { phase, errors, runDraw, clearError, disabledReason } = useActions();
-  const { costs } = useDrawSol();
+  const { costs, config, wallet } = useDrawSol();
   // below 1024px the sticky bar owns the action; the stub explains it (one control, as when selling)
   const { barMode } = useBuy();
   const ph = phase.run;
   const busy = inFlight(ph);
   const soldOut = d.paidTickets >= d.ticketCap;
+  const open = anyoneCanRun(d, now);
+  const privileged = !!wallet && (d.authority.equals(wallet.address) || (!!config?.keeper && config.keeper.equals(wallet.address)));
+  const cancels = cancelsAtRequest(d);
   const empty = d.nextTicket === 0;
-  const verb = empty ? "Close the draw" : "Run the draw";
+  const verb = empty ? "Close the draw" : cancels ? "Cancel and refund" : "Run the draw";
   return (
     <>
       <div className="stub-head">
@@ -608,16 +779,28 @@ function Due({ d }: { d: DrawView }) {
       />
       <p className="stub-body t-small due-body">
         {empty ? (
-          <>No tickets were sold. Closing returns the prize and reserve to the operator. Anyone can do it.</>
+          <>No tickets were sold, so there is nothing to draw.{d.kind === "headline" ? " Closing it returns the prize to the operator." : ""}</>
+        ) : cancels ? (
+          <>
+            Only {d.paidTickets} of the {d.minTickets} paid tickets it needed sold. Running it now cancels it: the prize goes back to the operator and every paid ticket
+            can be refunded in full.
+          </>
         ) : (
-          <>Anyone can run it. The randomness comes from ORAO, and nobody can choose it, us included.</>
+          <>The randomness comes from ORAO, and nobody can choose it, us included.</>
+        )}{" "}
+        {open ? (
+          <>Anyone can do it now.</>
+        ) : (
+          <>
+            The operator’s keeper does it at the draw time; if it hasn’t by <span className="nw">{clock(publicFrom(d))} UTC</span>, anyone can.
+          </>
         )}
       </p>
-      {!empty && (
+      {!cancels && (
         <ol className="steps">
           <li className="now">
             <span className="mk" aria-hidden="true">1</span>
-            <p className="ttl">You ask ORAO for randomness</p>
+            <p className="ttl">Ask ORAO for randomness</p>
           </li>
           <li className="todo">
             <span className="mk" aria-hidden="true">2</span>
@@ -626,18 +809,24 @@ function Due({ d }: { d: DrawView }) {
           <li className="todo">
             <span className="mk" aria-hidden="true">3</span>
             <p className="ttl">
-              Anyone settles; <span className="nw">{sol(d.prizeLamports, 0, 4)} SOL</span> to the winning ticket
+              Anyone settles; <span className="nw">{prizeFig(grandPrize(d))} SOL</span> to the winning ticket
             </p>
           </li>
         </ol>
       )}
       {!barMode && (
-        <button type="button" className="btn btn-block btn-56" style={{ marginTop: empty ? 24 : 8 }} onClick={runDraw} disabled={busy || !!disabledReason}>
+        <button
+          type="button"
+          className="btn btn-block btn-56"
+          style={{ marginTop: cancels ? 24 : 8 }}
+          onClick={runDraw}
+          disabled={busy || !!disabledReason || !(open || privileged)}
+        >
           {busy && <Busy />}
-          {ph === "simulating" ? "Checking with the program…" : ph === "signing" ? "Approve in your wallet…" : ph === "confirming" ? "Confirming…" : verb}
+          {ph === "simulating" ? "Checking with the program…" : ph === "signing" ? "Approve in your wallet…" : ph === "confirming" ? "Confirming…" : open || privileged ? verb : `Open to anyone from ${clock(publicFrom(d))} UTC`}
         </button>
       )}
-      {costs.oraoFee !== null && !empty && <p className="fee-plain">+ ≈{solRound(costs.oraoFee, 4, 1)} SOL randomness fee, paid by you</p>}
+      {costs.oraoFee !== null && !cancels && (open || privileged) && <p className="fee-plain">+ ≈{solRound(costs.oraoFee, 4, 1)} SOL randomness fee, paid by you</p>}
       {disabledReason && <p className="helper t-fine">{disabledReason}</p>}
       {errors.run && (
         <div style={{ marginTop: 16 }}>
@@ -685,7 +874,7 @@ function Drawing({ d, now }: { d: DrawView; now: number }) {
             3
           </span>
           <p className="dt" style={{ color: "var(--ink)" }}>
-            Settle pays {sol(d.prizeLamports, 0, 4)} SOL to the winning ticket. Anyone can press it.
+            Settle pays {prizeFig(grandPrize(d))} SOL to the winning ticket. Anyone can press it.
           </p>
         </li>
       </ol>
@@ -707,14 +896,14 @@ function Drawing({ d, now }: { d: DrawView; now: number }) {
             <>Randomness never arrived within 48 h. Anyone can cancel now; every paid ticket becomes refundable.</>
           ) : (
             <>
-              If randomness hasn’t arrived by <span className="nw">{utcLabel(d.closesAt + CANCEL_GRACE_SECS)}</span>, anyone can cancel and every paid ticket is
+              If randomness hasn’t arrived by <span className="nw">{utcLabel(d.drawAt + CANCEL_GRACE_SECS)}</span>, anyone can cancel and every paid ticket is
               refunded.
             </>
           )}
         </p>
       )}
       {ready && cancellable && (
-        <p className="safety t-fine">More than 48 h have passed since the close, so the program also lets anyone cancel; settling pays the winner instead.</p>
+        <p className="safety t-fine">More than 48 h have passed since the draw time, so the program also lets anyone cancel; settling pays the winner instead.</p>
       )}
       {cancellable && !barMode && (
         <button type="button" className="btn btn-sec btn-block" style={{ marginTop: 16 }} onClick={cancel} disabled={inFlight(cp) || !!disabledReason}>
@@ -733,10 +922,11 @@ function Drawing({ d, now }: { d: DrawView; now: number }) {
 }
 
 function Settled({ d }: { d: DrawView }) {
-  const { myEntries, myState, wallet } = useDrawSol();
+  const { myEntries, myState, wallet, draws } = useDrawSol();
   const mine = myEntries.some((e) => e.firstTicket <= d.winningTicket && d.winningTicket < e.firstTicket + e.count);
   // "not one of yours" only once this wallet's tickets have actually been read
   const notMine = !!wallet && myState === "ready";
+  const next = draws.find((x) => x.kind === d.kind && x.status === "open" && x.id !== d.id);
   return (
     <>
       <div className="stub-head">
@@ -746,14 +936,20 @@ function Settled({ d }: { d: DrawView }) {
       <p className="stub-body t-body" style={{ color: "var(--ink)" }}>
         {mine ? (
           <>
-            You hold the winning ticket {ticketNo(d.winningTicket)}. <span className="c-red nw b">{sol(d.prizeLamports, 0, 4)} SOL</span> was paid to your wallet.
+            You hold the winning ticket {ticketNo(d.winningTicket)}. <span className="c-red nw b">{prizeFig(grandPrize(d))} SOL</span> was paid to your wallet.
           </>
         ) : (
           <>Ticket {ticketNo(d.winningTicket)} won.{notMine && " Not one of yours this time."}</>
         )}
       </p>
       <p className="t-small c-ink-2" style={{ marginTop: 16 }}>
-        A new draw will appear here when the operator opens one. There isn’t one yet.
+        {next ? (
+          <>
+            The next {kindName(d.kind)}, Nº {next.id}, draws on <span className="nw">{utcLabel(next.drawAt)}</span>.
+          </>
+        ) : (
+          <>The next {kindName(d.kind)} will appear here when it opens. There isn’t one yet.</>
+        )}
       </p>
       <CarbonSlip d={d} id="slip-current" />
     </>
@@ -764,11 +960,13 @@ function Cancelled({ d }: { d: DrawView }) {
   const { myEntries, wallet, myState } = useDrawSol();
   const { barMode } = useBuy();
   const paid = myEntries.filter((e) => !e.isFree);
-  const paidTickets = paid.reduce((n, e) => n + e.count, 0);
-  const owed = paid.filter((e) => !e.refunded).reduce((n, e) => n + e.paidLamports, BigInt(0));
-  const back = paid.filter((e) => e.refunded).reduce((n, e) => n + e.paidLamports, BigInt(0));
+  const paidTickets = paid.reduce((n, e) => n + e.paidCount, 0);
+  const owed = paid.filter((e) => !e.refunded).reduce((n, e) => n + refundOf(e), BigInt(0));
+  const back = paid.filter((e) => e.refunded).reduce((n, e) => n + refundOf(e), BigInt(0));
+  const credits = paid.filter((e) => !e.refunded).reduce((n, e) => n + e.creditCount, 0);
   const free = myEntries.find((e) => e.isFree);
   const empty = d.nextTicket === 0;
+  const why = cancelReason(d);
   return (
     <>
       <div className="stub-head">
@@ -777,8 +975,10 @@ function Cancelled({ d }: { d: DrawView }) {
       <span className="dbl" aria-hidden="true" />
       <p className="stub-body t-small">
         {empty
-          ? "Nobody bought a ticket, so the prize and reserve went back to the operator."
-          : "The randomness never arrived within 48 h of closing, so the draw was cancelled. Every paid ticket can be refunded in full. There’s no deadline."}
+          ? `Nobody bought a ticket, so there was nothing to draw${d.kind === "headline" ? " and the prize went back to the operator" : ""}.`
+          : why === "undersold"
+            ? `Only ${d.paidTickets} of the ${d.minTickets} paid tickets it needed sold by the draw time, so it was cancelled and the prize went back to the operator. Every paid ticket is refunded in full. There’s no deadline.`
+            : "The randomness never arrived within 48 h of the draw time, so the draw was cancelled. Every paid ticket can be refunded, less any instant SOL it already won. There’s no deadline."}
       </p>
       {!empty && (
         <>
@@ -790,13 +990,16 @@ function Cancelled({ d }: { d: DrawView }) {
                   <dt>
                     <span className="nw tab">{ticketRange(e.firstTicket, e.count)}</span> · {e.count} {plural(e.count, "ticket", "tickets")}
                   </dt>
-                  <dd className={e.refunded ? "c-ink-3" : ""}>{e.refunded ? "refunded" : `${sol(e.paidLamports, 2, 4)} SOL`}</dd>
+                  <dd className={e.refunded ? "c-ink-3" : ""}>
+                    {e.refunded ? "refunded" : `${sol(refundOf(e), 2, 4)} SOL`}
+                    {!e.refunded && e.creditCount > 0 ? ` + ${e.creditCount} ${plural(e.creditCount, "credit", "credits")}` : ""}
+                  </dd>
                 </div>
               ))}
               {paid.length > 4 && (
                 <div>
                   <dt>{paid.length - 4} more purchases</dt>
-                  <dd>{sol(paid.slice(4).filter((e) => !e.refunded).reduce((n, e) => n + e.paidLamports, BigInt(0)), 2, 4)} SOL</dd>
+                  <dd>{sol(paid.slice(4).filter((e) => !e.refunded).reduce((n, e) => n + refundOf(e), BigInt(0)), 2, 4)} SOL</dd>
                 </div>
               )}
               {free && (
@@ -804,12 +1007,14 @@ function Cancelled({ d }: { d: DrawView }) {
                   <dt>
                     Free entry <span className="nw tab">{ticketNo(free.firstTicket)}</span>
                   </dt>
-                  <dd className="c-ink-3">not refundable</dd>
+                  <dd className="c-ink-3">nothing to refund</dd>
                 </div>
               )}
               <div className="sum">
                 <dt>{back > BigInt(0) ? "Still to refund" : "Refundable to you"}</dt>
-                <dd>{sol(owed, 2, 4)} SOL</dd>
+                <dd>
+                  {sol(owed, 2, 4)} SOL{credits > 0 ? ` + ${credits} ${plural(credits, "credit", "credits")}` : ""}
+                </dd>
               </div>
             </dl>
           ) : (
@@ -874,7 +1079,7 @@ function useHasBar() {
   if (!d) return false;
   const ph = phaseOf(d, now);
   if (ph === "selling" || ph === "due" || ph === "drawing") return true;
-  if (ph === "cancelled") return !!wallet && myEntries.some((e) => !e.isFree && !e.refunded && e.paidLamports > BigInt(0));
+  if (ph === "cancelled") return !!wallet && myEntries.some((e) => !e.isFree && !e.refunded && refundOf(e) > BigInt(0));
   return false;
 }
 
@@ -887,11 +1092,12 @@ export function BarSpacer() {
 }
 
 function SellBar({ d }: { d: DrawView }) {
-  const { qty, setQty, maxQ, openConfirm, connectThenConfirm, step, mode } = useBuy();
+  const { qty, setQty, maxQ, openConfirm, connectThenConfirm, step, mode, paidPart } = useBuy();
   const { airdrop, phase, errors } = useActions();
   const bb = useBuyButton();
   if (!bb) return null;
   const total = `${sol(bb.subtotal, 2, 4)} SOL`;
+  const label = buyLabel(qty, paidPart, bb.subtotal, true);
   const ap = phase.airdrop;
   const stepper = (
     <div className="mini">
@@ -917,6 +1123,17 @@ function SellBar({ d }: { d: DrawView }) {
             {bb.kind === "cap" ? (
               <span className="bar-note t-small">
                 {bb.held} of {d.maxPerWallet} held
+              </span>
+            ) : bb.kind === "excluded" ? (
+              <span className="bar-note t-small">
+                On a break until <span className="nw">{shortDate(bb.lim.excludedUntil)}</span>
+              </span>
+            ) : bb.kind === "limit" ? (
+              <span className="bar-note t-small">
+                <a className="tbtn" href="#limits">
+                  Play limit
+                </a>{" "}
+                reached
               </span>
             ) : bb.kind === "low" ? (
               errors.airdrop ? (
@@ -950,6 +1167,10 @@ function SellBar({ d }: { d: DrawView }) {
               <button type="button" id="bar-buy" className="btn" disabled>
                 Limit reached
               </button>
+            ) : bb.kind === "excluded" || bb.kind === "limit" ? (
+              <button type="button" id="bar-buy" className="btn" disabled>
+                {bb.kind === "excluded" ? "Taking a break" : "Over your limit"}
+              </button>
             ) : bb.kind === "low" ? (
               <button type="button" id="bar-buy" className="btn" onClick={airdrop} disabled={inFlight(ap)}>
                 {inFlight(ap) && <Busy />}
@@ -962,9 +1183,9 @@ function SellBar({ d }: { d: DrawView }) {
                 className="btn"
                 onClick={openConfirm}
                 disabled={bb.kind === "disabled"}
-                aria-label={`Buy ${qty} ${plural(qty, "ticket", "tickets")} for ${total}`}
+                aria-label={paidPart === 0 ? `Use ${qty} free ${plural(qty, "ticket", "tickets")}` : `Buy ${qty} ${plural(qty, "ticket", "tickets")} for ${total}`}
               >
-                Buy {qty} · {total}
+                {label}
               </button>
             )}
           </>
@@ -987,7 +1208,7 @@ function FreeBarRow({ d }: { d: DrawView }) {
   if (claimed)
     return (
       <>
-        <span className="bar-note t-small">In the grand draw</span>
+        <span className="bar-note t-small">In the draw</span>
         <button type="button" id="bar-buy" className="btn" disabled>
           Claimed{mine ? ` · ${ticketNo(mine.firstTicket)}` : ""}
         </button>
@@ -1036,7 +1257,7 @@ function FreeBarRow({ d }: { d: DrawView }) {
 }
 
 function ActionBar({ d, ph }: { d: DrawView; ph: "due" | "drawing" | "cancelled" }) {
-  const { drawRandomness: r, myEntries, wallet, now } = useDrawSol();
+  const { drawRandomness: r, myEntries, wallet, now, config } = useDrawSol();
   const { phase, errors, runDraw, settle, cancel, disabledReason } = useActions();
   const failed = (k: "run" | "settle" | "cancel") =>
     errors[k] ? (
@@ -1051,11 +1272,14 @@ function ActionBar({ d, ph }: { d: DrawView; ph: "due" | "drawing" | "cancelled"
   if (ph === "due") {
     const p = phase.run;
     const busy = inFlight(p);
-    const verb = d.nextTicket === 0 ? "Close the draw" : "Run the draw";
+    const cancels = cancelsAtRequest(d);
+    const verb = d.nextTicket === 0 ? "Close the draw" : cancels ? "Cancel and refund" : "Run the draw";
+    const open = anyoneCanRun(d, now);
+    const privileged = !!wallet && (d.authority.equals(wallet.address) || (!!config?.keeper && config.keeper.equals(wallet.address)));
     return (
       <BarShell label="The draw">
-        {failed("run") ?? <span className="bar-note t-small">Sales closed</span>}
-        <button type="button" className="btn" onClick={runDraw} disabled={busy || !!disabledReason}>
+        {failed("run") ?? <span className="bar-note t-small">{open ? "Anyone can run it" : `Keeper’s turn until ${clock(publicFrom(d))} UTC`}</span>}
+        <button type="button" className="btn" onClick={runDraw} disabled={busy || !!disabledReason || !(open || privileged)}>
           {busy && <Busy />}
           {p === "simulating" ? "Checking…" : p === "signing" ? "Approve in your wallet…" : p === "confirming" ? "Confirming…" : verb}
         </button>
@@ -1099,7 +1323,7 @@ function ActionBar({ d, ph }: { d: DrawView; ph: "due" | "drawing" | "cancelled"
     );
   }
   // cancelled
-  const owed = myEntries.filter((e) => !e.isFree && !e.refunded).reduce((n, e) => n + e.paidLamports, BigInt(0));
+  const owed = myEntries.filter((e) => !e.isFree && !e.refunded).reduce((n, e) => n + refundOf(e), BigInt(0));
   if (!wallet || owed === BigInt(0)) return null;
   return (
     <BarShell label="Refunds">

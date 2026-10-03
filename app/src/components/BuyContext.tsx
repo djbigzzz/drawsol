@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
-import { remaining, walletAllowance } from "@/lib/derive";
+import { limitsOf, remaining, walletAllowance } from "@/lib/derive";
 
 export type BuyMode = "buy" | "free";
 
@@ -16,6 +16,14 @@ export interface BuyState {
   qty: number;
   setQty: (n: number) => void;
   maxQ: number;
+  /** free-ticket credits this wallet holds (its Profile) */
+  credits: number;
+  /** "use credits": pay part of the quantity with credits (on by default when there are any) */
+  useCredits: boolean;
+  setUseCredits: (v: boolean) => void;
+  /** of qty: tickets paid with credits, and tickets paid in SOL */
+  creditPart: number;
+  paidPart: number;
   mode: BuyMode;
   setMode: (m: BuyMode) => void;
   /** open the "Free entry" tab and bring it into view (the back of the ticket links here) */
@@ -75,7 +83,7 @@ export interface BuyInit {
 }
 
 export function BuyProvider({ children, init }: { children: ReactNode; init?: BuyInit }) {
-  const { current: d, wallet, player } = useDrawSol();
+  const { current: d, wallet, player, profile, now } = useDrawSol();
   const { session, lastSig } = useActions();
   const { setVisible } = useWalletModal();
   const mobile = useIsMobile();
@@ -87,7 +95,14 @@ export function BuyProvider({ children, init }: { children: ReactNode; init?: Bu
   const [adultRemembered, setAdult] = useState(false);
   const pending = useRef(false);
 
-  const maxQ = d ? (wallet ? walletAllowance(d, player).max : Math.min(d.maxPerTx, remaining(d))) : 0;
+  const [useCredits, setUseCredits] = useState(true);
+  const lim = limitsOf(wallet ? profile : null, now);
+  const credits = wallet ? lim.credits : 0;
+  const usable = useCredits ? credits : 0;
+  // the most one purchase can hold: the per-purchase and per-wallet caps, the paid tickets left plus usable
+  // credits, and (with a play limit) the paid tickets the limit still allows plus those credits
+  let maxQ = d ? (wallet ? walletAllowance(d, player, usable).max : Math.min(d.maxPerTx, remaining(d))) : 0;
+  if (d && lim.headroom !== null && d.ticketPrice > BigInt(0)) maxQ = Math.min(maxQ, Number(lim.headroom / d.ticketPrice) + usable);
 
   useEffect(() => setAdult(readAdult()), []);
   useEffect(() => {
@@ -180,10 +195,17 @@ export function BuyProvider({ children, init }: { children: ReactNode; init?: Bu
     setAdult(false);
   }, []);
 
+  const q = maxQ > 0 ? Math.min(qty, maxQ) : qty;
+  const creditPart = Math.min(usable, q);
   const value: BuyState = {
-    qty: maxQ > 0 ? Math.min(qty, maxQ) : qty,
+    qty: q,
     setQty,
     maxQ,
+    credits,
+    useCredits,
+    setUseCredits,
+    creditPart,
+    paidPart: q - creditPart,
     mode,
     setMode,
     showFree,

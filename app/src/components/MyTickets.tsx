@@ -3,13 +3,13 @@
 import type { ReactNode } from "react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
-import { tierAmount } from "@/lib/derive";
+import { grandPrize, tierCredits, tierSol } from "@/lib/derive";
 import { clock, shortDate, sol, ticketNo, ticketRange, utcLabel } from "@/lib/format";
-import { reserveUnlockAt } from "./InstantWins";
+import { refundOf } from "./BuyPanel";
 import { inkAt, ticketInk } from "@/lib/print";
 import type { DrawView, EntryView } from "@/lib/types";
 import { Addr, Busy, ErrorNote, inFlight, ProofLink, SectionGrid } from "./bits";
-import { plural } from "./fmt";
+import { plural, prizeFig } from "./fmt";
 import { Stamp } from "./print/Stamp";
 import { Stub, type StubState } from "./TicketStub";
 
@@ -58,7 +58,8 @@ export function MyTickets() {
 
   const tickets = player?.tickets ?? myEntries.reduce((n, e) => n + e.count, 0);
   const spent = player?.spent ?? myEntries.reduce((n, e) => n + e.paidLamports, BigInt(0));
-  const won = player?.won ?? myEntries.reduce((n, e) => n + e.instantPaid, BigInt(0));
+  const won = player?.won ?? myEntries.reduce((n, e) => n + e.solPaid, BigInt(0));
+  const wonCredits = player?.wonCredits ?? myEntries.reduce((n, e) => n + e.creditsWon, 0);
   // long rolls (more than 5) get a row each; the short ones, sealed or not, and the free entry share
   // one row side by side, so the same data keeps the same layout before and after a reveal
   const long = myEntries.filter((e) => !e.isFree && e.count > 5);
@@ -73,7 +74,7 @@ export function MyTickets() {
     d.status === "settled" ? (
       holdsWinner ? (
         <>
-          All {n} were in the grand draw, and you hold the winner, {win}.
+          All {n} were in the draw, and you hold the winner, {win}.
         </>
       ) : (
         <>
@@ -94,7 +95,7 @@ export function MyTickets() {
       )
     ) : (
       <>
-        All {n} {plural(n, "is", "are")} in the grand draw.
+        All {n} {plural(n, "is", "are")} in the draw.
       </>
     );
 
@@ -117,10 +118,14 @@ export function MyTickets() {
             <dt>Spent</dt>
             <dd>{sol(spent, 2, 4)} SOL</dd>
           </div>
-          <div className={won > BigInt(0) ? "won" : ""}>
-            <dt>Won so far</dt>
-            <dd>{sol(won, 2, 4)} SOL</dd>
-          </div>
+          {d.kind === "pot" && (
+            <div className={won > BigInt(0) ? "won" : ""}>
+              <dt>Won so far</dt>
+              <dd>
+                {sol(won, 2, 4)} SOL{wonCredits > 0 ? ` + ${wonCredits} free` : ""}
+              </dd>
+            </div>
+          )}
         </dl>
       }
     >
@@ -148,28 +153,32 @@ function Roll({ e, d }: { e: EntryView; d: DrawView }) {
   const vk = `reveal:${e.address.toBase58()}` as const;
   const rp = phase[rk];
   const refundBusy = inFlight(rp);
-  const sealed = !e.isFree && !e.revealed;
-  const canReveal = sealed && !d.reserveWithdrawn && d.status !== "cancelled";
+  const sealed = e.needsReveal && !e.revealed;
+  const canReveal = sealed && d.status !== "cancelled";
   const payoutTx = lastSig[vk];
-  const winsAmt = e.instantPaid;
-  const prize = sol(d.prizeLamports, 0, 4);
+  const winsAmt = e.solPaid;
+  const prize = prizeFig(grandPrize(d));
+  const owed = refundOf(e);
 
   const stateOf = (i: number): StubState => {
     const t = e.firstTicket + i;
     if (holds && t === d.winningTicket) return "drawn";
     if (e.refunded) return "refunded";
-    if (e.isFree) return "free";
+    if (!e.needsReveal) return e.isFree ? "free" : "entered";
     if (!e.revealed) return "sealed";
-    return e.tiers[i] > 0 ? "won" : "nowin";
+    const k = e.tiers[i];
+    if (k <= 0) return "nowin";
+    return d.iwTiers[k - 1] && tierCredits(d.iwTiers[k - 1]) > 0 && tierSol(d.iwTiers[k - 1], e.poolSnapshot) === BigInt(0) ? "credit" : "won";
   };
+  const what = e.isFree ? "Free entry" : e.creditCount > 0 && e.paidCount === 0 ? `${e.count} on credits` : e.creditCount > 0 ? `Bought ${e.paidCount} + ${e.creditCount} free` : `Bought ${e.count}`;
 
   return (
     <div className={`roll ${e.isFree ? "roll-free" : ""}`}>
       <p className="roll-cap">
-        <b>{e.isFree ? "Free entry" : `Bought ${e.count}`}</b>
+        <b>{what}</b>
         <span className="nw tab">{ticketRange(e.firstTicket, e.count)}</span>
-        {e.isFree ? (
-          <span>grand draw only</span>
+        {!e.needsReveal ? (
+          <span>{e.isFree ? "in the draw" : "no instant roll"}</span>
         ) : sealed ? (
           <span>sealed</span>
         ) : (
@@ -177,7 +186,15 @@ function Roll({ e, d }: { e: EntryView; d: DrawView }) {
             <span className="nw">
               {shortDate(e.createdAt)}, {clock(e.createdAt)} UTC
             </span>
-            {winsAmt > BigInt(0) ? <span className="won nw">won {sol(winsAmt, 2, 4)} SOL</span> : <span>no instant wins</span>}
+            {winsAmt > BigInt(0) || e.creditsWon > 0 ? (
+              <span className="won nw">
+                won {winsAmt > BigInt(0) ? `${sol(winsAmt, 2, 4)} SOL` : ""}
+                {winsAmt > BigInt(0) && e.creditsWon > 0 ? " + " : ""}
+                {e.creditsWon > 0 ? `${e.creditsWon} free ${plural(e.creditsWon, "ticket", "tickets")}` : ""}
+              </span>
+            ) : (
+              <span>no instant wins</span>
+            )}
             {payoutTx && <ProofLink tx={payoutTx}>Payout tx</ProofLink>}
           </>
         )}
@@ -192,7 +209,8 @@ function Roll({ e, d }: { e: EntryView; d: DrawView }) {
                 key={i}
                 serial={t}
                 state={st}
-                amount={st === "won" ? tierAmount(d, e.tiers[i]) : undefined}
+                amount={st === "won" ? tierSol(d.iwTiers[e.tiers[i] - 1], e.poolSnapshot) : undefined}
+                credits={st === "credit" ? tierCredits(d.iwTiers[e.tiers[i] - 1]) : undefined}
                 ink={st === "drawn" ? inkAt(d.randomness, 32) : ticketInk(e.address.toBytes(), t)}
                 prize={prize}
               />
@@ -212,11 +230,11 @@ function Roll({ e, d }: { e: EntryView; d: DrawView }) {
         {canReveal && (
           <>
             <p className="roll-note t-small">
-              The reveal transaction wasn’t sent after this purchase, so these results are still sealed. Anyone can send it; any wins are paid to you.
-            </p>
-            <p className="roll-note roll-due t-small">
-              Reveal by <span className="nw">{utcLabel(reserveUnlockAt(d))}</span>. From then the operator can withdraw the unwon reserve, and after that these
-              tickets can’t be paid.
+              The reveal transaction wasn’t sent after this {e.isFree ? "claim" : "purchase"}, so {e.count === 1 ? "this result is" : "these results are"} still sealed.
+              Anyone can send it; any wins are paid to you.{" "}
+              {d.status === "settled"
+                ? "The pool was paid into the pot at the draw, so a late reveal records the result and any free tickets, but no SOL."
+                : "Reveal before the draw: the pool left at the draw goes to the winner."}
             </p>
             <div className="roll-act">
               <button type="button" className="btn" onClick={() => reveal(e)} disabled={!!disabledReason}>
@@ -226,24 +244,20 @@ function Roll({ e, d }: { e: EntryView; d: DrawView }) {
           </>
         )}
 
-        {sealed && d.reserveWithdrawn && d.status !== "cancelled" && (
-          <p className="roll-note t-small">
-            The operator has withdrawn the reserve nobody won, so these sealed tickets can no longer be revealed or paid. They were still in the grand draw.
-          </p>
-        )}
 
         {d.status === "cancelled" &&
-          (e.isFree ? (
-            <p className="roll-note t-small">Free entry: nothing to refund.</p>
+          (e.isFree || (owed === BigInt(0) && e.creditCount === 0) ? (
+            <p className="roll-note t-small">{e.isFree ? "Free entry: nothing to refund." : "Its instant wins already paid back more than it cost: nothing to refund."}</p>
           ) : e.refunded ? (
             <p className="roll-note t-small">
-              Refunded <span className="nw">{sol(e.paidLamports, 2, 4)} SOL</span>.
+              Refunded <span className="nw">{sol(owed, 2, 4)} SOL</span>
+              {e.creditCount > 0 ? ` and ${e.creditCount} free ${plural(e.creditCount, "ticket", "tickets")}` : ""}.
             </p>
           ) : (
             <div className="roll-act">
               <button type="button" className="btn btn-sec" onClick={() => refund(e)} disabled={refundBusy || !!disabledReason}>
                 {refundBusy && <Busy />}
-                {rp === "simulating" ? "Checking with the program…" : rp === "signing" ? "Approve in your wallet…" : rp === "confirming" ? "Confirming…" : `Refund ${sol(e.paidLamports, 2, 4)} SOL`}
+                {rp === "simulating" ? "Checking with the program…" : rp === "signing" ? "Approve in your wallet…" : rp === "confirming" ? "Confirming…" : owed > BigInt(0) ? `Refund ${sol(owed, 2, 4)} SOL` : `Return ${e.creditCount} free ${plural(e.creditCount, "ticket", "tickets")}`}
               </button>
             </div>
           ))}

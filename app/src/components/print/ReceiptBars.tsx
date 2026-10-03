@@ -41,7 +41,7 @@ export function ReceiptBars({ wins, shown, first, label }: { wins: number[]; sho
       {R.bars.map((b, i) =>
         b.win ? (
           <span key={`a${i}`} className="amt t-key appear" style={{ left: b.cx, top: AMT + b.y - 17 }} aria-hidden="true">
-            {wins[i].toFixed(2)}
+            {wins[i] >= 0.01 ? wins[i].toFixed(2) : wins[i] >= 0.001 ? wins[i].toFixed(3) : wins[i].toFixed(4)}
           </span>
         ) : null
       )}

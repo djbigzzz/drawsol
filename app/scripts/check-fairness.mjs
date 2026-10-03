@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Verifies app/src/lib/fairness.ts (and the PDA helpers) against the program's own
+ * Verifies app/src/lib/fairness.ts (and the PDA helpers) against the program's own v3 (and legacy v2)
  * test vectors: tests-svm/fixtures/fairness_vectors.json (generated from fairness.rs).
  *
  *   node scripts/check-fairness.mjs [path/to/fairness_vectors.json]
@@ -49,19 +49,38 @@ const pk = (s) => new PublicKey(s);
 eq("program id", C.PROGRAM_ID.toBase58(), V.program_id);
 eq("orao program id", C.ORAO_PROGRAM_ID.toBase58(), V.orao_program_id);
 
-for (const [i, v] of V.entry_seed.entries()) {
+// v3 (the app's default seeds): "drawsol:v3:entry" / "drawsol:v3:draw"
+const v3e = V.entry_seed_v3 ?? [];
+const v3d = V.draw_seed_v3 ?? [];
+if (!v3e.length || !v3d.length || !V.pdas_v3) {
+  console.error("FAIL the vectors file has no v3 sections (entry_seed_v3, draw_seed_v3, pdas_v3)");
+  fail++;
+}
+for (const [i, v] of v3e.entries()) {
   const seed = F.entrySeed(pk(v.draw), pk(v.buyer), v.seq, F.fromHex(v.client_nonce));
-  eq(`entry_seed[${i}].seed`, F.toHex(seed), v.seed);
-  eq(`entry_seed[${i}].vrf_request`, F.oraoRandomnessPda(seed).toBase58(), v.vrf_request);
+  eq(`entry_seed_v3[${i}].seed`, F.toHex(seed), v.seed);
+  eq(`entry_seed_v3[${i}].vrf_request`, F.oraoRandomnessPda(seed).toBase58(), v.vrf_request);
+}
+for (const [i, v] of v3d.entries()) {
+  const seed = F.drawSeed(pk(v.draw), v.next_ticket, F.fromHex(v.client_nonce));
+  eq(`draw_seed_v3[${i}].seed`, F.toHex(seed), v.seed);
+  eq(`draw_seed_v3[${i}].vrf_request`, F.oraoRandomnessPda(seed).toBase58(), v.vrf_request);
+}
+// v2 (legacy history, byte-identical sections)
+for (const [i, v] of V.entry_seed.entries()) {
+  const seed = F.entrySeedV2(pk(v.draw), pk(v.buyer), v.seq, F.fromHex(v.client_nonce));
+  eq(`entry_seed[v2 ${i}].seed`, F.toHex(seed), v.seed);
+  eq(`entry_seed[v2 ${i}].vrf_request`, F.oraoRandomnessPda(seed).toBase58(), v.vrf_request);
 }
 for (const [i, v] of V.draw_seed.entries()) {
-  const seed = F.drawSeed(pk(v.draw), v.next_ticket, F.fromHex(v.client_nonce));
-  eq(`draw_seed[${i}].seed`, F.toHex(seed), v.seed);
-  eq(`draw_seed[${i}].vrf_request`, F.oraoRandomnessPda(seed).toBase58(), v.vrf_request);
+  const seed = F.drawSeedV2(pk(v.draw), v.next_ticket, F.fromHex(v.client_nonce));
+  eq(`draw_seed[v2 ${i}].seed`, F.toHex(seed), v.seed);
+  eq(`draw_seed[v2 ${i}].vrf_request`, F.oraoRandomnessPda(seed).toBase58(), v.vrf_request);
 }
 for (const [i, v] of V.ticket_tier.entries()) {
   const r = F.fromHex(v.randomness);
-  const tiers = v.tiers.map((t) => ({ amount: BigInt(t.amount), odds: t.odds }));
+  // only each tier's odds decide the tier (unchanged in v3)
+  const tiers = v.tiers.map((t) => ({ odds: t.odds }));
   eq(`ticket_tier[${i}].roll`, F.ticketRoll(r, v.ticket), v.roll);
   eq(`ticket_tier[${i}].x`, F.ticketX(r, v.ticket, v.denominator), v.x);
   eq(`ticket_tier[${i}].tier`, F.rollTicket(r, v.ticket, v.denominator, tiers), v.tier);
@@ -72,15 +91,26 @@ for (const [i, v] of V.winning_ticket.entries()) {
   eq(`winning_ticket[${i}].w`, F.winningTicket(r, v.next_ticket), v.winning_ticket);
 }
 
+const p3 = V.pdas_v3 ?? {};
+eq("pda_v3 config", P.configPda().toBase58(), p3.config);
+eq("pda_v3 draw_2", P.drawPda(2).toBase58(), p3.draw_2);
+eq("pda_v3 draw_3", P.drawPda(3).toBase58(), p3.draw_3);
+eq("pda_v3 vault", P.vaultPda(pk(p3.draw_2)).toBase58(), p3.vault_of_draw_2);
+eq("pda_v3 entry 0", P.entryPda(pk(p3.draw_2), 0).toBase58(), p3.entry_0_of_draw_2);
+eq("pda_v3 entry 7", P.entryPda(pk(p3.draw_2), 7).toBase58(), p3.entry_7_of_draw_2);
+eq("pda_v3 player", P.playerPda(pk(p3.draw_2), pk(p3.player_of_draw_2.wallet)).toBase58(), p3.player_of_draw_2.player);
+eq("pda_v3 profile", P.profilePda(pk(p3.profile.wallet)).toBase58(), p3.profile.profile);
+
+// v2 PDAs (legacy reads of Draw Nº 0 and Nº 1)
 const pd = V.pdas ?? {};
-if (pd.config) eq("pda config", P.configPda().toBase58(), pd.config);
-if (pd.draw_0) eq("pda draw_0", P.drawPda(0).toBase58(), pd.draw_0);
-if (pd.draw_1) eq("pda draw_1", P.drawPda(1).toBase58(), pd.draw_1);
-if (pd.vault_of_draw_0) eq("pda vault", P.vaultPda(pk(pd.draw_0)).toBase58(), pd.vault_of_draw_0);
-if (pd.entry_0_of_draw_0) eq("pda entry 0", P.entryPda(pk(pd.draw_0), 0).toBase58(), pd.entry_0_of_draw_0);
-if (pd.entry_7_of_draw_0) eq("pda entry 7", P.entryPda(pk(pd.draw_0), 7).toBase58(), pd.entry_7_of_draw_0);
+if (pd.config) eq("pda v2 config", P.configPda().toBase58(), pd.config);
+if (pd.draw_0) eq("pda v2 draw_0", P.legacyDrawPda(0).toBase58(), pd.draw_0);
+if (pd.draw_1) eq("pda v2 draw_1", P.legacyDrawPda(1).toBase58(), pd.draw_1);
+if (pd.vault_of_draw_0) eq("pda v2 vault", P.legacyVaultPda(pk(pd.draw_0)).toBase58(), pd.vault_of_draw_0);
+if (pd.entry_0_of_draw_0) eq("pda v2 entry 0", P.legacyEntryPda(pk(pd.draw_0), 0).toBase58(), pd.entry_0_of_draw_0);
+if (pd.entry_7_of_draw_0) eq("pda v2 entry 7", P.legacyEntryPda(pk(pd.draw_0), 7).toBase58(), pd.entry_7_of_draw_0);
 if (pd.player_of_draw_0)
-  eq("pda player", P.playerPda(pk(pd.draw_0), pk(pd.player_of_draw_0.wallet)).toBase58(), pd.player_of_draw_0.player);
+  eq("pda v2 player", P.legacyPlayerPda(pk(pd.draw_0), pk(pd.player_of_draw_0.wallet)).toBase58(), pd.player_of_draw_0.player);
 
 rmSync(out, { recursive: true, force: true });
 console.log(`fairness vectors: ${pass} passed, ${fail} failed (${vectorsPath})`);
