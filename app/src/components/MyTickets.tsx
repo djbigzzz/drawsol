@@ -1,14 +1,14 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
-import { grandPrize } from "@/lib/derive";
+import { grandPrize, scheduleWinsOf, ticketNumbersOf } from "@/lib/derive";
 import { clock, shortDate, sol, ticketNo, ticketRange } from "@/lib/format";
 import type { DrawView, EntryView } from "@/lib/types";
 import { Addr, Busy, ErrorNote, ProofLink, Section, inFlight, phaseLabel } from "./bits";
 import { refundOf } from "./EntryPanel";
-import { plural, prizeFig } from "./fmt";
+import { n, plural, prizeFig, tno, usd, usdPrize } from "./fmt";
 
 /** This wallet's entries in the featured draw: one row per purchase, with the refund button when cancelled. */
 export function MyTickets() {
@@ -61,6 +61,8 @@ export function MyTickets() {
 
   const tickets = player?.tickets ?? myEntries.reduce((k, e) => k + e.count, 0);
   const spent = player?.spent ?? myEntries.reduce((k, e) => k + e.paidLamports, BigInt(0));
+  const won = player?.won ?? myEntries.reduce((k, e) => k + e.solPaid, BigInt(0));
+  const sealed = myEntries.filter((e) => e.needsReveal && !e.revealed).length;
   const holdsWinner = d.status === "settled" && myEntries.some((e) => d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count);
   const paidCount = myEntries.filter((e) => !e.isFree).reduce((k, e) => k + e.count, 0);
   const allRefunded = myEntries.filter((e) => !e.isFree).every((e) => e.refunded);
@@ -99,7 +101,9 @@ export function MyTickets() {
       title="Your tickets"
       lead={
         <>
-          {lead} Wallet <Addr k={wallet.address} />. Spent {sol(spent, 2, 4)} SOL.
+          {lead} Wallet <Addr k={wallet.address} />. Spent {sol(spent, 2, 4)} SOL
+          {won > BigInt(0) ? <>, won {sol(won, 2, 4)} SOL in instant prizes</> : null}
+          {sealed > 0 ? <>, {sealed} {plural(sealed, "purchase", "purchases")} still to reveal</> : null}.
         </>
       }
     >
@@ -115,24 +119,62 @@ export function MyTickets() {
 }
 
 function Row({ e, d }: { e: EntryView; d: DrawView }) {
-  const { refund, phase, errors, clearError, disabledReason } = useActions();
-  const holds = d.status === "settled" && d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count;
+  const { refund, reveal, phase, errors, clearError, disabledReason } = useActions();
+  const { solUsd } = useDrawSol();
+  const nums = ticketNumbersOf(e);
+  const sealed = e.needsReveal && !e.revealed;
+  const holds = d.status === "settled" && !sealed && nums.includes(d.winningTicket);
   const rk = `refund:${e.address.toBase58()}` as const;
+  const vk = `reveal:${e.address.toBase58()}` as const;
   const rp = phase[rk];
   const busy = inFlight(rp);
   const owed = refundOf(e);
-  const what = e.isFree ? "Free entry" : `${e.count} ${plural(e.count, "ticket", "tickets")}`;
+  const what = e.isFree ? "Free entry" : `${n(e.count)} ${plural(e.count, "ticket", "tickets")}`;
+  const wins = scheduleWinsOf(e, d);
+  const winSet = new Set(wins.map((w) => w.ticket));
+  const random = d.randomNumbers;
+  const [all, setAll] = useState(false);
+  const LIMIT = 24;
+  const shown = all ? nums : nums.slice(0, LIMIT);
   return (
     <li className={`row ${holds ? "row-win" : ""}`}>
       <div className="row-main">
-        <b className="tab">{ticketRange(e.firstTicket, e.count)}</b>
+        <b className="tab">{sealed ? (random ? "Numbers pending reveal" : ticketRange(e.firstTicket, e.count)) : random ? `${n(e.count)} ${plural(e.count, "number", "numbers")}` : ticketRange(e.firstTicket, e.count)}</b>
         <span className="row-what">
           {what} · {shortDate(e.createdAt)}, {clock(e.createdAt)} UTC
           {!e.isFree && <> · {sol(e.paidLamports, 2, 4)} SOL</>}
+          {e.revealed && e.needsReveal && (e.solPaid > BigInt(0) ? <> · won {usdPrize(e.solPaid, solUsd) ?? `${sol(e.solPaid, 2, 4)} SOL`}</> : <> · no instant win</>)}
         </span>
+        {random && !sealed && (
+          <ul className="nums" aria-label="Your ticket numbers">
+            {shown.map((t) => {
+              const w = wins.find((x) => x.ticket === t);
+              const drawn = d.status === "settled" && t === d.winningTicket;
+              return (
+                <li key={t} className={`num tab ${winSet.has(t) ? "win" : ""} ${drawn ? "drawn" : ""}`} title={w ? `Won ${sol(w.lamports, 2, 4)} SOL` : drawn ? "Won the end prize" : undefined}>
+                  {tno(t)}
+                  {w && <span className="num-w">{usdPrize(w.lamports, solUsd) ?? `${sol(w.lamports, 2, 4)} SOL`}</span>}
+                  {drawn && <span className="num-w">end prize</span>}
+                </li>
+              );
+            })}
+            {nums.length > LIMIT && (
+              <li className="num more">
+                <button type="button" className="tbtn" onClick={() => setAll((v) => !v)} aria-expanded={all}>
+                  {all ? "Show fewer" : `+${n(nums.length - LIMIT)} more`}
+                </button>
+              </li>
+            )}
+          </ul>
+        )}
       </div>
       <div className="row-side">
-        {holds ? (
+        {sealed && d.status !== "cancelled" ? (
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => reveal(e)} disabled={!!disabledReason || inFlight(phase[vk])}>
+            {inFlight(phase[vk]) && <Busy />}
+            Reveal {e.count === 1 ? "ticket" : `${n(e.count)} tickets`}
+          </button>
+        ) : holds ? (
           <span className="pill pill-accent">Won {prizeFig(grandPrize(d))} SOL</span>
         ) : d.status === "cancelled" ? (
           e.isFree ? (
@@ -159,6 +201,11 @@ function Row({ e, d }: { e: EntryView; d: DrawView }) {
       {errors[rk] && (
         <div className="row-err">
           <ErrorNote onDismiss={() => clearError(rk)}>{errors[rk]!.message}</ErrorNote>
+        </div>
+      )}
+      {errors[vk] && (
+        <div className="row-err">
+          <ErrorNote onDismiss={() => clearError(vk)}>{errors[vk]!.message}</ErrorNote>
         </div>
       )}
     </li>

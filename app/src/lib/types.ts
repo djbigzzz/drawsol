@@ -10,7 +10,22 @@ export type DrawStatus = "open" | "drawing" | "settled" | "cancelled";
  */
 export type DrawKind = "pot" | "headline" | "v2";
 
-/** Plain view of an on-chain DrawV3 account (u64 as bigint lamports). Legacy v2 draws are mapped onto it. */
+/**
+ * v4: one tier of the published instant-prize schedule. The winning ticket numbers are written on-chain at
+ * creation, before sales open, and never change; ticket numbers are handed out at random by ORAO at reveal.
+ */
+export interface InstantTier {
+  /** the prize for one winning ticket */
+  lamports: bigint;
+  /** the pre-assigned winning ticket numbers (length = prizes in this tier) */
+  numbers: number[];
+}
+
+/**
+ * Plain view of an on-chain DrawV3 account (u64 as bigint lamports). Legacy v2 draws are mapped onto it, and
+ * the v4 fields (guaranteed draw, published schedule, random numbers) take their defaults from the v3
+ * decoder until the v4 IDL lands: swapping it is a change to decodeDraw/decodeEntry only.
+ */
 export interface DrawView {
   address: PublicKey;
   id: number;
@@ -66,6 +81,15 @@ export interface DrawView {
   termsHash: Uint8Array;
   /** v2 only: the instant-win SOL paid from its fixed reserve */
   legacyIwPaid?: bigint;
+  /**
+   * v4: the draw always runs and never refunds. Below min_tickets at the draw the end prize is pot_bps of
+   * ticket sales instead of the escrowed prize. v3 headline draws: false (below the minimum they cancel).
+   */
+  guaranteed: boolean;
+  /** v4: the published instant-prize schedule; empty on draws without pre-assigned instant prizes */
+  schedule: InstantTier[];
+  /** v4: ticket numbers are assigned at random by ORAO at reveal (true), or sequentially at purchase (false) */
+  randomNumbers: boolean;
 }
 
 export interface EntryView {
@@ -95,6 +119,11 @@ export interface EntryView {
   /** free-ticket credits won */
   creditsWon: number;
   refunded: boolean;
+  /**
+   * v4: the ticket numbers this entry holds, assigned by ORAO at reveal (empty until revealed). Draws that
+   * number tickets sequentially leave it empty: the numbers are firstTicket … firstTicket + count − 1.
+   */
+  numbers: number[];
 }
 
 export interface PlayerView {

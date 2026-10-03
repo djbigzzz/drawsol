@@ -13,7 +13,7 @@ const config: Config = {
       white: "#FFFFFF",
       navy: "#0B1220",
       "navy-2": "#3B4555",
-      "navy-3": "#6B7483",
+      "navy-3": "#5F6878",
       surface: "#F5F7FA",
       "surface-2": "#EBEEF3",
       line: "#E3E7EE",

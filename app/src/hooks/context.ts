@@ -104,6 +104,8 @@ export interface RevealSession {
   revealTx?: string;
   /** read from Entry.tiers after the reveal tx; never invented */
   tiers?: number[];
+  /** v4: the ticket numbers ORAO assigned, read from Entry.numbers after the reveal tx */
+  numbers?: number[];
   /** instant SOL paid, read from Entry.sol_paid */
   solPaid?: bigint;
   /** free-ticket credits won, read from Entry.credits_won */

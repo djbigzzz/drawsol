@@ -31,14 +31,14 @@ export const publicFrom = (d: DrawView) => d.drawAt + d.publicGraceSecs;
 export const anyoneCanRun = (d: DrawView, now: number) => now >= publicFrom(d);
 
 /** request_draw cancels instead: nothing sold, or a headline draw below its minimum (full refunds). */
-export const cancelsAtRequest = (d: DrawView) => d.nextTicket === 0 || (d.kind === "headline" && d.paidTickets < d.minTickets);
+export const cancelsAtRequest = (d: DrawView) => d.nextTicket === 0 || (d.kind === "headline" && !d.guaranteed && d.paidTickets < d.minTickets);
 
 export const canCancel = (d: DrawView, now: number) => d.status === "drawing" && now > d.drawAt + CANCEL_GRACE_SECS;
 
 /** Why a cancelled draw was cancelled, from what the account holds. */
 export function cancelReason(d: DrawView): "no-tickets" | "undersold" | "timeout" {
   if (d.nextTicket === 0) return "no-tickets";
-  if (d.kind === "headline" && d.paidTickets < d.minTickets && isDefaultKey(d.drawVrfRequest)) return "undersold";
+  if (d.kind === "headline" && !d.guaranteed && d.paidTickets < d.minTickets && isDefaultKey(d.drawVrfRequest)) return "undersold";
   return "timeout";
 }
 
@@ -49,7 +49,73 @@ export function cancelReason(d: DrawView): "no-tickets" | "undersold" | "timeout
 export function grandPrize(d: DrawView): bigint {
   if (d.status === "settled" && d.prizePaidLamports > ZERO) return d.prizePaidLamports;
   if (d.kind === "pot") return d.potLamports + d.instantPoolLamports;
+  if (d.guaranteed) return endPrize(d);
   return d.prizeLamports;
+}
+
+// ---------- v4: guaranteed draw, published schedule, random numbers ----------
+
+/** v4: the escrowed end prize is paid once min_tickets have sold; below that the end prize is pot_bps of sales. */
+export const endPrizeLocked = (d: DrawView) => d.paidTickets >= d.minTickets;
+
+/** The pot a guaranteed draw would pay right now if it stayed below its minimum: pot_bps of ticket sales. */
+export const salesPot = (d: DrawView) => (d.revenueLamports * BigInt(d.potBps)) / BPS;
+
+/** v4: what the end prize is right now (the escrow once locked, else the pot of sales so far). */
+export function endPrize(d: DrawView): bigint {
+  if (d.status === "settled" && d.prizePaidLamports > ZERO) return d.prizePaidLamports;
+  return endPrizeLocked(d) ? d.prizeLamports : salesPot(d);
+}
+
+/** The ticket numbers an entry holds: the ones ORAO assigned at reveal, else the sequential range. */
+export function ticketNumbersOf(e: EntryView): number[] {
+  if (e.numbers.length) return e.numbers;
+  return Array.from({ length: e.count }, (_, i) => e.firstTicket + i);
+}
+
+/** The schedule tier a ticket number is in, if any. */
+export function tierOfNumber(d: DrawView, ticket: number): { index: number; lamports: bigint } | null {
+  for (let i = 0; i < d.schedule.length; i++) if (d.schedule[i].numbers.includes(ticket)) return { index: i, lamports: d.schedule[i].lamports };
+  return null;
+}
+
+export interface NumberWin {
+  ticket: number;
+  lamports: bigint;
+  tier: number;
+}
+
+/** v4: a revealed entry's instant wins, from its assigned numbers against the published schedule. */
+export function scheduleWinsOf(e: EntryView, d: DrawView): NumberWin[] {
+  if (!e.revealed || !d.schedule.length) return [];
+  const out: NumberWin[] = [];
+  for (const t of ticketNumbersOf(e)) {
+    const hit = tierOfNumber(d, t);
+    if (hit) out.push({ ticket: t, lamports: hit.lamports, tier: hit.index });
+  }
+  return out;
+}
+
+/** Every winning number of the schedule that has been handed out, with the wallet that holds it. */
+export function wonNumbers(d: DrawView, entries: EntryView[]): Map<number, EntryView> {
+  const m = new Map<number, EntryView>();
+  if (!d.schedule.length) return m;
+  for (const e of entries) {
+    if (!e.revealed) continue;
+    for (const t of ticketNumbersOf(e)) if (tierOfNumber(d, t)) m.set(t, e);
+  }
+  return m;
+}
+
+/** The instant prizes of the schedule: how many, and their total. */
+export function scheduleTotals(d: DrawView) {
+  let count = 0;
+  let total = ZERO;
+  for (const t of d.schedule) {
+    count += t.numbers.length;
+    total += t.lamports * BigInt(t.numbers.length);
+  }
+  return { count, total };
 }
 
 /** "55% house · 35% pot · 10% instant wins" from the draw's own bps. */

@@ -15,7 +15,7 @@ import { Meter } from "./Hero";
 import { n, plural, solRound, usd } from "./fmt";
 
 const AIRDROP_SOL = sol(BigInt(AIRDROP_LAMPORTS), 0, 2);
-const PRESETS = [1, 5, 10, 25];
+const PRESETS = [1, 5, 10, 25, 50, 100, 250, 500];
 
 /** What one entry gets back from claim_refund: what it paid less any instant SOL it already won. */
 export const refundOf = (e: EntryView) => (e.paidLamports > e.solPaid ? e.paidLamports - e.solPaid : BigInt(0));
@@ -193,7 +193,7 @@ function Picker({ d }: { d: DrawView }) {
               />
               <div className="slider-ends tab" aria-hidden="true">
                 <span>1</span>
-                <span>{maxQ}</span>
+                <span>{n(maxQ)}</span>
               </div>
             </div>
           )}
@@ -215,7 +215,7 @@ function Picker({ d }: { d: DrawView }) {
                 <Minus />
               </button>
               <output className="step-n tab" aria-live="polite" aria-label={`${qty} ${plural(qty, "ticket", "tickets")}`}>
-                {qty}
+                {n(qty)}
               </output>
               <button type="button" className="step" aria-label="One more ticket" onClick={() => setQty(qty + 1)} disabled={qty >= maxQ}>
                 <Plus />
@@ -224,7 +224,7 @@ function Picker({ d }: { d: DrawView }) {
           </div>
           {maxQ > 1 && (
             <ul className="chips" aria-label="Quick picks">
-              {PRESETS.filter((p) => p < maxQ).map((p) => (
+              {PRESETS.filter((p) => p < maxQ).slice(-5).map((p) => (
                 <li key={p}>
                   <button type="button" className="chip tab" aria-pressed={qty === p} onClick={() => setQty(p)}>
                     {p}
@@ -233,14 +233,14 @@ function Picker({ d }: { d: DrawView }) {
               ))}
               <li>
                 <button type="button" className="chip tab" aria-pressed={qty === maxQ} onClick={() => setQty(maxQ)} aria-label={`Max, ${maxQ} ${plural(maxQ, "ticket", "tickets")}`}>
-                  Max · {maxQ}
+                  Max · {n(maxQ)}
                 </button>
               </li>
             </ul>
           )}
           <div className="total-row">
             <p className="total-label">
-              Total ({qty} {plural(qty, "ticket", "tickets")})
+              Total ({n(qty)} {plural(qty, "ticket", "tickets")})
             </p>
             <p className="total tab" aria-live="polite">
               {total ? (
@@ -265,7 +265,13 @@ function Picker({ d }: { d: DrawView }) {
             </button>
           )}
           <p className="under">
-            Drawn at the deadline once {n(d.minTickets)} tickets sell, otherwise everyone is refunded in full.
+            {d.guaranteed ? (
+              <>
+                Drawn {utcLabel(d.drawAt)}, guaranteed. The full end prize once {n(d.minTickets)} tickets sell; below that, {d.potBps / 100}% of ticket sales. No refunds.
+              </>
+            ) : (
+              <>Drawn at the deadline once {n(d.minTickets)} tickets sell, otherwise everyone is refunded in full.</>
+            )}
           </p>
           <p className="free-link">
             <button type="button" className="tbtn" onClick={showFree}>
@@ -301,7 +307,7 @@ function Picker({ d }: { d: DrawView }) {
         </>
       )}
       <p className="cap-note">
-        Up to {d.maxPerTx} per purchase, {d.maxPerWallet} per wallet
+        Up to {n(d.maxPerTx)} per purchase · {n(d.maxPerWallet)} entries max per person
         {myState === "ready" && held > 0 ? (
           <>
             {" "}
@@ -439,7 +445,10 @@ function FreeEntry({ d }: { d: DrawView }) {
   return (
     <div className="free">
       <h2 className="t-h3 picker-h">Free entry</h2>
-      <p className="panel-text">One free ticket per wallet, no purchase needed. It has the same chance of the prize as a paid ticket and is numbered like any other.</p>
+      <p className="panel-text">
+        One free ticket per wallet, no purchase needed. It has the same chance of the end prize{d.schedule.length ? " and the instant prizes" : ""} as a paid ticket and is numbered like any
+        other.
+      </p>
       <dl className="panel-sum">
         <div>
           <dt>Free entries left</dt>
@@ -455,7 +464,7 @@ function FreeEntry({ d }: { d: DrawView }) {
       <p className="helper">
         There’s no ticket price: your wallet pays only Solana rent for the entry record
         {rent !== null ? <>, ≈{solRound(rent, 4, 1)} SOL,</> : null} and the network fee. It counts toward the {d.maxPerWallet}-ticket wallet limit but not toward
-        the {n(d.minTickets)} the draw needs.
+        the {n(d.minTickets)} that {d.guaranteed ? "lock in the full end prize" : "the draw needs"}.
       </p>
       {action}
       {low && !claimed && freeLeft > 0 && <DevnetSol low={low.balance} action />}

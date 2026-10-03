@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useDrawSol } from "@/hooks/context";
-import { headlineHouseBps, pct, phaseOf } from "@/lib/derive";
+import { headlineHouseBps, pct, phaseOf, scheduleTotals } from "@/lib/derive";
+import { campaignOf, usdWhole } from "@/lib/campaigns";
 import { oneIn, utcLabel } from "@/lib/format";
 import { toHex } from "@/lib/fairness";
 import { GAMBLE_AWARE_URL, ORAO_PROGRAM_ID, PROGRAM_ID, SOURCE_URL } from "@/lib/config";
@@ -24,7 +25,9 @@ export function TrustStrip() {
       s: "The randomness is requested at the draw time; nobody can choose it, and anyone can recompute the result.",
       link: settled ? <Link className="tbtn" href={`/draw/?n=${settled.id}#recompute`}>Recompute № {settled.id}</Link> : <ProofLink account={ORAO_PROGRAM_ID}>ORAO VRF</ProofLink>,
     },
-    { t: "Full refund if undersold", s: `Below ${n(d.minTickets)} paid tickets at the draw time, the program cancels and refunds every ticket in full.`, link: <ProofLink account={d.address}>Draw account</ProofLink> },
+    d.guaranteed
+      ? { t: "Guaranteed draw", s: `It draws ${utcLabel(d.drawAt)} whatever has sold. The end prize rule (${n(d.minTickets)} sold for the full prize, else ${d.potBps / 100}% of sales) is enforced by the program.`, link: <ProofLink account={d.address}>Draw account</ProofLink> }
+      : { t: "Full refund if undersold", s: `Below ${n(d.minTickets)} paid tickets at the draw time, the program cancels and refunds every ticket in full.`, link: <ProofLink account={d.address}>Draw account</ProofLink> },
     { t: "Every entry public", s: "Each ticket is an account on Solana devnet, so the list can’t be padded or trimmed.", link: <Link className="tbtn" href={`/draw/?n=${d.id}#entries`}>All entries</Link> },
   ];
   return (
@@ -52,11 +55,19 @@ export function TrustStrip() {
 export function HowItWorks() {
   const { current: d } = useDrawSol();
   if (!d) return null;
-  const steps: [string, string][] = [
-    ["Pick your tickets", `Choose how many (up to ${d.maxPerTx} a time, ${d.maxPerWallet} per wallet) and pay in SOL from your wallet, or claim your one free entry. Each ticket gets a number.`],
-    ["The draw runs at the deadline", `At ${utcLabel(d.drawAt)} the program asks ORAO VRF for randomness and the winning ticket is computed from it. Nobody picks it, and anyone can run the draw.`],
-    ["The winner is paid from the vault", `The prize is paid straight to the wallet that holds the winning ticket. If fewer than ${n(d.minTickets)} tickets sold, everyone is refunded in full instead.`],
-  ];
+  const camp = campaignOf(d.id);
+  const instants = scheduleTotals(d);
+  const steps: [string, string][] = instants.count
+    ? [
+        ["Get your tickets", `Choose how many (up to ${n(d.maxPerTx)} a time, ${n(d.maxPerWallet)} per person) and pay in SOL from your wallet, or claim your one free entry.`],
+        ["Reveal if you’ve won", `About 2 s later ORAO assigns your ticket numbers at random. Any number on the published schedule of ${n(instants.count)} instant prizes is paid to you in the same reveal transaction.`],
+        ["End prize drawn Sunday", `At ${utcLabel(d.drawAt)} the program asks ORAO VRF for randomness and one ticket wins the end prize: ${camp ? usdWhole(camp.usd) : `${prizeFig(d.prizeLamports)} SOL`} once ${n(d.minTickets)} tickets have sold, else ${d.potBps / 100}% of sales. Guaranteed, no refunds.`],
+      ]
+    : [
+        ["Pick your tickets", `Choose how many (up to ${d.maxPerTx} a time, ${d.maxPerWallet} per wallet) and pay in SOL from your wallet, or claim your one free entry. Each ticket gets a number.`],
+        ["The draw runs at the deadline", `At ${utcLabel(d.drawAt)} the program asks ORAO VRF for randomness and the winning ticket is computed from it. Nobody picks it, and anyone can run the draw.`],
+        ["The winner is paid from the vault", `The prize is paid straight to the wallet that holds the winning ticket. If fewer than ${n(d.minTickets)} tickets sold, everyone is refunded in full instead.`],
+      ];
   return (
     <Section id="how" title="How it works">
       <ol className="how">
@@ -87,6 +98,8 @@ export function Rules() {
   const atCap = headlineHouseBps(d, d.ticketCap);
   const atMin = headlineHouseBps(d, d.minTickets);
   const grace = Math.round(d.publicGraceSecs / 60);
+  const camp = campaignOf(d.id);
+  const instants = scheduleTotals(d);
   const qa: [string, React.ReactNode][] = [
     [
       "How is the winner picked?",
@@ -111,11 +124,30 @@ export function Rules() {
     ],
     [
       `What if fewer than ${n(d.minTickets)} tickets sell?`,
-      <>
-        The draw is cancelled by the program at the draw time, the prize goes back to the operator and every paid ticket is refunded in full from the vault. There is
-        no deadline on claiming a refund, and anyone can send it; it always pays the ticket’s owner.
-      </>,
+      d.guaranteed ? (
+        <>
+          The draw still runs at {utcLabel(d.drawAt)}. The end prize is then {d.potBps / 100}% of ticket sales instead of the escrowed {camp ? usdWhole(camp.usd) : `${prizeFig(d.prizeLamports)} SOL`},
+          and the escrow goes back to the operator. This page shows the end prize as it stands right now. There are no refunds.
+        </>
+      ) : (
+        <>
+          The draw is cancelled by the program at the draw time, the prize goes back to the operator and every paid ticket is refunded in full from the vault. There is
+          no deadline on claiming a refund, and anyone can send it; it always pays the ticket’s owner.
+        </>
+      ),
     ],
+    ...(instants.count
+      ? ([
+          [
+            "How do the instant prizes work?",
+            <>
+              The {n(instants.count)} winning ticket numbers were written into the draw account before sales opened and can’t change; the full list is under Prizes. Your
+              ticket numbers are assigned at random by ORAO when you reveal, about 2 s after paying, so nobody can buy a known winning number. A match is paid in the
+              reveal transaction, and a prize whose number is never sold is simply not won.
+            </>,
+          ],
+        ] as [string, React.ReactNode][])
+      : []),
     [
       "Is there a free way to enter?",
       <>

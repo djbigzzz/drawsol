@@ -110,6 +110,11 @@ export function decodeDraw(address: PublicKey, a: any): DrawView {
     settledAt: num(a.settledAt),
     prizePaid: !!a.prizePaid,
     termsHash: bytes(a.termsHash),
+    // v4 fields: the v3 program has none of these. When the v4 IDL lands, read a.guaranteed, a.schedule
+    // (tiers of { lamports, numbers }) and a.randomNumbers here; nothing else in the app changes.
+    guaranteed: false,
+    schedule: [],
+    randomNumbers: false,
   };
 }
 
@@ -136,6 +141,8 @@ export function decodeEntry(address: PublicKey, a: any): EntryView {
     solPaid: big(a.solPaid),
     creditsWon: num(a.creditsWon),
     refunded: !!a.refunded,
+    // v4: a.numbers (the ticket numbers ORAO assigned at reveal); v3 numbers tickets sequentially
+    numbers: [],
   };
 }
 
@@ -214,6 +221,9 @@ export function decodeLegacyDraw(address: PublicKey, a: any): DrawView {
     prizePaid,
     termsHash: bytes(a.termsHash),
     legacyIwPaid: big(a.iwPaidLamports),
+    guaranteed: false,
+    schedule: [],
+    randomNumbers: false,
   };
 }
 
@@ -241,6 +251,7 @@ export function decodeLegacyEntry(address: PublicKey, a: any): EntryView {
     solPaid: big(a.instantPaid),
     creditsWon: 0,
     refunded: !!a.refunded,
+    numbers: [],
   };
 }
 
@@ -348,8 +359,11 @@ async function oraoAccounts(p: AnyProgram, vrfRequest: PublicKey | null) {
   return { vrfRequest, vrfConfig: ORAO_NETWORK_STATE, vrfTreasury: treasury, vrf: ORAO_PROGRAM_ID };
 }
 
-/** Pot draws with instant tiers roll every ticket (paid, credit or free) through ORAO. */
-export const drawRolls = (d: DrawView) => d.kind === "pot" && d.iwDenominator > 0;
+/**
+ * Draws that roll every ticket (paid, credit or free) through ORAO at reveal: pot draws with instant tiers,
+ * and v4 draws with a published schedule (the roll assigns the ticket numbers).
+ */
+export const drawRolls = (d: DrawView) => (d.kind === "pot" && d.iwDenominator > 0) || d.schedule.length > 0;
 
 export async function ixBuyTickets(
   p: AnyProgram,
@@ -408,8 +422,8 @@ export function ixRevealEntry(p: AnyProgram, draw: PublicKey, entry: EntryView) 
     .instruction() as Promise<TransactionInstruction>;
 }
 
-/** request_draw cancels instead of drawing when no ticket sold, or a headline draw is below its minimum. */
-export const cancelsAtRequest = (d: DrawView) => d.nextTicket === 0 || (d.kind === "headline" && d.paidTickets < d.minTickets);
+/** request_draw cancels instead of drawing when no ticket sold, or a headline draw (not guaranteed) is below its minimum. */
+export const cancelsAtRequest = (d: DrawView) => d.nextTicket === 0 || (d.kind === "headline" && !d.guaranteed && d.paidTickets < d.minTickets);
 
 export async function ixRequestDraw(
   p: AnyProgram,

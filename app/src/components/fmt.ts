@@ -22,6 +22,15 @@ export function usd(l: bigint, price: number | null): string | null {
   return `$${v.toFixed(2)}`;
 }
 
+/** A prize in USD: whole dollars stay whole ("$25", "$10"), anything else keeps cents ("$2.50"). */
+export function usdPrize(l: bigint, price: number | null): string | null {
+  if (price === null) return null;
+  const v = (Number(l) / LAMPORTS) * price;
+  if (!Number.isFinite(v)) return null;
+  const r = Math.round(v * 100) / 100;
+  return Number.isInteger(r) ? `$${r.toLocaleString("en-US")}` : `$${r.toFixed(2)}`;
+}
+
 /** "2 d 5 h 31 min" style split, kept as numbers. */
 export function durationParts(secs: number) {
   const s = Math.max(0, Math.floor(secs));
@@ -57,6 +66,15 @@ export function groupDigits(s: string) {
 
 /** 1250 → "1,250" */
 export const n = (x: number) => x.toLocaleString("en-US");
+
+/** A ticket number as the page prints it: four digits with a thousands comma, "#1,284", "#0,071". */
+export const tno = (t: number) => {
+  const s = String(t).padStart(4, "0");
+  return `#${s.slice(0, -3)},${s.slice(-3)}`;
+};
+
+/** A ticket number as the draw prints it: random-number draws "#0,679", sequential draws "#0009". */
+export const tnoOf = (d: { randomNumbers: boolean }, t: number) => (d.randomNumbers ? tno(t) : `#${String(t).padStart(4, "0")}`);
 
 export const plural = (k: number, one: string, many: string) => (k === 1 ? one : many);
 

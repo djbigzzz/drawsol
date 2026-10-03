@@ -7,6 +7,8 @@ import { DevnetBar, Header } from "@/components/Header";
 import { Hero } from "@/components/Hero";
 import { BuyProvider, type BuyInit } from "@/components/BuyContext";
 import { ConfirmSheet } from "@/components/Sheet";
+import { RevealSheet } from "@/components/RevealSheet";
+import { Prizes } from "@/components/Prizes";
 import { BarSpacer, MobileBar } from "@/components/MobileBar";
 import { MyTickets } from "@/components/MyTickets";
 import { Winners } from "@/components/Winners";
@@ -56,6 +58,7 @@ function Shell() {
       <BarSpacer />
       <MobileBar />
       <ConfirmSheet />
+      <RevealSheet />
     </BuyProvider>
   );
 }
@@ -73,6 +76,7 @@ function Page() {
           <StaleNote />
           <Hero />
           <TrustStrip />
+          <Prizes d={current} />
           <HowItWorks />
           <MyTickets />
           <Winners />

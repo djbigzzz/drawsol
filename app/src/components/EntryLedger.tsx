@@ -3,11 +3,11 @@
 import { useId, useMemo, useState } from "react";
 import type { PublicKey } from "@solana/web3.js";
 import { useDrawSol } from "@/hooks/context";
-import { entryWins } from "@/lib/derive";
+import { entryWins, ticketNumbersOf } from "@/lib/derive";
 import { clock, short, shortDate, sol, ticketNo, ticketRange } from "@/lib/format";
 import { solscanAccount } from "@/lib/config";
 import type { DrawView, EntryView } from "@/lib/types";
-import { plural } from "./fmt";
+import { plural, tno } from "./fmt";
 
 const PAGE = 12;
 
@@ -29,7 +29,7 @@ export function matchEntry(e: EntryView, q: string): boolean {
   const s = q.trim();
   if (!s) return true;
   const t = ticketQuery(s);
-  if (t !== null && t >= e.firstTicket && t < e.firstTicket + e.count) return true;
+  if (t !== null && (e.numbers.length ? e.numbers.includes(t) : t >= e.firstTicket && t < e.firstTicket + e.count)) return true;
   if (t !== null && !maybeBase58(s)) return false;
   // base58 is case-sensitive, but people type in any case
   const lo = s.toLowerCase();
@@ -61,6 +61,7 @@ export function entriesCsv(d: DrawView, entries: EntryView[]): string {
     "credits_won",
     "refunded",
     "vrf_request",
+    "numbers",
   ];
   const rows = entries
     .slice()
@@ -85,12 +86,23 @@ export function entriesCsv(d: DrawView, entries: EntryView[]): string {
       e.needsReveal && e.revealed ? e.creditsWon : "",
       e.refunded ? "yes" : "no",
       e.needsReveal ? e.vrfRequest.toBase58() : "",
+      e.numbers.length ? e.numbers.join(" ") : "",
     ]);
   return [head, ...rows].map((r) => r.join(",")).join("\r\n") + "\r\n";
 }
 
 /** "#0031–#0040 ×10", and "has #0034" in blue ink when a ticket search matched inside the range. */
 function Range({ e, hit }: { e: EntryView; hit: number | null }) {
+  if (e.numbers.length) {
+    const nums = ticketNumbersOf(e);
+    return (
+      <>
+        <span className="nw">{nums.slice(0, 3).map(tno).join(", ")}{nums.length > 3 ? `, +${nums.length - 3}` : ""}</span>{" "}
+        <span className="x nw">{e.isFree ? "free" : `×${e.count}`}</span>
+        {hit !== null && <i className="has nw"> has {tno(hit)}</i>}
+      </>
+    );
+  }
   return (
     <>
       <span className="nw">{ticketRange(e.firstTicket, e.count)}</span>{" "}
@@ -215,9 +227,9 @@ export function EntryLedger({
               const mine = !!me && e.owner.equals(me);
               const won = [e.solPaid > BigInt(0) ? `+${sol(e.solPaid, 2, 4)} SOL` : "", e.creditsWon > 0 ? `+${e.creditsWon} free ${plural(e.creditsWon, "ticket", "tickets")}` : ""].filter(Boolean).join(" ");
               const result = !e.needsReveal ? (e.isFree ? "free entry" : "in the draw") : !e.revealed ? "sealed" : wins > 0 ? won || "won" : "no win";
-              const drawn = d.status === "settled" && d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count;
+              const drawn = d.status === "settled" && ticketNumbersOf(e).includes(d.winningTicket);
               // a ticket-number search: say which ticket of a multi-ticket range matched
-              const hit = qt !== null && e.count > 1 && qt >= e.firstTicket && qt < e.firstTicket + e.count ? qt : null;
+              const hit = qt !== null && e.count > 1 && ticketNumbersOf(e).includes(qt) ? qt : null;
               return (
                 <a
                   role="listitem"
@@ -263,7 +275,7 @@ export function EntryLedger({
                     {drawn && (
                       <span className="w drawn nw dmark">
                         <span className="dsep"> · </span>
-                        {ticketNo(d.winningTicket)} drawn
+                        {e.numbers.length ? tno(d.winningTicket) : ticketNo(d.winningTicket)} drawn
                       </span>
                     )}
                   </span>

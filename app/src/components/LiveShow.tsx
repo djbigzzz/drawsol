@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
-import { anyoneCanRun, cancelReason, cancelsAtRequest, grandPrize, liveDraw, phaseOf, publicFrom } from "@/lib/derive";
+import { anyoneCanRun, cancelReason, cancelsAtRequest, grandPrize, liveDraw, phaseOf, publicFrom, ticketNumbersOf } from "@/lib/derive";
 import { campaignOf, usdWhole } from "@/lib/campaigns";
 import { winningTicket } from "@/lib/fairness";
 import { clock, ticketNo, utcLabel } from "@/lib/format";
@@ -11,7 +11,7 @@ import { vaultPda } from "@/lib/chain";
 import type { DrawView } from "@/lib/types";
 import { Addr, Busy, ErrorNote, Pill, ProofLink, inFlight, phaseLabel } from "./bits";
 import { Countdown } from "./Hero";
-import { n, plural, prizeFig } from "./fmt";
+import { n, plural, prizeFig, tno } from "./fmt";
 import { useSettleTx } from "./Recompute";
 
 const ROLL_MS = 6800;
@@ -34,7 +34,7 @@ type Stage = "countdown" | "due" | "pending" | "rolling" | "won" | "paid" | "can
  * settled, with the winner and the payout link. A draw already settled shows its result at once.
  */
 export function LiveShow({ raw }: { raw: string | null }) {
-  const { load, draws, current: d, select, now, drawRandomness: r, stillRoll } = useDrawSol();
+  const { load, draws, current: d, select, now, drawRandomness: r, stillRoll, entries } = useDrawSol();
   const reduced = useReducedMotion();
   const asked = raw !== null && /^\d{1,9}$/.test(raw.trim()) ? Number(raw.trim()) : null;
   const next = liveDraw(draws);
@@ -98,8 +98,11 @@ export function LiveShow({ raw }: { raw: string | null }) {
   else if (rolling) stage = "rolling";
   else stage = d.status === "settled" ? "paid" : "won";
 
-  const cursor = stage === "rolling" && w !== null ? cursorAt(progress, d.nextTicket, w) : -1;
-  const shown = stage === "rolling" ? cursor : w;
+  // the roll runs through every ticket in the draw by index; on random-number draws each index shows its number
+  const numbers = d.randomNumbers ? entries.slice().sort((a, b) => a.seq - b.seq).flatMap((e) => ticketNumbersOf(e)) : null;
+  const wIndex = w === null ? 0 : numbers ? Math.max(0, numbers.indexOf(w)) : w;
+  const cursor = stage === "rolling" && w !== null ? cursorAt(progress, Math.max(1, numbers ? numbers.length : d.nextTicket), wIndex) : -1;
+  const shown = stage === "rolling" ? (numbers ? numbers[cursor] ?? cursor : cursor) : w;
   return <Stage d={d} stage={stage} shown={shown} winning={stage === "won" || stage === "paid" ? w : null} now={now} />;
 }
 
@@ -172,8 +175,8 @@ function Stage({ d, stage, shown, winning, now }: { d: DrawView; stage: Stage; s
           ) : stage === "cancelled" ? (
             <p className="live-num c-3">{n(d.paidTickets)} sold</p>
           ) : (
-            <p className={`live-num tab ${stage === "rolling" ? "" : "c-accent"}`} aria-label={stage === "rolling" ? undefined : `Winning ticket ${ticketNo(shown ?? 0)}`}>
-              {ticketNo(shown ?? 0)}
+            <p className={`live-num tab ${stage === "rolling" ? "" : "c-accent"}`} aria-label={stage === "rolling" ? undefined : `Winning ticket ${d.randomNumbers ? tno(shown ?? 0) : ticketNo(shown ?? 0)}`}>
+              {d.randomNumbers ? tno(shown ?? 0) : ticketNo(shown ?? 0)}
             </p>
           )}
         </div>
@@ -195,7 +198,7 @@ function Stage({ d, stage, shown, winning, now }: { d: DrawView; stage: Stage; s
           {d.creditTickets ? `, ${d.creditTickets} on credits` : ""}
         </span>
         <span>Draw time {utcLabel(d.drawAt)}</span>
-        {winning !== null && <span>Ticket {ticketNo(winning)} drawn</span>}
+        {winning !== null && <span>Ticket {d.randomNumbers ? tno(winning) : ticketNo(winning)} drawn</span>}
       </footer>
     </article>
   );

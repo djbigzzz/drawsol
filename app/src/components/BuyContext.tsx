@@ -79,7 +79,7 @@ export interface BuyInit {
 
 export function BuyProvider({ children, init }: { children: ReactNode; init?: BuyInit }) {
   const { current: d, wallet, player, profile, now } = useDrawSol();
-  const { done, clearDone, lastSig } = useActions();
+  const { done, clearDone, lastSig, session } = useActions();
   const { setVisible } = useWalletModal();
   const mobile = useIsMobile();
   const barMode = useIsMobile(BAR_QUERY);
@@ -151,6 +151,10 @@ export function BuyProvider({ children, init }: { children: ReactNode; init?: Bu
   useEffect(() => {
     if (done) setStep("done");
   }, [done]);
+  // a reveal session has opened (draws with instant prizes): the confirm sheet gives way to the reveal
+  useEffect(() => {
+    if (session) setStep("pick");
+  }, [session]);
   useEffect(() => {
     if (lastSig.free && !done) setStep("pick");
   }, [lastSig.free, done]);

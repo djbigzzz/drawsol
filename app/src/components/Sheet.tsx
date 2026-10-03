@@ -3,6 +3,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { phaseOf } from "@/lib/derive";
+import { drawRolls } from "@/lib/chain";
 import { sol, ticketNo, ticketRange, utcLabel } from "@/lib/format";
 import { Busy, Check, ErrorNote, ProofLink, inFlight, phaseLabel } from "./bits";
 import { useBuy } from "./BuyContext";
@@ -127,7 +128,7 @@ function ConfirmStep() {
         )}
       </dl>
       <FeeLine />
-      <p className="helper">Numbered from {ticketNo(d.nextTicket)}, unless someone buys first.</p>
+      <p className="helper">{d.randomNumbers ? "Your ticket numbers are assigned at random by ORAO about 2 s after you pay; you sign once more to reveal them." : `Numbered from ${ticketNo(d.nextTicket)}, unless someone buys first.`}</p>
       <AdultRow remembered={adultRemembered} checked={adult} onChange={setAdult} onUndo={forgetAdult} disabled={busy} />
       <button type="button" className="btn btn-primary btn-xl btn-block" onClick={pay} disabled={!ready} aria-describedby={!ageOk ? hint : undefined}>
         {busy && <Busy />}
@@ -141,8 +142,17 @@ function ConfirmStep() {
       {disabledReason && <p className="helper">{disabledReason}</p>}
       {errors.buy && <ErrorNote onDismiss={() => clearError("buy")}>{errors.buy.message}</ErrorNote>}
       <p className="helper">
-        Then approve in your wallet. Your tickets go straight into the draw. Drawn <span className="nw">{utcLabel(d.drawAt)}</span> once {n(d.minTickets)} tickets
-        sell; otherwise everyone is refunded in full.
+        Then approve in your wallet.{" "}
+        {drawRolls(d) ? "About 2 s later it asks once more, to reveal your numbers and pay any instant win." : "Your tickets go straight into the draw."}{" "}
+        {d.guaranteed ? (
+          <>
+            Drawn <span className="nw">{utcLabel(d.drawAt)}</span>, guaranteed; the full end prize once {n(d.minTickets)} tickets sell, else {d.potBps / 100}% of sales. No refunds.
+          </>
+        ) : (
+          <>
+            Drawn <span className="nw">{utcLabel(d.drawAt)}</span> once {n(d.minTickets)} tickets sell; otherwise everyone is refunded in full.
+          </>
+        )}
       </p>
     </div>
   );
@@ -177,7 +187,15 @@ function DoneStep() {
         ) : (
           <>Your {free ? "free entry" : "purchase"} confirmed, but the entry couldn’t be read back yet. It will appear under Your tickets.</>
         )}{" "}
-        Drawn <span className="nw">{utcLabel(d.drawAt)}</span> once {n(d.minTickets)} tickets sell; otherwise everyone is refunded in full.
+        {d.guaranteed ? (
+          <>
+            Drawn <span className="nw">{utcLabel(d.drawAt)}</span>, guaranteed.
+          </>
+        ) : (
+          <>
+            Drawn <span className="nw">{utcLabel(d.drawAt)}</span> once {n(d.minTickets)} tickets sell; otherwise everyone is refunded in full.
+          </>
+        )}
       </p>
       <p className="done-links">
         <ProofLink tx={done.sig}>Transaction on Solscan</ProofLink>

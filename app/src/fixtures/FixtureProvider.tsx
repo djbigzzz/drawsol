@@ -6,45 +6,44 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { ActionsContext, DataContext, type ActionKey, type Actions, type DrawSolData, type RevealSession } from "@/hooks/context";
+import { ActionsContext, DataContext, type ActionKey, type Actions, type Done, type DrawSolData, type RevealSession } from "@/hooks/context";
 import { useNow } from "@/hooks/useNow";
-import { defaultDraw, liveDraw } from "@/lib/derive";
-import { FIXED_NOW, playerOf, revealSessionFor, scenario, SCENARIOS, type Scenario } from "./data";
+import { featuredDraw } from "@/lib/derive";
+import { FIXED_NOW, playerOf, revealSessionFor, scenario, SCENARIOS, SOL_USD, type Scenario } from "./data";
 
 const NOTE = { message: "Fixture build — nothing is sent to devnet." };
 
-/**
- * The fixture clock starts at a fixed instant (Sat 3 Oct 2026, 16:28:48 UTC: tonight's pot draw is 5 h 31 min
- * away) so every shot shows the same times, then ticks for real from page load.
- */
+/** The fixture clock starts at a fixed instant so every shot shows the same times, then ticks for real. */
 export function FixtureProvider({ children }: { children: ReactNode }) {
   const realNow = useNow();
   const [offset] = useState(() => FIXED_NOW - Math.floor(Date.now() / 1000));
   const now = realNow + offset;
   const [name, setName] = useState<Scenario>("loading");
   const [raw, setRaw] = useState("open");
-  // &my=loading|error: this wallet's accounts not read yet / failed, as the live provider reports them
   const [my, setMy] = useState<DrawSolData["myState"]>("ready");
+  const [noUsd, setNoUsd] = useState(false);
   useEffect(() => {
-    // pick the scenario after mount so the prerendered HTML (a loading ticket) hydrates cleanly
+    // pick the scenario after mount so the prerendered HTML (the loading card) hydrates cleanly
     const q = new URLSearchParams(window.location.search);
     const p = q.get("fx") ?? "open";
     setRaw(p);
     setName((SCENARIOS as string[]).includes(p) ? (p as Scenario) : "open");
     const m = q.get("my");
     if (m === "loading" || m === "error") setMy(m);
+    // &usd=0: no live quote (the page shows SOL only)
+    if (q.get("usd") === "0") setNoUsd(true);
   }, []);
   const fx = useMemo(() => scenario(name, FIXED_NOW), [name]);
   const [selectedId, select] = useState<number | null>(null);
   useEffect(() => select(fx.selected), [fx]);
   const [session, setSession] = useState<RevealSession | null>(fx.session);
   useEffect(() => setSession(fx.session), [fx]);
+  const [done, setDone] = useState<Done | null>(fx.done);
+  useEffect(() => setDone(fx.done), [fx]);
   const [errors, setErrors] = useState<Actions["errors"]>({});
   useEffect(() => setErrors(fx.errors ?? {}), [fx]);
 
-  // /live scenarios open on the next draw to be drawn, as the live page does
-  const fallback = name.startsWith("live-") ? liveDraw(fx.draws, now) : defaultDraw(fx.draws);
-  const current = (selectedId !== null ? fx.draws.find((d) => d.id === selectedId) : undefined) ?? fallback;
+  const current = (selectedId !== null ? fx.draws.find((d) => d.id === selectedId) : undefined) ?? featuredDraw(fx.draws);
   const world = current ? fx.worlds.get(current.address.toBase58()) : undefined;
   const wallet = fx.wallet;
   const mine = world && wallet ? world.entries.filter((e) => e.owner.equals(wallet.address)) : [];
@@ -54,23 +53,17 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
       ? current.status === "settled"
         ? current.houseLamports - current.houseWithdrawn
         : current.houseLamports + current.potLamports + current.instantPoolLamports - current.refundedLamports
-      : current.revenueLamports - current.refundedLamports + (current.prizePaid ? BigInt(0) : current.prizeLamports)
+      : current.revenueLamports - current.refundedLamports + (current.prizePaid ? BigInt(0) : current.prizeLamports) - world!.entries.reduce((s, e) => s + e.solPaid, BigInt(0))
     : null;
 
   const data: DrawSolData = {
-    load:
-      fx.load === "ready"
-        ? { kind: "ready" }
-        : fx.load === "loading"
-          ? { kind: "loading" }
-          : fx.load === "error"
-            ? { kind: "error", message: "fixture" }
-            : { kind: "nodraw", reason: name === "nodraw-legacy" ? "no-draws" : "no-program" },
-    config: fx.load === "ready" || name === "nodraw-legacy" ? { admin: fx.draws[0]?.authority ?? PublicKey.default, keeper: PublicKey.default, nextDrawId: fx.nextDrawId } : null,
+    load: fx.load === "ready" ? { kind: "ready" } : fx.load === "loading" ? { kind: "loading" } : fx.load === "error" ? { kind: "error", message: "fixture" } : { kind: "nodraw", reason: "no-draws" },
+    config: fx.load === "ready" ? { admin: fx.draws[0]?.authority ?? PublicKey.default, keeper: PublicKey.default, nextDrawId: fx.nextDrawId } : null,
     draws: fx.draws,
     legacyDraws: fx.legacyDraws,
     current: current ?? null,
     select,
+    solUsd: noUsd ? null : SOL_USD,
     vaultLamports: vault,
     entries: world?.entries ?? [],
     entriesState: "ready",
@@ -111,7 +104,7 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
     settle: fail("settle"),
     cancel: fail("cancel"),
     refund: (e) => fail(`refund:${e.address.toBase58()}`)(),
-    // open a session for THAT entry; tiers recomputed with fairness.ts from its (fixture) randomness
+    // open a session for THAT entry as the fixture world holds it
     reveal: (e) => {
       const rand = fx.entryRandomness.get(e.address.toBase58());
       if (!current || !rand || !e.needsReveal) return fail(`reveal:${e.address.toBase58()}`)();
@@ -119,6 +112,8 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
     },
     session,
     closeSession: () => setSession(null),
+    done,
+    clearDone: () => setDone(null),
     clearError: (k) => setErrors((e) => ({ ...e, [k]: null })),
     disabledReason: null,
   };
@@ -133,26 +128,8 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
   );
 }
 
-const CODES: Record<string, string> = {
-  open: "op",
-  confirm: "cf",
-  stale: "sl",
-  credits: "cr",
-  limit: "lm",
-  excluded: "ex",
-  headline: "hl",
-  nodraw: "nd",
-  reveal: "rv",
-  loading: "ld",
-  error: "er",
-};
-
-/** Sits inside the devnet strip's right end (z 101), never over page content. */
+/** Sits inside the devnet bar's right end, never over page content. */
 function FxBadge({ name }: { name: string }) {
-  // on phones a 2–3 letter code ("Fx rd"): the badge gives way, never the honesty marker beside it;
-  // single words get a fixed code (slicing "open" to "ope" read as a typo), hyphenated ones their initials
-  const code = CODES[name] ?? (name.includes("-") ? name.split("-").map((p) => p[0]).join("") : name.slice(0, 2));
-  // the strip's text stops (and truncates) before the badge, so the badge never covers the honesty line
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -168,30 +145,11 @@ function FxBadge({ name }: { name: string }) {
       ref={ref}
       role="note"
       className="fxb"
-      style={{
-        position: "fixed",
-        top: 0,
-        right: 0,
-        zIndex: 101,
-        height: "var(--strip-h)",
-        display: "flex",
-        alignItems: "center",
-        padding: "0 16px",
-        background: "var(--ink)",
-        color: "var(--stock)",
-        fontFamily: "var(--grot)",
-        fontStretch: "88%",
-        fontWeight: 700,
-        fontSize: 12,
-        whiteSpace: "nowrap",
-      }}
+      style={{ position: "fixed", top: 0, right: 0, zIndex: 101, height: "var(--devbar-h)", display: "flex", alignItems: "center", padding: "0 12px", background: "#0B1220", color: "#fff", fontWeight: 700, fontSize: 12, whiteSpace: "nowrap" }}
     >
-      <span className="fxb-long">Fixture data · ?fx={name}</span>
-      <span className="fxb-short">Fx · {name}</span>
-      <span className="fxb-tiny" aria-label={`Fixture ${name}`}>
-        Fx {code}
-      </span>
-      <style>{`.strip-in{padding-right:var(--fxb-w,0px)}.fxb-short,.fxb-tiny{display:none}@media (max-width:760px){.fxb-long{display:none}.fxb-tiny{display:inline}.fxb{padding:0 8px!important}}`}</style>
+      <span className="fxb-long">Fixture · ?fx={name}</span>
+      <span className="fxb-short">Fx</span>
+      <style>{`.devbar-in{padding-right:var(--fxb-w,0px)}.fxb-short{display:none}@media (max-width:760px){.fxb-long{display:none}.fxb-short{display:inline}}`}</style>
     </div>
   );
 }

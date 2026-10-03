@@ -4,14 +4,14 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { useDrawSol } from "@/hooks/context";
 import { useOraoRead } from "@/hooks/useOraoRead";
-import { anyoneCanRun, cancelReason, grandPrize, headlineHouseBps, isDefaultKey, pct, phaseOf, publicFrom, type Phase } from "@/lib/derive";
+import { anyoneCanRun, cancelReason, endPrize, endPrizeLocked, grandPrize, headlineHouseBps, isDefaultKey, pct, phaseOf, publicFrom, scheduleTotals, wonNumbers, type Phase } from "@/lib/derive";
 import { drawPda, vaultPda } from "@/lib/chain";
 import { toHex } from "@/lib/fairness";
 import { shortDate, sol, ticketNo, utcLabel } from "@/lib/format";
 import type { DrawView, EntryView } from "@/lib/types";
 import { Addr, Busy, Pill, ProofLink, Section } from "./bits";
 import { EntryLedger } from "./EntryLedger";
-import { drawName, kindName, n, plural, prizeFig } from "./fmt";
+import { drawName, kindName, n, plural, prizeFig, tnoOf } from "./fmt";
 import { Meter } from "./Hero";
 import { Recompute, SettleTxLine, useSettleTx } from "./Recompute";
 
@@ -144,7 +144,7 @@ function DrawIndex({ draws, next }: { draws: DrawView[]; next: number | null }) 
                 <span className="row-what">
                   {ph === "settled" ? (
                     <>
-                      ticket <b className="tab">{ticketNo(d.winningTicket)}</b> won {prizeFig(grandPrize(d))} SOL
+                      ticket <b className="tab">{tnoOf(d, d.winningTicket)}</b> won {prizeFig(grandPrize(d))} SOL
                     </>
                   ) : ph === "cancelled" ? (
                     <>cancelled {shortDate(d.drawAt)}</>
@@ -209,13 +209,20 @@ function Record({ d }: { d: DrawView }) {
   const instantSol = state === "ready" ? entries.reduce((x, e) => x + e.solPaid, BigInt(0)) : null;
   const mine = !!wallet && settled && d.winner.equals(wallet.address);
 
+  const instants = scheduleTotals(d);
+  const won = wonNumbers(d, entries);
   const lead: ReactNode = settled ? (
     <>
-      Settled <span className="nw">{utcLabel(d.settledAt)}</span>. Ticket <b className="tab">{ticketNo(d.winningTicket)}</b> won <span className="nw">{prize}</span>. Every
+      Settled <span className="nw">{utcLabel(d.settledAt)}</span>. Ticket <b className="tab">{tnoOf(d, d.winningTicket)}</b> won <span className="nw">{prize}</span>. Every
       figure here is read from the draw account and its entries on devnet.
     </>
   ) : ph === "selling" ? (
-    d.kind === "headline" ? (
+    d.guaranteed ? (
+      <>
+        Draws <span className="nw">{utcLabel(d.drawAt)}</span>, guaranteed: the escrowed {prizeFig(d.prizeLamports)} SOL once {n(d.minTickets)} tickets sell, else {d.potBps / 100}% of
+        sales. Every figure here is read from the draw account and its entries on devnet.
+      </>
+    ) : d.kind === "headline" ? (
       <>
         Draws <span className="nw">{utcLabel(d.drawAt)}</span> once {n(d.minTickets)} tickets sell; otherwise everyone is refunded in full. Every figure here is read
         from the draw account and its entries on devnet.
@@ -264,7 +271,7 @@ function Record({ d }: { d: DrawView }) {
       {settled && (
         <div className="card winner rec-winner">
           <p className="winner-eyebrow">Winning ticket</p>
-          <p className="winner-ticket tab">{ticketNo(d.winningTicket)}</p>
+          <p className="winner-ticket tab">{tnoOf(d, d.winningTicket)}</p>
           <dl className="winner-facts">
             <div>
               <dt>Winner</dt>
@@ -306,8 +313,26 @@ function Record({ d }: { d: DrawView }) {
               </>
             ) : (
               <>
-                <Row k="Grand prize">{settled ? `${prize}, paid` : ph === "cancelled" ? `${prize}, returned to the operator` : `${prize}, escrowed`}</Row>
-                {d.kind === "headline" && (
+                {d.guaranteed ? (
+                  <>
+                    <Row k={settled ? "End prize" : "End prize right now"}>
+                      {settled
+                        ? `${prize}, paid${d.paidTickets >= d.minTickets ? " (the escrowed prize)" : ` (${d.potBps / 100}% of sales, under the minimum)`}`
+                        : `${prizeFig(endPrize(d))} SOL${endPrizeLocked(d) ? ", the escrowed prize, locked in" : `, ${d.potBps / 100}% of sales so far`}`}
+                    </Row>
+                    <Row k="Escrowed prize">
+                      {prizeFig(d.prizeLamports)} SOL, paid in full once {n(d.minTickets)} tickets sell{d.paidTickets >= d.minTickets ? " (reached)" : ` (${n(d.minTickets - d.paidTickets)} to go)`}
+                    </Row>
+                    {instants.count > 0 && (
+                      <Row k="Instant prizes">
+                        {n(instants.count)} published numbers, {state === "ready" ? `${won.size} won so far` : "…"} · {d.schedule.map((t) => `${prizeFig(t.lamports)} SOL ×${t.numbers.length}`).join(", ")}
+                      </Row>
+                    )}
+                  </>
+                ) : (
+                  <Row k="Grand prize">{settled ? `${prize}, paid` : ph === "cancelled" ? `${prize}, returned to the operator` : `${prize}, escrowed`}</Row>
+                )}
+                {d.kind === "headline" && !d.guaranteed && (
                   <>
                     <Row k="Minimum to draw">
                       {n(d.minTickets)} paid tickets{d.paidTickets >= d.minTickets ? ", reached" : `, ${n(d.minTickets - d.paidTickets)} to go`}

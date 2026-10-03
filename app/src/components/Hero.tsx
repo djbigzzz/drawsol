@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useActions, useDrawSol } from "@/hooks/context";
-import { anyoneCanRun, cancelReason, cancelsAtRequest, canCancel, grandPrize, phaseOf, publicFrom, remaining, type Phase } from "@/lib/derive";
+import { anyoneCanRun, cancelReason, cancelsAtRequest, canCancel, endPrize, endPrizeLocked, grandPrize, phaseOf, publicFrom, remaining, scheduleTotals, type Phase } from "@/lib/derive";
 import { campaignOf, usdWhole } from "@/lib/campaigns";
 import { winningTicket } from "@/lib/fairness";
 import { clock, sol, ticketNo, utcLabel } from "@/lib/format";
@@ -12,7 +12,7 @@ import { CANCEL_GRACE_SECS } from "@/lib/config";
 import type { DrawView } from "@/lib/types";
 import { Addr, Busy, Check, ErrorNote, Pill, ProofLink, inFlight, phaseLabel } from "./bits";
 import { EntryPanel, refundOf } from "./EntryPanel";
-import { durationParts, leftText, localComma, n, plural, prizeFig, solRound, usd } from "./fmt";
+import { durationParts, localComma, n, plural, prizeFig, solRound, tnoOf, usd, usdPrize } from "./fmt";
 import { useSettleTx } from "./Recompute";
 
 const ZERO = BigInt(0);
@@ -53,6 +53,10 @@ function PrizeBlock({ d, ph }: { d: DrawView; ph: Phase }) {
   const [label, tone] = STATUS[ph];
   const escrow = d.prizeLamports;
   const escrowUsd = usd(escrow, solUsd);
+  const instants = scheduleTotals(d);
+  const locked = endPrizeLocked(d);
+  const nowPrize = endPrize(d);
+  const nowUsd = usd(nowPrize, solUsd);
   const price = usd(d.ticketPrice, solUsd);
   const local = useLocal(d.drawAt);
   const soldOut = d.paidTickets >= d.ticketCap;
@@ -69,14 +73,44 @@ function PrizeBlock({ d, ph }: { d: DrawView; ph: Phase }) {
           </>
         ) : (
           <>
-            <span className="win-verb">{ph === "settled" ? "Won" : "Win"}</span> {prizeFig(grandPrize(d))} <span className="win-what">SOL</span>
+            <span className="win-verb">{ph === "settled" ? "Won" : "Win"}</span> {prizeFig(ph === "settled" ? grandPrize(d) : d.prizeLamports)} <span className="win-what">SOL</span>
           </>
         )}
+        {instants.count > 0 && <span className="win-plus">+ {n(instants.count)} instant prizes</span>}
       </h1>
       <p className="hero-sub">
         {ph === "settled" ? (
           <>
             Paid in SOL: <b className="nw">{prizeFig(grandPrize(d))} SOL</b> to <Addr k={d.winner} link />
+            {d.guaranteed && d.paidTickets < d.minTickets ? <span className="hero-usd"> · {d.potBps / 100}% of sales, under the {n(d.minTickets)}-ticket minimum</span> : null}
+          </>
+        ) : d.guaranteed && ph !== "selling" ? (
+          <>
+            {locked ? (
+              <>
+                <b>{camp ? usdWhole(camp.usd) : `${prizeFig(d.prizeLamports)} SOL`} locked in</b>: {n(d.minTickets)} tickets sold ·{" "}
+                <ProofLink account={vaultPda(d.address)}>{sol(escrow, 2, 2)} SOL in the vault</ProofLink>
+              </>
+            ) : (
+              <>
+                End prize <b className="c-accent nw">{nowUsd ?? `${sol(nowPrize, 2, 3)} SOL`}</b>: {d.potBps / 100}% of ticket sales, under the {n(d.minTickets)}-ticket minimum ·{" "}
+                <ProofLink account={vaultPda(d.address)}>vault</ProofLink>
+              </>
+            )}
+          </>
+        ) : d.guaranteed ? (
+          <>
+            {locked ? (
+              <>
+                <b>{camp ? usdWhole(camp.usd) : `${prizeFig(d.prizeLamports)} SOL`} locked in</b>: {n(d.minTickets)} tickets have sold ·{" "}
+                <ProofLink account={vaultPda(d.address)}>{sol(escrow, 2, 2)} SOL in the vault</ProofLink>
+              </>
+            ) : (
+              <>
+                End prize right now <b className="c-accent nw">{nowUsd ?? `${sol(nowPrize, 2, 3)} SOL`}</b> · becomes {camp ? usdWhole(camp.usd) : `${prizeFig(d.prizeLamports)} SOL`} at{" "}
+                {n(d.minTickets)} sold · <ProofLink account={vaultPda(d.address)}>{sol(escrow, 2, 2)} SOL escrowed</ProofLink>
+              </>
+            )}
           </>
         ) : ph === "cancelled" ? (
           <>
@@ -123,7 +157,7 @@ function PrizeBlock({ d, ph }: { d: DrawView; ph: Phase }) {
           <div>
             <dt>Winning ticket</dt>
             <dd>
-              <b className="c-accent tab">{ticketNo(d.winningTicket)}</b> <span className="sub">of {n(d.nextTicket)}</span>
+              <b className="c-accent tab">{tnoOf(d, d.winningTicket)}</b> <span className="sub">of {n(d.nextTicket)}</span>
             </dd>
           </div>
         )}
@@ -136,9 +170,19 @@ function PrizeBlock({ d, ph }: { d: DrawView; ph: Phase }) {
           </div>
         )}
       </dl>
+      {d.schedule.length > 0 && ph !== "settled" && ph !== "cancelled" && (
+        <p className="hero-instants">
+          <b>{n(instants.count)} instant prizes</b>, {usdPrize(instants.total, solUsd) ?? `${sol(instants.total, 2, 3)} SOL`} in all:{" "}
+          {d.schedule.map((t) => `${usdPrize(t.lamports, solUsd) ?? `${sol(t.lamports, 2, 4)} SOL`} ×${t.numbers.length}`).join(" · ")}. Winning numbers published before sales;
+          yours are assigned at random when you reveal.{" "}
+          <a className="tbtn" href="#prizes">
+            See the numbers
+          </a>
+        </p>
+      )}
       {vaultLamports !== null && ph !== "settled" && (
         <p className="hero-vault">
-          The vault holds <span className="nw">{sol(vaultLamports, 2, 3)} SOL</span> right now: {d.revenueLamports > ZERO && ph !== "cancelled" ? "the prize and ticket sales so far" : ph === "cancelled" ? "refunds still to be claimed" : "the prize"}.
+          The vault holds <span className="nw">{sol(vaultLamports, 2, 3)} SOL</span> right now: {d.revenueLamports > ZERO && ph !== "cancelled" ? "the escrowed prize and ticket sales so far" : ph === "cancelled" ? "refunds still to be claimed" : "the escrowed prize"}.
         </p>
       )}
     </div>
@@ -207,6 +251,14 @@ export function Meter({ d, compact = false }: { d: DrawView; compact?: boolean }
   const headline = d.kind === "headline" && d.minTickets > 0;
   const note = !headline
     ? `${n(remaining(d))} left`
+    : d.guaranteed
+      ? over
+        ? d.paidTickets >= d.minTickets
+          ? `Reached the ${n(d.minTickets)} that locks in the full end prize`
+          : `Stayed under ${n(d.minTickets)}: the end prize was ${d.potBps / 100}% of sales`
+        : short > 0
+          ? `${n(d.minTickets)} sold unlocks the full end prize · ${n(short)} to go`
+          : `Full end prize locked in · ${n(remaining(d))} left`
     : over
       ? d.paidTickets >= d.minTickets
         ? `Reached the ${n(d.minTickets)} it needed to draw`
@@ -232,7 +284,7 @@ export function Meter({ d, compact = false }: { d: DrawView; compact?: boolean }
         aria-label={`${d.paidTickets} of ${d.ticketCap} paid tickets sold${headline ? `; ${d.minTickets} needed to draw` : ""}`}
       >
         <span className="meter-fill" style={{ width: `${Math.min(100, pct)}%` }} />
-        {headline && d.minTickets < d.ticketCap && <span className="meter-min" style={{ left: `${minPct}%` }} title={`Minimum to draw: ${n(d.minTickets)}`} />}
+        {headline && d.minTickets < d.ticketCap && <span className="meter-min" style={{ left: `${minPct}%` }} title={d.guaranteed ? `Full end prize at ${n(d.minTickets)}` : `Minimum to draw: ${n(d.minTickets)}`} />}
       </div>
       <p className="meter-note">
         {note}
@@ -262,7 +314,7 @@ function YourEntryLine() {
 
 function ClosedPanel({ d, now }: { d: DrawView; now: number }) {
   const soldOut = d.paidTickets >= d.ticketCap;
-  const undersold = d.kind === "headline" && d.paidTickets < d.minTickets;
+  const undersold = d.kind === "headline" && !d.guaranteed && d.paidTickets < d.minTickets;
   return (
     <div className="panel">
       <Meter d={d} />
@@ -274,6 +326,7 @@ function ClosedPanel({ d, now }: { d: DrawView; now: number }) {
         {soldOut ? "Every paid ticket has sold." : "Sales closed at the deadline."} The draw waits for its time, <span className="nw">{utcLabel(d.drawAt)}</span>: it
         is never drawn early.
         {undersold ? ` With fewer than ${n(d.minTickets)} paid tickets then, it is cancelled and everyone is refunded in full.` : ""}
+        {d.guaranteed && d.paidTickets < d.minTickets ? ` Under ${n(d.minTickets)} sold, the end prize is ${d.potBps / 100}% of ticket sales.` : ""}
       </p>
       <YourEntryLine />
     </div>
@@ -350,7 +403,7 @@ function DrawingPanel({ d, now }: { d: DrawView; now: number }) {
           <span>
             {w !== null ? (
               <>
-                Winning ticket <b className="c-accent tab">{ticketNo(w)}</b>, computed from the randomness. Settling pays {prizeFig(grandPrize(d))} SOL to its owner.
+                Winning ticket <b className="c-accent tab">{tnoOf(d, w)}</b>, computed from the randomness. Settling pays {prizeFig(grandPrize(d))} SOL to its owner.
               </>
             ) : (
               <>Settle: pays {prizeFig(grandPrize(d))} SOL to the winning ticket. Anyone can do it.</>
@@ -395,7 +448,7 @@ function WinnerPanel({ d }: { d: DrawView }) {
   return (
     <div className="panel winner">
       <p className="winner-eyebrow">Winning ticket</p>
-      <p className="winner-ticket tab">{ticketNo(d.winningTicket)}</p>
+      <p className="winner-ticket tab">{tnoOf(d, d.winningTicket)}</p>
       <dl className="winner-facts">
         <div>
           <dt>Winner</dt>

@@ -235,7 +235,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }
       const fresh = await fetchEntry(program, entry.address).catch(() => null);
       if (fresh?.revealed) {
-        patchSession(entry.address, { stage: "revealed", tiers: fresh.tiers, solPaid: fresh.solPaid, creditsWon: fresh.creditsWon, poolSnapshot: fresh.poolSnapshot });
+        patchSession(entry.address, { stage: "revealed", tiers: fresh.tiers, numbers: fresh.numbers, solPaid: fresh.solPaid, creditsWon: fresh.creditsWon, poolSnapshot: fresh.poolSnapshot });
         refresh();
         return;
       }
@@ -251,6 +251,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         patchSession(entry.address, {
           stage: "revealed",
           tiers: after.tiers,
+          numbers: after.numbers,
           solPaid: after.solPaid,
           creditsWon: after.creditsWon,
           poolSnapshot: after.poolSnapshot,
