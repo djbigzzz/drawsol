@@ -3,16 +3,14 @@
 import type { ReactNode } from "react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
-import { grandPrize, tierCredits, tierSol } from "@/lib/derive";
-import { clock, shortDate, sol, ticketNo, ticketRange, utcLabel } from "@/lib/format";
-import { refundOf } from "./BuyPanel";
-import { inkAt, ticketInk } from "@/lib/print";
+import { grandPrize } from "@/lib/derive";
+import { clock, shortDate, sol, ticketNo, ticketRange } from "@/lib/format";
 import type { DrawView, EntryView } from "@/lib/types";
-import { Addr, Busy, ErrorNote, inFlight, ProofLink, SectionGrid } from "./bits";
+import { Addr, Busy, ErrorNote, ProofLink, Section, inFlight, phaseLabel } from "./bits";
+import { refundOf } from "./EntryPanel";
 import { plural, prizeFig } from "./fmt";
-import { Stamp } from "./print/Stamp";
-import { Stub, type StubState } from "./TicketStub";
 
+/** This wallet's entries in the featured draw: one row per purchase, with the refund button when cancelled. */
 export function MyTickets() {
   const { wallet, myEntries, myState, player, current: d, refresh } = useDrawSol();
   const { setVisible } = useWalletModal();
@@ -20,259 +18,149 @@ export function MyTickets() {
 
   if (!wallet)
     return (
-      <SectionGrid id="my-tickets" title="Your tickets">
-        <p className="t-body c-ink-2">Connect a wallet to see your tickets, instant results and refunds.</p>
-        <button type="button" className="btn btn-sec" style={{ marginTop: 16 }} onClick={() => setVisible(true)}>
-          Connect wallet
-        </button>
-      </SectionGrid>
+      <Section id="my-tickets" title="Your tickets">
+        <div className="card pad">
+          <p className="panel-text">Connect a wallet to see your tickets in this draw, and any refund.</p>
+          <button type="button" className="btn btn-outline" onClick={() => setVisible(true)}>
+            Connect wallet
+          </button>
+        </div>
+      </Section>
     );
 
-  // no counts and no "no tickets" until this wallet's accounts have been read
   if (myState !== "ready")
     return (
-      <SectionGrid id="my-tickets" title="Your tickets">
-        {myState === "error" ? (
-          <p className="t-body c-ink-2">
-            Can’t load the tickets of <Addr k={wallet.address} /> from devnet right now.{" "}
-            <button type="button" className="tbtn" onClick={refresh}>
-              Try again
-            </button>
-          </p>
-        ) : (
-          <p className="t-body c-ink-2" aria-busy="true">
-            Reading the tickets of <Addr k={wallet.address} /> from devnet…
-          </p>
-        )}
-      </SectionGrid>
+      <Section id="my-tickets" title="Your tickets">
+        <div className="card pad">
+          {myState === "error" ? (
+            <p className="panel-text">
+              Can’t load the tickets of <Addr k={wallet.address} /> from devnet right now.{" "}
+              <button type="button" className="tbtn" onClick={refresh}>
+                Try again
+              </button>
+            </p>
+          ) : (
+            <p className="panel-text" aria-busy="true">
+              <Busy /> Reading the tickets of <Addr k={wallet.address} /> from devnet…
+            </p>
+          )}
+        </div>
+      </Section>
     );
 
   if (myEntries.length === 0)
     return (
-      <SectionGrid id="my-tickets" title="Your tickets">
-        <p className="t-body c-ink-2">
-          No tickets in this draw for <Addr k={wallet.address} /> yet. The next ticket is {ticketNo(d.nextTicket)}.
-        </p>
-      </SectionGrid>
+      <Section id="my-tickets" title="Your tickets">
+        <div className="card pad">
+          <p className="panel-text">
+            No tickets in Draw № {d.id} for <Addr k={wallet.address} /> yet. The next ticket is {ticketNo(d.nextTicket)}.
+          </p>
+        </div>
+      </Section>
     );
 
-  const tickets = player?.tickets ?? myEntries.reduce((n, e) => n + e.count, 0);
-  const spent = player?.spent ?? myEntries.reduce((n, e) => n + e.paidLamports, BigInt(0));
-  const won = player?.won ?? myEntries.reduce((n, e) => n + e.solPaid, BigInt(0));
-  const wonCredits = player?.wonCredits ?? myEntries.reduce((n, e) => n + e.creditsWon, 0);
-  // long rolls (more than 5) get a row each; the short ones, sealed or not, and the free entry share
-  // one row side by side, so the same data keeps the same layout before and after a reveal
-  const long = myEntries.filter((e) => !e.isFree && e.count > 5);
-  const short = myEntries.filter((e) => e.isFree || e.count <= 5);
-  const n = tickets;
-  const win = <span className="nw">{ticketNo(d.winningTicket)}</span>;
+  const tickets = player?.tickets ?? myEntries.reduce((k, e) => k + e.count, 0);
+  const spent = player?.spent ?? myEntries.reduce((k, e) => k + e.paidLamports, BigInt(0));
   const holdsWinner = d.status === "settled" && myEntries.some((e) => d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count);
   const paidCount = myEntries.filter((e) => !e.isFree).reduce((k, e) => k + e.count, 0);
   const allRefunded = myEntries.filter((e) => !e.isFree).every((e) => e.refunded);
-  // what holds for these tickets depends on where the draw is
   const lead: ReactNode =
     d.status === "settled" ? (
       holdsWinner ? (
         <>
-          All {n} were in the draw, and you hold the winner, {win}.
+          All {tickets} were in the draw, and you hold the winner, {ticketNo(d.winningTicket)}.
         </>
       ) : (
         <>
-          None of your {n} was drawn; {win} won.
+          None of your {tickets} was drawn; {ticketNo(d.winningTicket)} won.
         </>
       )
     ) : d.status === "cancelled" ? (
       paidCount === 0 ? (
-        <>Draw Nº {d.id} was cancelled. A free entry has nothing to refund.</>
+        <>Draw № {d.id} was cancelled. A free entry has nothing to refund.</>
       ) : allRefunded ? (
         <>
-          Draw Nº {d.id} was cancelled. Your {paidCount} paid {plural(paidCount, "ticket was", "tickets were")} refunded.
+          Draw № {d.id} was cancelled. Your {paidCount} paid {plural(paidCount, "ticket was", "tickets were")} refunded.
         </>
       ) : (
         <>
-          Draw Nº {d.id} was cancelled. Your {paidCount} paid {plural(paidCount, "ticket", "tickets")} can be refunded in full.
+          Draw № {d.id} was cancelled. Your {paidCount} paid {plural(paidCount, "ticket", "tickets")} can be refunded in full.
         </>
       )
     ) : (
       <>
-        All {n} {plural(n, "is", "are")} in the draw.
+        All {tickets} {plural(tickets, "is", "are")} in the draw.
       </>
     );
 
   return (
-    <SectionGrid
+    <Section
       id="my-tickets"
       title="Your tickets"
-      sub={
+      lead={
         <>
-          {lead} Wallet <Addr k={wallet.address} />.
+          {lead} Wallet <Addr k={wallet.address} />. Spent {sol(spent, 2, 4)} SOL.
         </>
       }
-      aside={
-        <dl className="ledger big">
-          <div>
-            <dt>Tickets</dt>
-            <dd>{tickets}</dd>
-          </div>
-          <div>
-            <dt>Spent</dt>
-            <dd>{sol(spent, 2, 4)} SOL</dd>
-          </div>
-          {d.kind === "pot" && (
-            <div className={won > BigInt(0) ? "won" : ""}>
-              <dt>Won so far</dt>
-              <dd>
-                {sol(won, 2, 4)} SOL{wonCredits > 0 ? ` + ${wonCredits} free` : ""}
-              </dd>
-            </div>
-          )}
-        </dl>
-      }
     >
-      <div className="rolls">
-        {long.map((e) => (
-          <Roll key={e.address.toBase58()} e={e} d={d} />
-        ))}
-        {short.length > 0 && (
-          // the usual pair (one short paid roll + the free entry) lines its strips up on shared tracks
-          <div className={`rolls-row ${short.length === 2 && short.some((e) => e.isFree) && short.some((e) => !e.isFree) ? "pair" : ""}`}>
-            {short.map((e) => (
-              <Roll key={e.address.toBase58()} e={e} d={d} />
-            ))}
-          </div>
-        )}
+      <div className="card">
+        <ul className="rows" aria-label="Your entries">
+          {myEntries.map((e) => (
+            <Row key={e.address.toBase58()} e={e} d={d} />
+          ))}
+        </ul>
       </div>
-    </SectionGrid>
+    </Section>
   );
 }
 
-function Roll({ e, d }: { e: EntryView; d: DrawView }) {
-  const { reveal, refund, phase, errors, clearError, lastSig, disabledReason } = useActions();
+function Row({ e, d }: { e: EntryView; d: DrawView }) {
+  const { refund, phase, errors, clearError, disabledReason } = useActions();
   const holds = d.status === "settled" && d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count;
   const rk = `refund:${e.address.toBase58()}` as const;
-  const vk = `reveal:${e.address.toBase58()}` as const;
   const rp = phase[rk];
-  const refundBusy = inFlight(rp);
-  const sealed = e.needsReveal && !e.revealed;
-  const canReveal = sealed && d.status !== "cancelled";
-  const payoutTx = lastSig[vk];
-  const winsAmt = e.solPaid;
-  const prize = prizeFig(grandPrize(d));
+  const busy = inFlight(rp);
   const owed = refundOf(e);
-
-  const stateOf = (i: number): StubState => {
-    const t = e.firstTicket + i;
-    if (holds && t === d.winningTicket) return "drawn";
-    if (e.refunded) return "refunded";
-    if (!e.needsReveal) return e.isFree ? "free" : "entered";
-    if (!e.revealed) return "sealed";
-    const k = e.tiers[i];
-    if (k <= 0) return "nowin";
-    return d.iwTiers[k - 1] && tierCredits(d.iwTiers[k - 1]) > 0 && tierSol(d.iwTiers[k - 1], e.poolSnapshot) === BigInt(0) ? "credit" : "won";
-  };
-  const what = e.isFree ? "Free entry" : e.creditCount > 0 && e.paidCount === 0 ? `${e.count} on credits` : e.creditCount > 0 ? `Bought ${e.paidCount} + ${e.creditCount} free` : `Bought ${e.count}`;
-
+  const what = e.isFree ? "Free entry" : `${e.count} ${plural(e.count, "ticket", "tickets")}`;
   return (
-    <div className={`roll ${e.isFree ? "roll-free" : ""}`}>
-      <p className="roll-cap">
-        <b>{what}</b>
-        <span className="nw tab">{ticketRange(e.firstTicket, e.count)}</span>
-        {!e.needsReveal ? (
-          <span>{e.isFree ? "in the draw" : "no instant roll"}</span>
-        ) : sealed ? (
-          <span>sealed</span>
-        ) : (
-          <>
-            <span className="nw">
-              {shortDate(e.createdAt)}, {clock(e.createdAt)} UTC
-            </span>
-            {winsAmt > BigInt(0) || e.creditsWon > 0 ? (
-              <span className="won nw">
-                won {winsAmt > BigInt(0) ? `${sol(winsAmt, 2, 4)} SOL` : ""}
-                {winsAmt > BigInt(0) && e.creditsWon > 0 ? " + " : ""}
-                {e.creditsWon > 0 ? `${e.creditsWon} free ${plural(e.creditsWon, "ticket", "tickets")}` : ""}
-              </span>
-            ) : (
-              <span>no instant wins</span>
-            )}
-            {payoutTx && <ProofLink tx={payoutTx}>Payout tx</ProofLink>}
-          </>
-        )}
-      </p>
-      <div className="roll-body">
-        <div className={`strip-of ${e.count > 5 ? "rows" : "n-few"}`} role="list" aria-label={`Tickets ${ticketRange(e.firstTicket, e.count)}`}>
-          {Array.from({ length: e.count }, (_, i) => {
-            const t = e.firstTicket + i;
-            const st = stateOf(i);
-            return (
-              <Stub
-                key={i}
-                serial={t}
-                state={st}
-                amount={st === "won" ? tierSol(d.iwTiers[e.tiers[i] - 1], e.poolSnapshot) : undefined}
-                credits={st === "credit" ? tierCredits(d.iwTiers[e.tiers[i] - 1]) : undefined}
-                ink={st === "drawn" ? inkAt(d.randomness, 32) : ticketInk(e.address.toBytes(), t)}
-                prize={prize}
-              />
-            );
-          })}
-          {e.refunded && (
-            <Stamp kind="refunded" className="refund-stamp" seed={inkAt(e.address.toBytes(), 0)} label="Stamped: refunded" />
-          )}
-        </div>
-
-        {holds && (
-          <p className="roll-say">
-            Ticket <span className="nw">{ticketNo(d.winningTicket)}</span> won the grand prize. <span className="nw">{prize} SOL</span> was paid to you.
-          </p>
-        )}
-
-        {canReveal && (
-          <>
-            <p className="roll-note t-small">
-              The reveal transaction wasn’t sent after this {e.isFree ? "claim" : "purchase"}, so {e.count === 1 ? "this result is" : "these results are"} still sealed.
-              Anyone can send it; any wins are paid to you.{" "}
-              {d.status === "settled"
-                ? "The pool was paid into the pot at the draw, so a late reveal records the result and any free tickets, but no SOL."
-                : "Reveal before the draw: the pool left at the draw goes to the winner."}
-            </p>
-            <div className="roll-act">
-              <button type="button" className="btn" onClick={() => reveal(e)} disabled={!!disabledReason}>
-                Reveal {e.count} {plural(e.count, "ticket", "tickets")}
-              </button>
-            </div>
-          </>
-        )}
-
-
-        {d.status === "cancelled" &&
-          (e.isFree || (owed === BigInt(0) && e.creditCount === 0) ? (
-            <p className="roll-note t-small">{e.isFree ? "Free entry: nothing to refund." : "Its instant wins already paid back more than it cost: nothing to refund."}</p>
-          ) : e.refunded ? (
-            <p className="roll-note t-small">
-              Refunded <span className="nw">{sol(owed, 2, 4)} SOL</span>
-              {e.creditCount > 0 ? ` and ${e.creditCount} free ${plural(e.creditCount, "ticket", "tickets")}` : ""}.
-            </p>
-          ) : (
-            <div className="roll-act">
-              <button type="button" className="btn btn-sec" onClick={() => refund(e)} disabled={refundBusy || !!disabledReason}>
-                {refundBusy && <Busy />}
-                {rp === "simulating" ? "Checking with the program…" : rp === "signing" ? "Approve in your wallet…" : rp === "confirming" ? "Confirming…" : owed > BigInt(0) ? `Refund ${sol(owed, 2, 4)} SOL` : `Return ${e.creditCount} free ${plural(e.creditCount, "ticket", "tickets")}`}
-              </button>
-            </div>
-          ))}
-
-        {errors[rk] && (
-          <div style={{ marginTop: 16 }}>
-            <ErrorNote onDismiss={() => clearError(rk)}>{errors[rk]!.message}</ErrorNote>
-          </div>
-        )}
-        {errors[vk] && (
-          <div style={{ marginTop: 16 }}>
-            <ErrorNote onDismiss={() => clearError(vk)}>{errors[vk]!.message}</ErrorNote>
-          </div>
-        )}
+    <li className={`row ${holds ? "row-win" : ""}`}>
+      <div className="row-main">
+        <b className="tab">{ticketRange(e.firstTicket, e.count)}</b>
+        <span className="row-what">
+          {what} · {shortDate(e.createdAt)}, {clock(e.createdAt)} UTC
+          {!e.isFree && <> · {sol(e.paidLamports, 2, 4)} SOL</>}
+        </span>
       </div>
-    </div>
+      <div className="row-side">
+        {holds ? (
+          <span className="pill pill-accent">Won {prizeFig(grandPrize(d))} SOL</span>
+        ) : d.status === "cancelled" ? (
+          e.isFree ? (
+            <span className="c-3">nothing to refund</span>
+          ) : e.refunded ? (
+            <span className="pill pill-neutral">Refunded {sol(owed, 2, 4)} SOL</span>
+          ) : owed > BigInt(0) ? (
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => refund(e)} disabled={busy || !!disabledReason}>
+              {busy && <Busy />}
+              {phaseLabel(rp, `Refund ${sol(owed, 2, 4)} SOL`)}
+            </button>
+          ) : (
+            <span className="c-3">nothing to refund</span>
+          )
+        ) : d.status === "settled" ? (
+          <span className="c-3">not drawn</span>
+        ) : (
+          <span className="pill pill-neutral">In the draw</span>
+        )}
+        <ProofLink account={e.address} className="row-proof">
+          Entry
+        </ProofLink>
+      </div>
+      {errors[rk] && (
+        <div className="row-err">
+          <ErrorNote onDismiss={() => clearError(rk)}>{errors[rk]!.message}</ErrorNote>
+        </div>
+      )}
+    </li>
   );
 }

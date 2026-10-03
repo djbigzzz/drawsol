@@ -44,15 +44,10 @@
     bn.js "^5.1.2"
     buffer-layout "^1.2.0"
 
-"@fontsource-variable/archivo@^5.3.0":
+"@fontsource-variable/plus-jakarta-sans@^5":
   version "5.3.0"
-  resolved "https://registry.yarnpkg.com/@fontsource-variable/archivo/-/archivo-5.3.0.tgz#23048b3182b66023f52a36761795f79e13c6e284"
-  integrity sha512-HogK8FJelrD1o7TlZlkIVtHgc20bO5PZRWE7mUeUTdMN055alznQV6/00J00IBeu8FQAH4s3zW9UJNvKExXf+g==
-
-"@fontsource-variable/newsreader@^5.3.0":
-  version "5.3.0"
-  resolved "https://registry.yarnpkg.com/@fontsource-variable/newsreader/-/newsreader-5.3.0.tgz#3a54ac809b3cfb97d94ae6ad5ce6d5290529f609"
-  integrity sha512-rrzYi43qMpbzwuFtf9OkWH8sxAPVPcQQQEwXpPtwaKYeJ8yVg5aLs5kawmo1f2Q1t1M38TLmEKCkGVDsYwgdFw==
+  resolved "https://registry.yarnpkg.com/@fontsource-variable/plus-jakarta-sans/-/plus-jakarta-sans-5.3.0.tgz#2a34ff48a1d15cee9f48d088c3bf406cbaa2e3d6"
+  integrity sha512-/l/4r0yyWK9JzAlmA0LiYgGgmJe/Gswt4jTJEzr5QhJfwMbvJZDmYWyW0M4X7yCK69BajMVlV/Lx8g7WDc1+sw==
 
 "@jridgewell/gen-mapping@^0.3.2":
   version "0.3.13"

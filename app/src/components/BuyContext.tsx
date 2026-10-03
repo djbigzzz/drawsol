@@ -6,40 +6,36 @@ import { useActions, useDrawSol } from "@/hooks/context";
 import { limitsOf, remaining, walletAllowance } from "@/lib/derive";
 
 export type BuyMode = "buy" | "free";
+export type Step = "pick" | "confirm" | "done";
 
 /**
- * UI state only (not data): the one quantity shared by the stub and the mobile bar, which tab is open
- * ("Buy tickets" or "Free entry", shared by the stub and the bar), the pick → confirm step, and the
- * remembered 18+ acknowledgement.
+ * UI state only (not data): the one quantity shared by the entry panel and the mobile bar, which tab is open
+ * ("Paid tickets" or "Free entry"), the pick → confirm → done sheet, and the remembered 18+ acknowledgement.
  */
 export interface BuyState {
   qty: number;
   setQty: (n: number) => void;
+  /** the most one purchase can hold right now (0 while nothing can be bought) */
   maxQ: number;
-  /** free-ticket credits this wallet holds (its Profile) */
-  credits: number;
-  /** "use credits": pay part of the quantity with credits (on by default when there are any) */
-  useCredits: boolean;
-  setUseCredits: (v: boolean) => void;
-  /** of qty: tickets paid with credits, and tickets paid in SOL */
+  /** of qty: tickets paid with free-ticket credits, and tickets paid in SOL (credits are never used here) */
   creditPart: number;
   paidPart: number;
   mode: BuyMode;
   setMode: (m: BuyMode) => void;
-  /** open the "Free entry" tab and bring it into view (the back of the ticket links here) */
+  /** open the "Free entry" tab and bring the panel into view */
   showFree: () => void;
-  step: "pick" | "confirm";
+  step: Step;
   openConfirm: () => void;
-  closeConfirm: () => void;
+  /** close the sheet (back to the panel); after a success it also clears the success state */
+  closeSheet: () => void;
   /** connect first, then continue to the confirm step */
   connectThenConfirm: () => void;
   adultRemembered: boolean;
   rememberAdult: () => void;
   forgetAdult: () => void;
-  focusBuy: () => void;
-  /** ≤ 760px: phone layouts (reveal list, total size) */
+  /** ≤ 760px: phone layouts */
   mobile: boolean;
-  /** ≤ 1023px: buying happens in the sticky bar and the confirm sheet; the in-flow stub is info only */
+  /** ≤ 1023px: the sticky bottom bar shows */
   barMode: boolean;
 }
 
@@ -60,7 +56,7 @@ const readAdult = () => {
   }
 };
 
-/** The sticky bar and confirm sheet take over below this width (DESIGN.md §5.5, extended to md). */
+/** The sticky bar shows below this width. */
 export const BAR_QUERY = "(max-width: 1023px)";
 
 export function useIsMobile(query = "(max-width: 760px)") {
@@ -76,33 +72,29 @@ export function useIsMobile(query = "(max-width: 760px)") {
 }
 
 export interface BuyInit {
-  step?: "pick" | "confirm";
+  step?: Step;
   mode?: BuyMode;
-  /** fixtures only: start at the "Max" preset */
-  qty?: "max";
+  qty?: number | "max";
 }
 
 export function BuyProvider({ children, init }: { children: ReactNode; init?: BuyInit }) {
   const { current: d, wallet, player, profile, now } = useDrawSol();
-  const { session, lastSig } = useActions();
+  const { done, clearDone, lastSig } = useActions();
   const { setVisible } = useWalletModal();
   const mobile = useIsMobile();
   const barMode = useIsMobile(BAR_QUERY);
   // one ticket by default: the smallest spend is the starting point (research P0-7)
   const [qty, setQtyRaw] = useState(1);
   const [mode, setModeRaw] = useState<BuyMode>("buy");
-  const [step, setStep] = useState<"pick" | "confirm">("pick");
+  const [step, setStep] = useState<Step>("pick");
   const [adultRemembered, setAdult] = useState(false);
   const pending = useRef(false);
 
-  const [useCredits, setUseCredits] = useState(true);
   const lim = limitsOf(wallet ? profile : null, now);
-  const credits = wallet ? lim.credits : 0;
-  const usable = useCredits ? credits : 0;
-  // the most one purchase can hold: the per-purchase and per-wallet caps, the paid tickets left plus usable
-  // credits, and (with a play limit) the paid tickets the limit still allows plus those credits
-  let maxQ = d ? (wallet ? walletAllowance(d, player, usable).max : Math.min(d.maxPerTx, remaining(d))) : 0;
-  if (d && lim.headroom !== null && d.ticketPrice > BigInt(0)) maxQ = Math.min(maxQ, Number(lim.headroom / d.ticketPrice) + usable);
+  // the most one purchase can hold: the per-purchase and per-wallet caps, the paid tickets left, and (with a
+  // play limit) the paid tickets the limit still allows. Free-ticket credits are not spent from this page.
+  let maxQ = d ? (wallet ? walletAllowance(d, player, 0).max : Math.min(d.maxPerTx, remaining(d))) : 0;
+  if (d && lim.headroom !== null && d.ticketPrice > BigInt(0)) maxQ = Math.min(maxQ, Number(lim.headroom / d.ticketPrice));
 
   useEffect(() => setAdult(readAdult()), []);
   useEffect(() => {
@@ -111,6 +103,7 @@ export function BuyProvider({ children, init }: { children: ReactNode; init?: Bu
   }, [init?.step, init?.mode]);
   useEffect(() => {
     if (init?.qty === "max" && maxQ > 0) setQtyRaw(maxQ);
+    else if (typeof init?.qty === "number") setQtyRaw(init.qty);
   }, [init?.qty, maxQ]);
 
   // keep the quantity inside what this wallet can actually buy
@@ -118,50 +111,35 @@ export function BuyProvider({ children, init }: { children: ReactNode; init?: Bu
     if (maxQ > 0 && qty > maxQ) setQtyRaw(maxQ);
   }, [maxQ, qty]);
 
-  const setQty = useCallback((n: number) => setQtyRaw(Math.max(1, Math.min(n, Math.max(1, maxQ)))), [maxQ]);
+  const setQty = useCallback((n: number) => setQtyRaw(Math.max(1, Math.min(Math.round(n) || 1, Math.max(1, maxQ)))), [maxQ]);
 
   const setMode = useCallback((m: BuyMode) => {
     setModeRaw(m);
     setStep("pick");
   }, []);
 
-  const focusBuy = useCallback(() => {
-    setModeRaw("buy");
-    const id = window.matchMedia(BAR_QUERY).matches ? "bar-buy" : "stub-buy";
-    requestAnimationFrame(() => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.scrollIntoView({ block: "nearest" });
-      el.focus({ preventScroll: true });
-    });
-  }, []);
-
   const showFree = useCallback(() => {
     setModeRaw("free");
     setStep("pick");
-    const bar = window.matchMedia(BAR_QUERY).matches;
     requestAnimationFrame(() => {
-      // below 1024px the bar holds the claim; on desktop the stub's tab
-      if (bar) document.getElementById("buy")?.scrollIntoView({ block: "start" });
-      const el = document.getElementById(bar ? "bar-buy" : "tab-free");
-      if (!el) return;
-      if (!bar) el.scrollIntoView({ block: "nearest" });
-      el.focus({ preventScroll: true });
+      document.getElementById("entry")?.scrollIntoView({ block: "start" });
+      document.getElementById("tab-free")?.focus({ preventScroll: true });
     });
   }, []);
 
   const openConfirm = useCallback(() => setStep("confirm"), []);
-  const closeConfirm = useCallback(() => {
+  const closeSheet = useCallback(() => {
     setStep("pick");
-    focusBuy();
-  }, [focusBuy]);
+    if (done) clearDone();
+    requestAnimationFrame(() => document.getElementById("enter-btn")?.focus({ preventScroll: true }));
+  }, [done, clearDone]);
 
   const connectThenConfirm = useCallback(() => {
     pending.current = true;
     setVisible(true);
   }, [setVisible]);
 
-  // after the wallet connects from "Connect wallet to buy", continue straight to the confirm step
+  // after the wallet connects from "Connect wallet to enter", continue straight to the confirm step
   useEffect(() => {
     if (wallet && pending.current) {
       pending.current = false;
@@ -169,14 +147,13 @@ export function BuyProvider({ children, init }: { children: ReactNode; init?: Bu
     }
   }, [wallet]);
 
-  // a purchase has landed and the reveal has opened: the confirm step is done
+  // a purchase or free entry has confirmed: the sheet shows the success state
   useEffect(() => {
-    if (session && session.stage !== "failed") setStep("pick");
-  }, [session]);
-  // a free entry has been claimed: the sheet (below 1024px) closes on the claimed state
+    if (done) setStep("done");
+  }, [done]);
   useEffect(() => {
-    if (lastSig.free) setStep("pick");
-  }, [lastSig.free]);
+    if (lastSig.free && !done) setStep("pick");
+  }, [lastSig.free, done]);
 
   const rememberAdult = useCallback(() => {
     try {
@@ -196,27 +173,22 @@ export function BuyProvider({ children, init }: { children: ReactNode; init?: Bu
   }, []);
 
   const q = maxQ > 0 ? Math.min(qty, maxQ) : qty;
-  const creditPart = Math.min(usable, q);
   const value: BuyState = {
     qty: q,
     setQty,
     maxQ,
-    credits,
-    useCredits,
-    setUseCredits,
-    creditPart,
-    paidPart: q - creditPart,
+    creditPart: 0,
+    paidPart: q,
     mode,
     setMode,
     showFree,
     step,
     openConfirm,
-    closeConfirm,
+    closeSheet,
     connectThenConfirm,
     adultRemembered,
     rememberAdult,
     forgetAdult,
-    focusBuy,
     mobile,
     barMode,
   };

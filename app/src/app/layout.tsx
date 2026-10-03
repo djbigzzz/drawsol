@@ -1,18 +1,16 @@
 import type { Metadata, Viewport } from "next";
-import "@fontsource-variable/archivo/standard.css";
-import "@fontsource-variable/newsreader/opsz.css";
-import "@fontsource-variable/newsreader/opsz-italic.css";
+import "@fontsource-variable/plus-jakarta-sans";
 import "./globals.css";
 import { WalletContextProvider } from "@/components/WalletProvider";
 
 export const metadata: Metadata = {
-  title: "DrawSol · a prize draw you can check on-chain",
+  title: "DrawSol · Win $500 cash prize draw",
   description:
-    "The prize is locked in a vault before the first ticket sells. Drawn at sell-out or the deadline. Every paid ticket gets an instant result from ORAO VRF randomness. Devnet demo with play money.",
+    "A prize draw on Solana with the prize locked in a vault before the first ticket sells, a winner picked by ORAO VRF that anyone can recompute, and a full refund if it undersells. Devnet demo with play money.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#EFE8D9",
+  themeColor: "#FFFFFF",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",

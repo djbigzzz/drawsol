@@ -1,24 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useDrawSol } from "@/hooks/context";
 import { WalletButton } from "./WalletButton";
-import { Mark } from "./print/Mark";
 
 /**
- * The honesty marker (research P0-8): always on top, on every screen, including over the sheet and the
- * reveal. One wording everywhere: "Devnet demo · play money (devnet tokens are not real)"; phones drop only
- * the word "devnet tokens are", so "play money" and "not real" read the same on every screen and width.
+ * The honesty marker (research P0-8): on every screen, on top of everything. One wording everywhere; phones
+ * drop only the bracket, so "play money" reads the same on every width.
  */
-export function DevnetStrip() {
+export function DevnetBar() {
   return (
-    <div className="strip" role="note">
-      <div className="page strip-in">
-        <b>
-          Devnet demo · play money (<span className="strip-long">devnet tokens are </span>not real)
-        </b>
+    <div className="devbar" role="note">
+      <div className="page devbar-in">
+        <span className="devbar-dot" aria-hidden="true" />
+        <b>Devnet demo · play money</b>
+        <span className="devbar-long"> (devnet tokens are not real)</span>
       </div>
     </div>
+  );
+}
+
+/** The DrawSol mark: a ticket with a notch and one accent bar. */
+export function Mark({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true" focusable="false">
+      <rect width="28" height="28" rx="7" fill="#0B1220" />
+      <path d="M7 8h14a1.5 1.5 0 0 1 1.5 1.5v2.6a2 2 0 0 0 0 3.8v2.6A1.5 1.5 0 0 1 21 20H7a1.5 1.5 0 0 1-1.5-1.5v-2.6a2 2 0 0 0 0-3.8V9.5A1.5 1.5 0 0 1 7 8z" fill="#fff" />
+      <path d="M10 14h8" stroke="#15803D" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -27,48 +35,39 @@ export function Wordmark({ away = false }: { away?: boolean }) {
     <>
       <Mark />
       <span className="brand-word">DrawSol</span>
-      <span className="brand-sub">Ticket office</span>
     </>
   );
   return away ? (
-    <Link href="/" className="brand" aria-label="DrawSol ticket office, the current draw">
+    <Link href="/" className="brand" aria-label="DrawSol, home">
       {inner}
     </Link>
   ) : (
-    <a href="#top" className="brand" aria-label="DrawSol ticket office, back to the top">
+    <a href="#top" className="brand" aria-label="DrawSol, back to the top">
       {inner}
     </a>
   );
 }
 
-/** `away`: on a page of its own (the per-draw page), the nav leads back to the ticket office. */
+/** `away`: on a page of its own (/draw, /live), the links lead back home. */
 export function Header({ away = false }: { away?: boolean }) {
-  const { load } = useDrawSol();
-  const ready = load.kind === "ready";
   return (
     <header className="page mast">
       <Wordmark away={away} />
       <div className="mast-r">
-        {ready && (
-          <nav className="nav" aria-label="Sections">
-            {away ? (
-              <>
-                <Link href="/">Draws on sale</Link>
-                <Link href="/draw/">All draws</Link>
-                <Link href="/live/">Live draw</Link>
-                <Link href="/#rules">How it works</Link>
-              </>
-            ) : (
-              <>
-                <a href="#my-tickets">Your tickets</a>
-                <a href="#past">Past draws</a>
-                <a href="#limits">Play limits</a>
-                <Link href="/live/">Live draw</Link>
-                <a href="#rules">How it works</a>
-              </>
-            )}
-          </nav>
-        )}
+        <nav className="nav" aria-label="Sections">
+          {away ? (
+            <>
+              <Link href="/">The draw</Link>
+              <Link href="/#winners">Winners</Link>
+              <Link href="/#how">How it works</Link>
+            </>
+          ) : (
+            <>
+              <a href="#winners">Winners</a>
+              <a href="#how">How it works</a>
+            </>
+          )}
+        </nav>
         <WalletButton away={away} />
       </div>
     </header>

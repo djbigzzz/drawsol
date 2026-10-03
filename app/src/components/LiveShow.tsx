@@ -4,19 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { anyoneCanRun, cancelReason, cancelsAtRequest, grandPrize, liveDraw, phaseOf, publicFrom } from "@/lib/derive";
+import { campaignOf, usdWhole } from "@/lib/campaigns";
 import { winningTicket } from "@/lib/fairness";
 import { clock, ticketNo, utcLabel } from "@/lib/format";
 import { vaultPda } from "@/lib/chain";
-import { inkAt, ticketInk } from "@/lib/print";
 import type { DrawView } from "@/lib/types";
-import { Addr, Busy, ErrorNote, inFlight, ProofLink } from "./bits";
-import { Countdown } from "./DrawTicket";
-import { drawName, kindName, plural, prizeFig } from "./fmt";
-import { Barcode } from "./print/Barcode";
-import { CarbonSlip } from "./print/CarbonSlip";
-import { Microtext } from "./print/Mark";
-import { Stamp } from "./print/Stamp";
-import { useSettleTx } from "./SettledTicket";
+import { Addr, Busy, ErrorNote, Pill, ProofLink, inFlight, phaseLabel } from "./bits";
+import { Countdown } from "./Hero";
+import { n, plural, prizeFig } from "./fmt";
+import { useSettleTx } from "./Recompute";
 
 const ROLL_MS = 6800;
 const LOOPS = 2;
@@ -27,23 +23,21 @@ const ease = (t: number) => 1 - Math.pow(1 - t, 5);
  * Where the roll's cursor is at progress p (0–1): it starts at #0000, runs LOOPS times through every ticket
  * and slows to a stop on the winning ticket. Presentation of a result already fixed by ORAO's randomness.
  */
-const cursorAt = (p: number, n: number, w: number) => Math.floor(ease(p) * (LOOPS * n + w)) % Math.max(1, n);
+const cursorAt = (p: number, k: number, w: number) => Math.floor(ease(p) * (LOOPS * k + w)) % Math.max(1, k);
 
 type Stage = "countdown" | "due" | "pending" | "rolling" | "won" | "paid" | "cancelled";
 
 /**
- * The /live page: built to be streamed with no presenter, driven purely by chain state (the draw is polled
- * every 5 s around its time, the ORAO request every 2 s). Countdown to draw_at → "Drawing now" while ORAO is
- * pending → the barcode of every ticket rolls and stops on the winning ticket (computed in this browser with
- * fairness.ts from ORAO's randomness) → WON, then PAID once settled, with the winner and the payout link →
- * the recompute slip. The roll plays only when the randomness lands while the page is open (or is waiting to
- * be settled); a draw already settled shows its result at once.
+ * The /live page: a faceless draw show for streaming (OBS, a 1920×1080 browser source), driven purely by chain
+ * state. Countdown to draw_at → "Drawing now" while ORAO is pending → the ticket numbers roll and stop on the
+ * winning ticket (computed in this browser with fairness.ts from ORAO's randomness) → WON, then PAID once
+ * settled, with the winner and the payout link. A draw already settled shows its result at once.
  */
 export function LiveShow({ raw }: { raw: string | null }) {
   const { load, draws, current: d, select, now, drawRandomness: r, stillRoll } = useDrawSol();
   const reduced = useReducedMotion();
   const asked = raw !== null && /^\d{1,9}$/.test(raw.trim()) ? Number(raw.trim()) : null;
-  const next = liveDraw(draws, now);
+  const next = liveDraw(draws);
   const nextId = next?.id ?? null;
   useEffect(() => {
     if (asked !== null) select(asked);
@@ -51,7 +45,6 @@ export function LiveShow({ raw }: { raw: string | null }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asked, nextId]);
 
-  // the roll: started by the randomness landing (or a fulfilled draw waiting to be settled when the page opens)
   const fulfilled = !!d && ((d.status === "drawing" && !!r?.fulfilled && !!r.randomness) || d.status === "settled");
   const seen = useRef<{ key: string; pending: boolean } | null>(null);
   const [rollStart, setRollStart] = useState<number | null>(null);
@@ -61,7 +54,6 @@ export function LiveShow({ raw }: { raw: string | null }) {
     if (!d) return;
     if (!seen.current || seen.current.key !== key) {
       seen.current = { key, pending: !fulfilled };
-      // opened on a draw whose randomness has landed but isn't settled yet: it is happening now, so roll
       setRollStart(fulfilled && d.status === "drawing" && !reduced ? Date.now() : null);
       return;
     }
@@ -82,19 +74,14 @@ export function LiveShow({ raw }: { raw: string | null }) {
     return () => cancelAnimationFrame(raf);
   }, [rollStart]);
 
-  if (load.kind === "loading") return <p className="live-voice t-voice">Reading the draw from devnet…</p>;
+  if (load.kind === "loading") return <p className="live-msg">Reading the draw from devnet…</p>;
   if (load.kind === "error")
     return (
-      <p className="live-voice t-voice" role="alert">
+      <p className="live-msg" role="alert">
         Can’t reach devnet, so no numbers are shown.
       </p>
     );
-  if (!d)
-    return (
-      <p className="live-voice t-voice">
-        {asked !== null ? `There is no Draw Nº ${asked} on-chain.` : "No draw is open yet. When one opens, it is drawn here, live."}
-      </p>
-    );
+  if (!d) return <p className="live-msg">{asked !== null ? `There is no Draw № ${asked} on-chain.` : "No draw is open yet. When one opens, it is drawn here, live."}</p>;
   void tick;
 
   const ph = phaseOf(d, now);
@@ -113,13 +100,12 @@ export function LiveShow({ raw }: { raw: string | null }) {
 
   const cursor = stage === "rolling" && w !== null ? cursorAt(progress, d.nextTicket, w) : -1;
   const shown = stage === "rolling" ? cursor : w;
-  return <Stage d={d} stage={stage} shown={shown} cursor={cursor} winning={stage === "won" || stage === "paid" ? w : null} now={now} />;
+  return <Stage d={d} stage={stage} shown={shown} winning={stage === "won" || stage === "paid" ? w : null} now={now} />;
 }
 
-function Stage({ d, stage, shown, cursor, winning, now }: { d: DrawView; stage: Stage; shown: number | null; cursor: number; winning: number | null; now: number }) {
-  const { drawRandomness: r } = useDrawSol();
+function Stage({ d, stage, shown, winning, now }: { d: DrawView; stage: Stage; shown: number | null; winning: number | null; now: number }) {
   const settleTx = useSettleTx(d);
-  const pot = d.kind === "pot";
+  const camp = campaignOf(d.id);
   const prize = prizeFig(grandPrize(d));
   const voice: Record<Stage, string> = {
     countdown: "Drawing in",
@@ -135,7 +121,7 @@ function Stage({ d, stage, shown, cursor, winning, now }: { d: DrawView; stage: 
     due: cancelsAtRequest(d)
       ? d.nextTicket === 0
         ? "No tickets were sold, so there is nothing to draw."
-        : `Only ${d.paidTickets} of the ${d.minTickets} tickets it needed sold, so running it cancels it and everyone is refunded in full.`
+        : `Only ${n(d.paidTickets)} of the ${n(d.minTickets)} tickets it needed sold, so running it cancels it and everyone is refunded in full.`
       : "The draw time has passed. Next it is requested on-chain, and ORAO answers with the randomness, usually within seconds.",
     pending: "Randomness requested from ORAO. Waiting for it to land, usually a few seconds.",
     rolling: "ORAO’s randomness has landed. The winning ticket is computed from it in this browser.",
@@ -143,125 +129,79 @@ function Stage({ d, stage, shown, cursor, winning, now }: { d: DrawView; stage: 
     paid: "Paid from the vault in the settle transaction.",
     cancelled:
       cancelReason(d) === "undersold"
-        ? `Only ${d.paidTickets} of the ${d.minTickets} tickets it needed sold. Everyone is refunded in full.`
+        ? `Only ${n(d.paidTickets)} of the ${n(d.minTickets)} tickets it needed sold. Everyone is refunded in full.`
         : cancelReason(d) === "no-tickets"
           ? "No tickets were sold."
           : "The randomness never arrived within 48 hours. Every paid ticket can be refunded.",
   };
-  const extra = d.freeTickets + d.creditTickets;
   return (
-    <article className={`live-ticket stage-${stage} kind-${d.kind}`} aria-labelledby="live-h">
-      <div className="tk-head">
-        <span className="t-ticket-head" id="live-h">
-          DrawSol · {kindName(d.kind)} · live
-        </span>
-        <span className="t-serial">Nº {String(d.id).padStart(4, "0")}</span>
-      </div>
-      <span className="tk-headrule" aria-hidden="true">
-        <span className="top" />
-        <Microtext />
-      </span>
+    <article className={`live stage-${stage}`} aria-labelledby="live-h">
+      <header className="live-top">
+        <p className="badge-row">
+          <Pill tone="dark">Draw № {d.id}</Pill>
+          <Pill tone={stage === "paid" || stage === "won" ? "accent" : stage === "cancelled" ? "neutral" : "warn"}>{stage === "countdown" ? "Live" : stage === "paid" ? "Paid" : stage === "won" ? "Won" : stage === "cancelled" ? "Cancelled" : "Drawing"}</Pill>
+        </p>
+        <h1 className="live-h" id="live-h">
+          {camp ? `${camp.title.replace(/^Win /, "Win ")}` : `Win ${prize} SOL`}
+        </h1>
+        <p className="live-prize">
+          {stage === "paid" ? "Paid" : "Prize"} <b>{prize} SOL</b>
+          {camp ? <span className="c-2"> · headlined as {usdWhole(camp.usd)}</span> : null} ·{" "}
+          {stage === "paid" ? (
+            <>
+              to <Addr k={d.winner} link head={6} tail={6} />
+            </>
+          ) : (
+            <ProofLink account={vaultPda(d.address)}>in the vault</ProofLink>
+          )}
+        </p>
+      </header>
 
       <div className="live-main">
-        <div className="live-left">
-          <p className="live-voice t-voice" aria-live="polite">
-            {(stage === "due" || stage === "pending") && <Busy />}
-            {voice[stage]}
-          </p>
-          <div className="live-figure">
-            {stage === "countdown" ? (
-              <Countdown secs={d.drawAt - now} verb="Draws" className="t-live" />
-            ) : stage === "due" || stage === "pending" ? (
-              <p className="t-live c-ink-3" aria-label="Winning ticket not known yet">
-                #????
-              </p>
-            ) : stage === "cancelled" ? (
-              <p className="t-live c-ink-3">{d.paidTickets} sold</p>
-            ) : (
-              <p className={`t-live ${stage === "rolling" ? "" : "c-red"}`} aria-label={stage === "rolling" ? undefined : `Winning ticket ${ticketNo(shown ?? 0)}`}>
-                {ticketNo(shown ?? 0)}
-              </p>
-            )}
-            {winning !== null && (
-              <Stamp
-                kind="won"
-                className="live-won"
-                seed={ticketInk(d.status === "settled" ? d.randomness : r?.randomness ?? d.address.toBytes(), winning)}
-                label={`Stamped: ticket ${ticketNo(winning)} won`}
-              />
-            )}
-          </div>
-          <p className="live-sub t-body">{sub[stage]}</p>
-        </div>
-
-        <div className="live-right">
-          <p className="t-label">{stage === "paid" ? "Paid" : pot ? (stage === "countdown" ? "The pot, and rising" : "The pot") : "Grand prize"}</p>
-          <p className="t-live-prize">
-            {prize}
-            <span className="u">SOL</span>
-          </p>
-          {stage === "paid" ? (
-            <div className="live-paid">
-              <Stamp kind="paid" className="live-paid-stamp" seed={inkAt(d.randomness, 16)} label="Stamped: paid" top={`DRAW Nº ${d.id}`} bottom="DRAWSOL" />
-              <p className="t-body">
-                to <Addr k={d.winner} className="b" />
-                <br />
-                {settleTx?.kind === "found" ? (
-                  <ProofLink tx={settleTx.sig}>Payout transaction</ProofLink>
-                ) : (
-                  <ProofLink account={d.winningEntry}>Winning entry</ProofLink>
-                )}
-              </p>
-            </div>
+        <p className="live-voice" aria-live="polite">
+          {(stage === "due" || stage === "pending") && <Busy />}
+          {voice[stage]}
+        </p>
+        <div className="live-figure">
+          {stage === "countdown" ? (
+            <Countdown secs={d.drawAt - now} className="live-cd" />
+          ) : stage === "due" || stage === "pending" ? (
+            <p className="live-num c-3" aria-label="Winning ticket not known yet">
+              #????
+            </p>
           ) : stage === "cancelled" ? (
-            <Stamp kind="cancelled" className="live-cx" seed={inkAt(d.address.toBytes(), 16)} label="Stamped: cancelled, refunds open" top={`DRAW Nº ${d.id}`} />
+            <p className="live-num c-3">{n(d.paidTickets)} sold</p>
           ) : (
-            <p className="t-body c-ink-2">
-              {pot ? "Pot and unwon instant pool, in the vault. " : "Escrowed in the vault. "}
-              <ProofLink account={vaultPda(d.address)}>Vault on Solscan</ProofLink>
+            <p className={`live-num tab ${stage === "rolling" ? "" : "c-accent"}`} aria-label={stage === "rolling" ? undefined : `Winning ticket ${ticketNo(shown ?? 0)}`}>
+              {ticketNo(shown ?? 0)}
             </p>
           )}
         </div>
-        {/* paid: the arithmetic, in the same frame (a third column at stream width) */}
+        <p className="live-sub">{sub[stage]}</p>
         {stage === "paid" && (
-          <div className="live-slip">
-            <CarbonSlip d={d} id="live-recompute" />
-          </div>
+          <p className="live-links">
+            {settleTx?.kind === "found" ? <ProofLink tx={settleTx.sig}>Payout transaction</ProofLink> : <ProofLink account={d.winningEntry}>Winning entry</ProofLink>}
+          </p>
         )}
-      </div>
-
-      <div className="live-bar">
-        <Barcode
-          big
-          slots={stage === "countdown" ? d.ticketCap + extra : Math.max(1, d.nextTicket)}
-          taken={d.nextTicket}
-          drawn={winning ?? -1}
-          cursor={cursor}
-          minAt={d.kind === "headline" && d.paidTickets < d.minTickets && stage === "countdown" ? d.minTickets + extra : undefined}
-          minLabel={`min ${d.minTickets}`}
-          label={`${d.nextTicket} ${plural(d.nextTicket, "ticket", "tickets")} in ${drawName(d)}.${winning !== null ? ` Ticket ${ticketNo(winning)} was drawn.` : ""}`}
-          leftLabel={stage === "countdown" ? `${Math.max(0, d.ticketCap - d.paidTickets)} left` : undefined}
-        />
-      </div>
-
-      <div className="live-foot">
-        <p className="t-small">
-          <b className="nw">
-            {d.nextTicket} {plural(d.nextTicket, "ticket", "tickets")}
-          </b>{" "}
-          in the draw · {d.paidTickets} paid{d.freeTickets ? `, ${d.freeTickets} free` : ""}
-          {d.creditTickets ? `, ${d.creditTickets} on credits` : ""} · draw time <span className="nw">{utcLabel(d.drawAt)}</span>
-        </p>
         <RunControls d={d} stage={stage} now={now} />
       </div>
+
+      <footer className="live-foot">
+        <span>
+          <b className="tab">{n(d.nextTicket)}</b> {plural(d.nextTicket, "ticket", "tickets")} in the draw
+        </span>
+        <span>
+          {n(d.paidTickets)} paid{d.freeTickets ? `, ${d.freeTickets} free` : ""}
+          {d.creditTickets ? `, ${d.creditTickets} on credits` : ""}
+        </span>
+        <span>Draw time {utcLabel(d.drawAt)}</span>
+        {winning !== null && <span>Ticket {ticketNo(winning)} drawn</span>}
+      </footer>
     </article>
   );
 }
 
-/**
- * The obvious "anyone can run the draw" control, only once the public grace window has passed (the keeper or
- * the operator before that), and "Settle the draw" for anyone once the randomness has landed.
- */
+/** "Anyone can run the draw" once the public window has opened, and "Settle" once the randomness has landed. */
 function RunControls({ d, stage, now }: { d: DrawView; stage: Stage; now: number }) {
   const { runDraw, settle, phase, errors, clearError, disabledReason } = useActions();
   if (stage === "due") {
@@ -270,15 +210,12 @@ function RunControls({ d, stage, now }: { d: DrawView; stage: Stage; now: number
     return (
       <div className="live-run">
         {open ? (
-          <>
-            <p className="t-small">The keeper hasn’t run it, so anyone can.</p>
-            <button type="button" className="btn btn-56" onClick={runDraw} disabled={busy || !!disabledReason}>
-              {busy && <Busy />}
-              {phase.run === "signing" ? "Approve in your wallet…" : phase.run === "confirming" ? "Confirming…" : cancelsAtRequest(d) ? "Anyone: close the draw" : "Anyone: run the draw"}
-            </button>
-          </>
+          <button type="button" className="btn btn-primary btn-xl" onClick={runDraw} disabled={busy || !!disabledReason}>
+            {busy && <Busy />}
+            {phaseLabel(phase.run, cancelsAtRequest(d) ? "Anyone: close the draw" : "Anyone: run the draw")}
+          </button>
         ) : (
-          <p className="t-small c-ink-2">
+          <p className="c-2">
             The operator’s keeper runs it now. If it hasn’t by <span className="nw">{clock(publicFrom(d))} UTC</span>, anyone can, from this page.
           </p>
         )}
@@ -290,9 +227,9 @@ function RunControls({ d, stage, now }: { d: DrawView; stage: Stage; now: number
     const busy = inFlight(phase.settle);
     return (
       <div className="live-run">
-        <button type="button" className="btn btn-56" onClick={settle} disabled={busy || !!disabledReason}>
+        <button type="button" className="btn btn-primary btn-xl" onClick={settle} disabled={busy || !!disabledReason}>
           {busy && <Busy />}
-          {phase.settle === "signing" ? "Approve in your wallet…" : phase.settle === "confirming" ? "Confirming…" : "Anyone: settle and pay"}
+          {phaseLabel(phase.settle, "Anyone: settle and pay")}
         </button>
         {errors.settle && <ErrorNote onDismiss={() => clearError("settle")}>{errors.settle.message}</ErrorNote>}
       </div>

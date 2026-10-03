@@ -1,192 +1,125 @@
 "use client";
 
-import { useState } from "react";
-import type { PublicKey } from "@solana/web3.js";
+import Link from "next/link";
 import { useDrawSol } from "@/hooks/context";
-import { entryWins } from "@/lib/derive";
-import { clock, short, shortDate, sol, ticketNo } from "@/lib/format";
-import { solscanAccount } from "@/lib/config";
-import { SectionGrid } from "./bits";
-import { plural, prizeFig } from "./fmt";
-
-const PAGE = 8;
-
-interface Win {
-  key: string;
-  at: number;
-  owner: PublicKey;
-  amount: bigint;
-  credits: number;
-  drawId: number;
-  account: PublicKey;
-  /** instant: "3 of 10 tickets won, for 0.10 SOL"; grand: "grand prize, ticket #0006" */
-  what: string;
-  grand: boolean;
-}
+import { cancelReason, grandPrize } from "@/lib/derive";
+import { sol, ticketNo, utcLabel } from "@/lib/format";
+import type { DrawView } from "@/lib/types";
+import { Addr, Pill, ProofLink, Section } from "./bits";
+import { kindName, n, prizeFig } from "./fmt";
+import { useSettleTx } from "./Recompute";
 
 /**
- * Winners, computed from chain only: every revealed Entry that was paid an instant win, and every settled
- * draw's grand prize. The counters are sums over the same accounts, so they can't drift from the list.
+ * Winners and past draws, read from the Draw accounts on devnet: every settled draw with its winning ticket,
+ * wallet and payout, then the cancelled ones. Nothing is listed that isn't an account on chain.
  */
 export function Winners() {
-  const { draws, allEntries, allEntriesState, wallet, now, refresh } = useDrawSol();
-  const [all, setAll] = useState(false);
-  const byAddr = new Map(draws.map((d) => [d.address.toBase58(), d]));
-
-  const settled = draws.filter((d) => d.status === "settled" && d.prizePaid);
-  const ready = allEntriesState === "ready";
-  // paid out: instant SOL from the Entry accounts, grand prizes from the Draw accounts
-  const instantPaid = ready ? allEntries.reduce((n, e) => n + e.solPaid, BigInt(0)) : null;
-  const paidOut = settled.reduce((n, d) => n + d.prizePaidLamports, BigInt(0)) + (instantPaid ?? BigInt(0));
-
-  const wins: Win[] = [];
-  if (ready) {
-    for (const e of allEntries) {
-      const d = byAddr.get(e.draw.toBase58());
-      if (!d || !e.revealed || (e.solPaid === BigInt(0) && e.creditsWon === 0)) continue;
-      const n = entryWins(e);
-      wins.push({
-        key: e.address.toBase58(),
-        at: e.createdAt,
-        owner: e.owner,
-        amount: e.solPaid,
-        credits: e.creditsWon,
-        drawId: d.id,
-        account: e.address,
-        what: e.isFree
-          ? "instant, on a free entry"
-          : `instant, ${n} of ${e.count} ${plural(e.count, "ticket", "tickets")}${e.paidLamports > BigInt(0) ? ` for ${sol(e.paidLamports, 2, 4)} SOL` : ""}`,
-        grand: false,
-      });
-    }
-  }
-  for (const d of settled)
-    wins.push({
-      key: `grand-${d.address.toBase58()}`,
-      at: d.settledAt,
-      owner: d.winner,
-      amount: d.prizePaidLamports,
-      credits: 0,
-      drawId: d.id,
-      account: d.winningEntry,
-      what: `grand prize, ticket ${ticketNo(d.winningTicket)}`,
-      grand: true,
-    });
-  wins.sort((a, b) => b.at - a.at);
-  const instantTickets = ready ? allEntries.filter((e) => !e.isFree && e.revealed).reduce((n, e) => n + entryWins(e), 0) : null;
-  const rows = all ? wins : wins.slice(0, PAGE);
-  const sameDay = (t: number) => now - t < 86400;
-  const me = wallet?.address;
-
+  const { draws, legacyDraws, current, wallet } = useDrawSol();
+  const past = [...draws, ...legacyDraws]
+    .filter((d) => (d.status === "settled" || d.status === "cancelled") && !(current && d.address.equals(current.address)))
+    .sort((a, b) => (b.settledAt || b.drawAt) - (a.settledAt || a.drawAt) || b.id - a.id);
+  const settled = past.filter((d) => d.status === "settled");
+  const cancelled = past.filter((d) => d.status === "cancelled");
+  const paid = settled.reduce((s, d) => s + d.prizePaidLamports, BigInt(0));
   return (
-    <SectionGrid
+    <Section
       id="winners"
       title="Winners"
-      sub={<>Every instant win and grand prize so far, read from the Entry and Draw accounts on devnet. Instant wins are timed by purchase; the result lands seconds later.</>}
-      aside={
-        <dl className="ledger big">
-          <div className={paidOut > BigInt(0) ? "won" : ""}>
-            <dt>Paid out</dt>
-            <dd>{instantPaid === null && settled.length === 0 ? <span className="c-ink-3">…</span> : `${sol(paidOut, 2, 4)} SOL`}</dd>
-          </div>
-          <div>
-            <dt>Winning tickets, instant</dt>
-            <dd>{instantTickets === null ? <span className="c-ink-3">{allEntriesState === "error" ? "—" : "…"}</span> : instantTickets}</dd>
-          </div>
-          <div>
-            <dt>Draws settled</dt>
-            <dd>{settled.length}</dd>
-          </div>
-        </dl>
+      lead={
+        settled.length ? (
+          <>
+            {settled.length} {settled.length === 1 ? "draw has" : "draws have"} settled on devnet so far, paying {sol(paid, 2, 4)} SOL in prizes. Each winner below is
+            read from its Draw account.
+          </>
+        ) : (
+          <>Every settled draw is listed here with its winning ticket, the wallet that held it and the payout. There isn’t one yet.</>
+        )
       }
     >
-      <div className="eledger wledger">
-        {!(ready && wins.length === 0) && (
-          <div className="erow head" aria-hidden="true">
-            <span>Time (UTC)</span>
-            <span>Wallet</span>
-            <span className="tix">Draw</span>
-            <span className="r">Won</span>
-          </div>
-        )}
-        {allEntriesState === "loading" ? (
-          Array.from({ length: 3 }, (_, i) => (
-            <div key={i} className="erow c-ink-3" aria-hidden="true">
-              <span>…</span>
-              <span>…</span>
-              <span className="tix">…</span>
-              <span className="r">…</span>
-            </div>
-          ))
-        ) : allEntriesState === "error" ? (
-          <p className="t-body" style={{ padding: "16px 0" }}>
-            Can’t load winners from devnet right now.{" "}
-            <button type="button" className="tbtn" onClick={refresh}>
-              Try again
-            </button>
+      {settled.length === 0 ? (
+        <div className="card pad">
+          <p className="panel-text">
+            No draw has been settled yet. {current ? `Draw № ${current.id} draws ${utcLabel(current.drawAt)}; its winner will appear here with the payout transaction.` : ""}
           </p>
-        ) : wins.length === 0 ? (
-          <p className="t-body c-ink-2" style={{ padding: "16px 0" }}>
-            No winners yet. When a ticket wins, it’s listed here with its wallet and a link to its account.
-          </p>
-        ) : (
-          <div role="list" aria-label="Winners">
-            {rows.map((w) => {
-              const mine = !!me && w.owner.equals(me);
-              return (
-                <a
-                  role="listitem"
-                  key={w.key}
-                  href={solscanAccount(w.account.toBase58())}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="erow"
-                  aria-label={`${short(w.owner.toBase58())}${mine ? " (you)" : ""} won ${amountText(w)} in Draw Nº ${w.drawId}, ${w.what}. ${w.grand ? "Winning entry" : "Entry"} account on Solscan.`}
-                >
-                  <span className="t">{sameDay(w.at) ? clock(w.at) : shortDate(w.at)}</span>
-                  <span className="wcell">
-                    <span className="nw wl">
-                      {short(w.owner.toBase58())}
-                      {mine && <span className="you">you</span>}
-                    </span>
-                    {/* phones: the Draw column is hidden, so its short form sits under the wallet */}
-                    <span className="sub-m nw">
-                      Nº {w.drawId} · {w.grand ? w.what.replace("grand prize, ticket", "grand") : "instant"}
-                    </span>
-                  </span>
-                  <span className="tix wwhat">
-                    Nº {w.drawId} · {w.what}
-                  </span>
-                  <span className="r">
-                    {amountText(w)
-                      .split(" + ")
-                      .map((part, i) => (
-                        <span key={i} className={`nw ${i === 0 && w.amount > BigInt(0) ? "w" : ""}`}>
-                          {i > 0 ? " + " : ""}
-                          {part}
-                        </span>
-                      ))}
-                  </span>
-                </a>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      {ready && wins.length > PAGE && (
-        <p className="emore">
-          <button type="button" className="tbtn" onClick={() => setAll((a) => !a)} aria-expanded={all}>
-            {all ? `Show the latest ${PAGE}` : `Show all ${wins.length} wins`}
-          </button>
-        </p>
+        </div>
+      ) : (
+        <ul className="winners">
+          {settled.map((d) => (
+            <WinnerCard key={d.address.toBase58()} d={d} mine={!!wallet && d.winner.equals(wallet.address)} />
+          ))}
+        </ul>
       )}
-    </SectionGrid>
+      {cancelled.length > 0 && (
+        <ul className="past-list" aria-label="Cancelled draws">
+          {cancelled.map((d) => (
+            <li key={d.address.toBase58()}>
+              <Link className="tbtn" href={`/draw/?n=${d.id}`}>
+                Draw № {d.id}
+              </Link>{" "}
+              <span className="c-2">
+                {kindName(d.kind)} · cancelled{d.nextTicket === 0 ? ", no tickets sold" : cancelReason(d) === "undersold" ? `, ${n(d.paidTickets)} of ${n(d.minTickets)} sold` : ""} · refunded{" "}
+                {sol(d.refundedLamports, 2, 4)} of {sol(d.revenueLamports, 2, 4)} SOL
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Section>
   );
 }
 
-/** "0.04 SOL", "1 free ticket", "0.04 SOL + 1 free" */
-function amountText(w: { amount: bigint; credits: number; grand: boolean }) {
-  const solPart = w.amount > BigInt(0) ? `${w.grand ? prizeFig(w.amount) : sol(w.amount, 2, 4)} SOL` : "";
-  const free = w.credits > 0 ? (solPart ? `${w.credits} free` : `${w.credits} free ${plural(w.credits, "ticket", "tickets")}`) : "";
-  return [solPart, free].filter(Boolean).join(" + ");
+function WinnerCard({ d, mine }: { d: DrawView; mine: boolean }) {
+  const tx = useSettleTx(d);
+  return (
+    <li className="card winner-card">
+      <div className="wc-head">
+        <Pill tone="dark">Draw № {d.id}</Pill>
+        <span className="c-2">
+          {kindName(d.kind)} · settled {utcLabel(d.settledAt)}
+        </span>
+      </div>
+      <p className="wc-ticket tab">
+        <span className="wc-eyebrow">Winning ticket</span>
+        {ticketNo(d.winningTicket)}
+      </p>
+      <dl className="wc-facts">
+        <div>
+          <dt>Winner</dt>
+          <dd>
+            <Addr k={d.winner} link head={6} tail={6} />
+            {mine && <span className="you">you</span>}
+          </dd>
+        </div>
+        <div>
+          <dt>Prize paid</dt>
+          <dd>
+            <b className="nw">{prizeFig(grandPrize(d))} SOL</b>
+          </dd>
+        </div>
+        <div>
+          <dt>Tickets in the draw</dt>
+          <dd className="tab">{n(d.nextTicket)}</dd>
+        </div>
+      </dl>
+      <p className="wc-links">
+        {tx?.kind === "found" ? (
+          <ProofLink tx={tx.sig}>Payout transaction</ProofLink>
+        ) : tx?.kind === "none" ? (
+          <ProofLink account={d.winningEntry}>Winning entry</ProofLink>
+        ) : tx?.kind === "error" ? (
+          <span className="c-3">
+            Couldn’t find the payout transaction.{" "}
+            <button type="button" className="tbtn" onClick={tx.retry}>
+              Try again
+            </button>
+          </span>
+        ) : (
+          <span className="c-3">Finding the payout transaction…</span>
+        )}
+        <Link className="tbtn" href={`/draw/?n=${d.id}`}>
+          Full record and every entry
+        </Link>
+      </p>
+    </li>
+  );
 }

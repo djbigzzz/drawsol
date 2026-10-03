@@ -183,50 +183,22 @@ export function prizeText(l: bigint) {
 
 export const isDefaultKey = (k: { toBase58(): string }) => k.toBase58() === "11111111111111111111111111111111";
 
-// ---------- the catalogue ----------
-
-const live = (d: DrawView) => d.status === "open" || d.status === "drawing";
+// ---------- the featured draw ----------
 
 /**
- * The home page's draws by kind: tonight's pot draw (or the next one) and this week's headline draw, each the
- * unfinished draw of its kind that draws soonest (else the latest finished one), and every other unfinished
- * draw. Legacy v2 draws never feature.
+ * The one draw the site sells: the newest headline draw still open (by id, since ids only go up), else the
+ * newest headline draw of any status (its result or refunds stay on the page until the next one opens).
+ * Pot draws and legacy v2 draws never feature.
  */
-export function catalogue(draws: DrawView[]) {
-  const pick = (kind: "pot" | "headline") => {
-    const ofKind = draws.filter((d) => d.kind === kind);
-    const open = ofKind.filter(live).sort((a, b) => a.drawAt - b.drawAt || a.id - b.id);
-    return open[0] ?? ofKind.sort((a, b) => b.id - a.id)[0] ?? null;
-  };
-  const pot = pick("pot");
-  const headline = pick("headline");
-  const featured = [pot, headline].filter((d): d is DrawView => !!d);
-  const others = draws
-    .filter((d) => d.kind !== "v2" && live(d) && !featured.some((f) => f.address.equals(d.address)))
-    .sort((a, b) => a.drawAt - b.drawAt);
-  return { pot, headline, others };
-}
-
-/** The draw the home page opens on: tonight's pot draw while unfinished, else the headline draw, else either. */
-export function defaultDraw(draws: DrawView[]): DrawView | null {
-  const { pot, headline } = catalogue(draws);
-  if (pot && live(pot)) return pot;
-  if (headline && live(headline)) return headline;
-  return pot ?? headline ?? draws.find((d) => d.kind !== "v2") ?? null;
+export function featuredDraw(draws: DrawView[]): DrawView | null {
+  const headline = draws.filter((d) => d.kind === "headline").sort((a, b) => b.id - a.id);
+  return headline.find((d) => d.status === "open") ?? headline[0] ?? null;
 }
 
 /**
- * What /live shows without a number: a draw settled in the last 30 minutes (its result stays on screen for the
- * stream), else the next draw to be drawn.
+ * What /live shows without a number: the featured draw while it is unfinished or settled in the last
+ * 30 minutes (its result stays on screen for the stream), else the featured draw anyway.
  */
-export function liveDraw(draws: DrawView[], now: number): DrawView | null {
-  const recent = draws.filter((d) => d.kind !== "v2" && d.status === "settled" && now - d.settledAt < 1800).sort((a, b) => b.settledAt - a.settledAt)[0];
-  return recent ?? nextToDraw(draws);
-}
-
-/** The next draw to be drawn: the unfinished draw with the earliest draw time. */
-export function nextToDraw(draws: DrawView[]): DrawView | null {
-  const open = draws.filter((d) => d.kind !== "v2" && live(d)).sort((a, b) => a.drawAt - b.drawAt || a.id - b.id);
-  if (open[0]) return open[0];
-  return draws.filter((d) => d.kind !== "v2" && d.status === "settled").sort((a, b) => b.settledAt - a.settledAt)[0] ?? null;
+export function liveDraw(draws: DrawView[]): DrawView | null {
+  return featuredDraw(draws);
 }

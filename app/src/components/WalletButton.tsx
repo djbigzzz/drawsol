@@ -7,11 +7,10 @@ import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useDrawSol } from "@/hooks/context";
 import { short, sol } from "@/lib/format";
 import { solscanAccount } from "@/lib/config";
-import { limitsOf } from "@/lib/derive";
 
-/** The wallet-adapter button, rebuilt as a plain underlined address with a stock-slip menu. */
+/** The wallet-adapter button, rebuilt: an outline button with the short address and a plain menu. */
 export function WalletButton({ away = false }: { away?: boolean }) {
-  const { wallet, myEntries, myState, player, profile, profileState, now } = useDrawSol();
+  const { wallet, myEntries, myState, player } = useDrawSol();
   const { disconnect, connecting } = useWallet();
   const { setVisible } = useWalletModal();
   const [open, setOpen] = useState(false);
@@ -47,7 +46,7 @@ export function WalletButton({ away = false }: { away?: boolean }) {
 
   if (!wallet) {
     return (
-      <button type="button" className="btn btn-sec wconnect" onClick={() => setVisible(true)} disabled={connecting}>
+      <button type="button" className="btn btn-outline btn-sm wconnect" onClick={() => setVisible(true)} disabled={connecting}>
         {connecting ? "Connecting…" : "Connect wallet"}
       </button>
     );
@@ -56,28 +55,26 @@ export function WalletButton({ away = false }: { away?: boolean }) {
   const addr = wallet.address.toBase58();
   const tickets = player?.tickets ?? myEntries.reduce((n, e) => n + e.count, 0);
   return (
-    <div style={{ position: "relative" }} ref={ref}>
-      <button type="button" ref={btnRef} className="wbtn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu" title={addr}>
+    <div className="wwrap" ref={ref}>
+      <button type="button" ref={btnRef} className="btn btn-outline btn-sm wbtn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="menu" title={addr}>
         <span className="dot" aria-hidden="true" />
-        <span className="addr">{short(addr)}</span>
-        {wallet.balance !== null && <span className="bal">{sol(wallet.balance, 2, 3)} SOL</span>}
+        <span className="addr tab">{short(addr)}</span>
+        {wallet.balance !== null && <span className="bal tab">{sol(wallet.balance, 2, 3)} SOL</span>}
       </button>
       {open && (
         <div className="wmenu" role="menu" ref={menuRef}>
           <div className="wm-bal">
-            <i>Devnet balance</i>
-            <span className="tab">{wallet.balance !== null ? `${sol(wallet.balance, 2, 4)} SOL` : "—"}</span>
+            <span>Devnet balance</span>
+            <b className="tab">{wallet.balance !== null ? `${sol(wallet.balance, 2, 4)} SOL` : "—"}</b>
           </div>
           <Link role="menuitem" href={away ? "/#my-tickets" : "#my-tickets"} onClick={() => setOpen(false)}>
             Your tickets{myState === "ready" ? ` (${tickets})` : ""}
           </Link>
-          <Link role="menuitem" href={away ? "/#limits" : "#limits"} onClick={() => setOpen(false)}>
-            Play limits{profileState === "ready" && profile && limitsOf(profile, now).excluded ? " (on a break)" : ""}
+          <Link role="menuitem" href={away ? "/#play-safe" : "#play-safe"} onClick={() => setOpen(false)}>
+            Play safe
           </Link>
           <a role="menuitem" href={solscanAccount(addr)} target="_blank" rel="noopener noreferrer">
-            <span className="proof" style={{ textDecoration: "none" }}>
-              View wallet on Solscan
-            </span>
+            View wallet on Solscan
           </a>
           <button
             type="button"

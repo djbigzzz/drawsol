@@ -4,24 +4,24 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { DataRoot } from "@/components/DataRoot";
-import { DevnetStrip, Wordmark } from "@/components/Header";
+import { DevnetBar, Wordmark } from "@/components/Header";
 import { LiveShow } from "@/components/LiveShow";
 import { WalletButton } from "@/components/WalletButton";
 
 /**
  * /live/?n=N: a draw as it happens, for streaming with no presenter (OBS, a 1920×1080 browser source). Without
- * a number it follows the next draw to be drawn. One static route; the number is read on the client.
+ * a number it follows the featured draw. One static route; the number is read on the client.
  */
 export default function LivePage() {
   return (
     <DataRoot>
-      <DevnetStrip />
-      <header className="page mast live-mast">
+      <DevnetBar />
+      <header className="page mast">
         <Wordmark away />
         <div className="mast-r">
           <nav className="nav" aria-label="Sections">
-            <Link href="/">Draws on sale</Link>
-            <Link href="/draw/">All draws</Link>
+            <Link href="/">The draw</Link>
+            <Link href="/draw/">Every draw</Link>
           </nav>
           <WalletButton away />
         </div>

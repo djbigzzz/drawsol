@@ -1,9 +1,8 @@
 import type { Config } from "tailwindcss";
 
 /**
- * "Ticket Office" palette — DESIGN.md §2.9. Closed palette: nothing outside this list.
- * Tailwind is used for layout utilities only; component styling lives in globals.css,
- * in classes named after the printed objects (.ticket, .stub, .stamp, .barcode, .slip…).
+ * "Clean commercial" palette — docs/DESIGN.md §2. Closed palette: nothing outside this list.
+ * Tailwind supplies the preflight reset and layout utilities only; component styling lives in globals.css.
  */
 const config: Config = {
   content: ["./src/**/*.{ts,tsx}"],
@@ -11,27 +10,28 @@ const config: Config = {
     colors: {
       transparent: "transparent",
       current: "currentColor",
-      paper: "#EFE8D9",
-      "paper-2": "#E6DDCA",
-      stock: "#FBF8F0",
-      "stock-2": "#F3EEE2",
-      ink: "#1B1814",
-      "ink-2": "#4F473C",
-      "ink-3": "#625949",
-      rule: "rgba(27,24,20,.16)",
-      "rule-2": "rgba(27,24,20,.32)",
-      red: "#DE3F2B",
-      "red-ink": "#A92A1A",
-      "red-fill": "#C4321F",
-      blue: "#2448B0",
-      "blue-ink": "#1F3F9E",
+      white: "#FFFFFF",
+      navy: "#0B1220",
+      "navy-2": "#3B4555",
+      "navy-3": "#6B7483",
+      surface: "#F5F7FA",
+      "surface-2": "#EBEEF3",
+      line: "#E3E7EE",
+      "line-2": "#CBD2DC",
+      accent: "#15803D",
+      "accent-2": "#166534",
+      "accent-tint": "#F0FDF4",
+      "accent-line": "#BBF7D0",
+      warn: "#B45309",
+      "warn-tint": "#FFFBEB",
+      danger: "#B91C1C",
+      "danger-tint": "#FEF2F2",
     },
     fontFamily: {
-      grot: ['"Archivo Variable"', "Archivo", '"Arial Narrow"', "sans-serif"],
-      serif: ['"Newsreader Variable"', "Georgia", "serif"],
+      sans: ['"Plus Jakarta Sans Variable"', '"Plus Jakarta Sans"', "Inter", "system-ui", "sans-serif"],
     },
-    screens: { md: "761px", lg: "1024px", xl: "1336px" },
-    extend: { maxWidth: { page: "1440px" } },
+    screens: { md: "761px", lg: "1024px", xl: "1280px" },
+    extend: { maxWidth: { page: "1200px" } },
   },
   plugins: [],
 };

@@ -7,10 +7,7 @@ import { short } from "@/lib/format";
 
 const b58 = (k: PublicKey | string) => (typeof k === "string" ? k : k.toBase58());
 
-/**
- * A proof link: blue pen, never a chip. The children are always a phrase naming the thing
- * ("Check the vault on Solscan", "Payout transaction"), never a generic chip word.
- */
+/** A proof link: underlined, with an outward arrow. The children name the thing ("Vault on Solscan"). */
 export function ProofLink({ account, tx, href, children, className = "" }: { account?: PublicKey | string; tx?: string; href?: string; children: ReactNode; className?: string }) {
   const url = href ?? (tx ? solscanTx(tx) : solscanAccount(b58(account ?? "")));
   const external = !href || href.startsWith("http");
@@ -39,59 +36,41 @@ export function Addr({ k, head = 4, tail = 4, link = false, className = "" }: { 
   );
 }
 
-/** Section grid: narrow voice on the left (248), wide paper on the right. */
-export function SectionGrid({
-  id,
-  title,
-  sub,
-  aside,
-  children,
-  level = 2,
-}: {
-  id: string;
-  title: string;
-  sub?: ReactNode;
-  aside?: ReactNode;
-  children: ReactNode;
-  /** 1 on a page of its own (the per-draw page), 2 for sections of the ticket office */
-  level?: 1 | 2;
-}) {
+/** A page section: a heading row (title, optional lead) and its content, on the 8px rhythm. */
+export function Section({ id, title, lead, children, className = "", level = 2 }: { id: string; title: string; lead?: ReactNode; children: ReactNode; className?: string; level?: 1 | 2 }) {
   const H = level === 1 ? "h1" : "h2";
   return (
-    <section className="sec" id={id} aria-labelledby={`${id}-h`}>
-      <div className="sgrid">
-        <div>
-          <H className="t-sec" id={`${id}-h`}>
-            {title}
-          </H>
-          {sub && <p className="t-small sec-sub">{sub}</p>}
-          {aside}
-        </div>
-        <div>{children}</div>
+    <section className={`sec ${className}`} id={id} aria-labelledby={`${id}-h`}>
+      <div className="sec-head">
+        <H className="t-h2" id={`${id}-h`}>
+          {title}
+        </H>
+        {lead && <p className="sec-lead">{lead}</p>}
       </div>
+      {children}
     </section>
   );
 }
 
-export function Check({ className = "", size = 12, stroke = 1.9 }: { className?: string; size?: number; stroke?: number }) {
+export function Check({ className = "", size = 14, stroke = 2.2 }: { className?: string; size?: number; stroke?: number }) {
   return (
-    <svg className={className} width={size} height={size} viewBox="0 0 12 12" aria-hidden="true">
-      <path d="M2 6.4 4.8 9 10 3" stroke="currentColor" strokeWidth={stroke} fill="none" />
+    <svg className={className} width={size} height={size} viewBox="0 0 14 14" aria-hidden="true">
+      <path d="M2.5 7.5 5.6 10.5 11.5 4" stroke="currentColor" strokeWidth={stroke} fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
 
-/** The busy mark: an 8px ink dot, blinking only while a real request is in flight. */
+/** The busy mark: a spinner ring, turning only while a real request is in flight. */
 export function Busy() {
   return <span className="busy" aria-hidden="true" />;
 }
 
-/** No box: red-ink rules above and below. Row 1 is the lead-in and Dismiss; row 2 the human message, full width. */
+/** An error: a soft red panel with the lead-in, the human message and Dismiss. */
 export function ErrorNote({ children, onDismiss }: { children: ReactNode; onDismiss?: () => void }) {
   return (
     <div className="err" role="alert">
       <p className="err-top">
-        <span className="err-lead">Didn’t go through.</span>
+        <span className="err-lead">Didn’t go through</span>
         {onDismiss && (
           <button type="button" className="tbtn" onClick={onDismiss}>
             Dismiss
@@ -103,29 +82,30 @@ export function ErrorNote({ children, onDismiss }: { children: ReactNode; onDism
   );
 }
 
-export function Chevron() {
-  return (
-    <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
-      <path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
-}
-
 export function Minus() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 8h10" stroke="#1B1814" strokeWidth="2.2" />
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <path d="M3 8h10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
     </svg>
   );
 }
 
 export function Plus() {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
-      <path d="M3 8h10M8 3v10" stroke="#1B1814" strokeWidth="2.2" />
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <path d="M3 8h10M8 3v10" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
     </svg>
   );
 }
 
+/** A status pill: "OPEN", "SOLD OUT", "DRAWING", "SETTLED", "CANCELLED". */
+export function Pill({ tone = "neutral", children }: { tone?: "neutral" | "accent" | "warn" | "dark"; children: ReactNode }) {
+  return <span className={`pill pill-${tone}`}>{children}</span>;
+}
+
 /** A tx phase is "in flight" while the program checks it, the wallet signs it, or devnet confirms it. */
 export const inFlight = (p: string | undefined) => p === "simulating" || p === "signing" || p === "confirming";
+
+/** The button label while a transaction is in flight, else the given one. */
+export const phaseLabel = (p: string | undefined, idle: string) =>
+  p === "simulating" ? "Checking with the program…" : p === "signing" ? "Approve in your wallet…" : p === "confirming" ? "Confirming on devnet…" : idle;

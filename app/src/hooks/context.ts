@@ -36,10 +36,12 @@ export interface DrawSolData {
   draws: DrawView[];
   /** legacy v2 draws still on chain (read-only history; closed at the cutover, then empty) */
   legacyDraws: DrawView[];
-  /** the draw this page shows: chosen with select(), else the catalogue's default */
+  /** the draw this page shows: chosen with select() (/live: ?n=), else the featured headline draw */
   current: DrawView | null;
-  /** show another draw (home: the catalogue; /live: ?n=). null returns to the default. */
+  /** show another draw (/live: ?n=). null returns to the featured draw. */
   select: (id: number | null) => void;
+  /** SOL in USD from a live quote; null when no quote is available (USD figures are then not shown) */
+  solUsd: number | null;
   vaultLamports: bigint | null;
   entries: EntryView[];
   entriesState: "loading" | "error" | "ready";
@@ -131,6 +133,16 @@ export type ActionKey =
   | `refund:${string}`
   | `reveal:${string}`;
 
+/** A purchase or free entry that has just confirmed on a draw with no instant roll: what landed, from chain. */
+export interface Done {
+  kind: "buy" | "free";
+  sig: string;
+  /** the Entry account as read after confirmation; null when it could not be read yet */
+  entry: EntryView | null;
+  firstTicket: number;
+  count: number;
+}
+
 export interface Actions {
   phase: Partial<Record<ActionKey, TxPhase>>;
   errors: Partial<Record<ActionKey, HumanError | null>>;
@@ -151,6 +163,9 @@ export interface Actions {
   reveal: (entry: EntryView) => void;
   session: RevealSession | null;
   closeSession: () => void;
+  /** the last confirmed entry on a draw without instant rolls (headline draws): the success state */
+  done: Done | null;
+  clearDone: () => void;
   clearError: (k: ActionKey) => void;
   /** null when the wallet adapter is in charge; otherwise a notice to show */
   disabledReason: string | null;

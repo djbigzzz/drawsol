@@ -21,7 +21,7 @@ import {
   ixSettle,
   makeLegacyProgram,
 } from "@/lib/chain";
-import { cancelsAtRequest, defaultDraw } from "@/lib/derive";
+import { cancelsAtRequest, featuredDraw } from "@/lib/derive";
 import { drawSeed, entrySeed, oraoRandomnessPda, winningTicket } from "@/lib/fairness";
 import { fetchOraoNetwork, fetchRandomness } from "@/lib/orao";
 import { randomNonce, sendIxs, TxError, type TxPhase } from "@/lib/tx";
@@ -33,6 +33,7 @@ import {
   type ActionKey,
   type Actions,
   type Costs,
+  type Done,
   type DrawSolData,
   type RevealSession,
 } from "./context";
@@ -43,6 +44,7 @@ import { useAllEntries, useEntries, useMyEntries, useProfile } from "./useEntrie
 import { useBalance } from "./useBalance";
 import { useNow } from "./useNow";
 import { useRandomness, waitForRandomness } from "./useRandomness";
+import { useSolPrice } from "./useSolPrice";
 
 export function LiveProvider({ children }: { children: ReactNode }) {
   const { connection } = useConnection();
@@ -56,9 +58,10 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const { load, config, draws, legacyDraws, refresh: refreshDraws } = useDraws(program, legacy);
   const [selectedId, select] = useState<number | null>(null);
   const listed = useMemo(
-    () => (selectedId !== null ? draws.find((d) => d.id === selectedId) : undefined) ?? defaultDraw(draws),
+    () => (selectedId !== null ? draws.find((d) => d.id === selectedId) : undefined) ?? featuredDraw(draws),
     [draws, selectedId]
   );
+  const solUsd = useSolPrice();
   const { draw: current, vault, failures, lastOk, nextAt, pollNow } = useDraw(program, listed);
   const { entries, state: entriesState } = useEntries(program, current, nonce);
   const pk = walletCtx.publicKey;
@@ -143,6 +146,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     legacyDraws,
     current,
     select,
+    solUsd,
     vaultLamports: vault,
     entries,
     entriesState,
@@ -172,6 +176,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<RevealSession | null>(null);
   const sessionRef = useRef<RevealSession | null>(null);
   sessionRef.current = session;
+  const [done, setDone] = useState<Done | null>(null);
 
   const patchSession = (entry: PublicKey, p: Partial<RevealSession>) =>
     setSession((s) => (s && s.entry.equals(entry) ? { ...s, ...p } : s));
@@ -296,7 +301,19 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           }
         }
       );
-      if (!rolls) return;
+      if (!rolls) {
+        // no instant roll (headline draws): the success state is the entry as read back from chain
+        if (!sig || !entryKey) return;
+        const landed = await fetchEntry(program, entryKey).catch(() => null);
+        setDone({
+          kind: key,
+          sig,
+          entry: landed,
+          firstTicket: landed?.firstTicket ?? draw.nextTicket,
+          count: landed?.count ?? quantity,
+        });
+        return;
+      }
       if (!sig || !entryKey) {
         setSession((s) => (s && entryKey && s.entry.equals(entryKey) && s.stage === "confirming" ? null : s));
         return;
@@ -427,6 +444,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     reveal,
     session,
     closeSession: () => setSession(null),
+    done,
+    clearDone: () => setDone(null),
     clearError: (k) => setErrors((e) => ({ ...e, [k]: null })),
     disabledReason: null,
   };
