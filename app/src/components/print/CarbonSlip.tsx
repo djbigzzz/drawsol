@@ -1,43 +1,39 @@
 "use client";
 
 import { useState } from "react";
-import { useDrawSol } from "@/hooks/context";
+import { useOraoRead } from "@/hooks/useOraoRead";
+import { isDefaultKey } from "@/lib/derive";
 import { drawRoll, toHex, winningTicket } from "@/lib/fairness";
 import { ticketNo } from "@/lib/format";
 import type { DrawView } from "@/lib/types";
 import { Busy, Check, ProofLink } from "../bits";
 import { groupDigits } from "../fmt";
 
-type Result = { r: bigint; w: number; match: boolean; orao: "match" | "mismatch" | "unavailable" };
+type Result = { r: bigint; w: number; match: boolean };
 
 /**
  * The carbon copy: a duplicate-book slip that redoes the winning-ticket arithmetic in this browser
  * with fairness.ts (real SHA-256), then compares against the program and ORAO's own account.
+ * The arithmetic needs no network, so it prints at once; the ORAO comparison fills in when its read lands
+ * (one read shared with the draw record, so the two never disagree).
  */
 export function CarbonSlip({ d, tilt = false, id }: { d: DrawView; tilt?: boolean; id?: string }) {
-  const { readOrao } = useDrawSol();
   const [res, setRes] = useState<Result | null>(null);
-  const [busy, setBusy] = useState(false);
   const [runs, setRuns] = useState(0);
   const [allHex, setAllHex] = useState(false);
   const hex = toHex(d.randomness);
   const n = `Draw Nº ${d.id}`;
+  const { o: orao, retry: readOrao } = useOraoRead(isDefaultKey(d.drawVrfRequest) ? null : d.drawVrfRequest, { enabled: false });
+  const oraoLine =
+    orao.kind === "fulfilled" ? (toHex(orao.bytes) === hex ? "match" : "mismatch") : orao.kind === "reading" || orao.kind === "idle" ? "checking" : "unavailable";
 
-  const run = async () => {
-    setBusy(true);
-    setRes(null);
+  const run = () => {
     const r = drawRoll(d.randomness);
     const w = winningTicket(d.randomness, d.nextTicket);
-    let orao: Result["orao"] = "unavailable";
-    try {
-      const fromOrao = await readOrao(d.drawVrfRequest);
-      if (fromOrao) orao = toHex(fromOrao) === hex ? "match" : "mismatch";
-    } catch {
-      /* unavailable */
-    }
-    setRes({ r, w, match: w === d.winningTicket, orao });
+    setRes({ r, w, match: w === d.winningTicket });
     setRuns((x) => x + 1);
-    setBusy(false);
+    // a failed or pending read is tried again on every run; a fulfilled one is final
+    readOrao();
   };
 
   const pen = (i: number) => ({ className: "vl inked appear", style: { animationDelay: `${i * 120}ms` } });
@@ -92,8 +88,7 @@ export function CarbonSlip({ d, tilt = false, id }: { d: DrawView; tilt?: boolea
         </div>
       </div>
       <div className="go">
-        <button type="button" className={`btn btn-15 ${res ? "btn-blue-sec" : "btn-blue"}`} onClick={run} disabled={busy}>
-          {busy && <Busy />}
+        <button type="button" className={`btn btn-15 ${res ? "btn-blue-sec" : "btn-blue"}`} onClick={run}>
           {res ? "Run it again" : "Recompute"}
         </button>
       </div>
@@ -113,10 +108,15 @@ export function CarbonSlip({ d, tilt = false, id }: { d: DrawView; tilt?: boolea
               </>
             )}
           </p>
-          <p className={`orao t-small appear ${res.orao === "mismatch" ? "bad" : ""}`} style={{ animationDelay: "360ms" }}>
-            {res.orao === "match" && "ORAO’s request account holds the same randomness."}
-            {res.orao === "mismatch" && "ORAO’s request account holds different randomness."}
-            {res.orao === "unavailable" && "ORAO’s request account isn’t readable right now; compare it on Solscan."}
+          <p className={`orao t-small appear ${oraoLine === "mismatch" ? "bad" : ""}`} style={{ animationDelay: "360ms" }}>
+            {oraoLine === "checking" && (
+              <>
+                <Busy /> Checking ORAO’s request account…
+              </>
+            )}
+            {oraoLine === "match" && "ORAO’s request account holds the same randomness."}
+            {oraoLine === "mismatch" && "ORAO’s request account holds different randomness."}
+            {oraoLine === "unavailable" && "ORAO’s request account isn’t readable right now; compare it on Solscan."}
           </p>
         </div>
       )}

@@ -4,7 +4,7 @@
  * FIXTURE MODE — only compiled into builds made with NEXT_PUBLIC_FIXTURES=1.
  * Pick a scenario with ?fx=<name> (see data.ts). Transactions are never sent.
  */
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { ActionsContext, DataContext, type ActionKey, type Actions, type DrawSolData, type RevealSession } from "@/hooks/context";
 import { useNow } from "@/hooks/useNow";
@@ -130,11 +130,23 @@ const CODES: Record<string, string> = {
 
 /** Sits inside the devnet strip's right end (z 101), never over page content. */
 function FxBadge({ name }: { name: string }) {
-  // at 360px and below a 2–3 letter code ("Fx rd"), so the honesty marker beside it is never covered;
+  // on phones a 2–3 letter code ("Fx rd"): the badge gives way, never the honesty marker beside it;
   // single words get a fixed code (slicing "open" to "ope" read as a typo), hyphenated ones their initials
   const code = CODES[name] ?? (name.includes("-") ? name.split("-").map((p) => p[0]).join("") : name.slice(0, 2));
+  // the strip's text stops (and truncates) before the badge, so the badge never covers the honesty line
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const set = () => document.documentElement.style.setProperty("--fxb-w", `${el.offsetWidth + 8}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
     <div
+      ref={ref}
       role="note"
       className="fxb"
       style={{
@@ -160,7 +172,7 @@ function FxBadge({ name }: { name: string }) {
       <span className="fxb-tiny" aria-label={`Fixture ${name}`}>
         Fx {code}
       </span>
-      <style>{`.fxb-short,.fxb-tiny{display:none}@media (max-width:760px){.fxb-long{display:none}.fxb-short{display:inline}}@media (max-width:360px){.fxb-short{display:none}.fxb-tiny{display:inline}.fxb{padding:0 8px!important}}`}</style>
+      <style>{`.strip-in{padding-right:var(--fxb-w,0px)}.fxb-short,.fxb-tiny{display:none}@media (max-width:760px){.fxb-long{display:none}.fxb-tiny{display:inline}.fxb{padding:0 8px!important}}`}</style>
     </div>
   );
 }

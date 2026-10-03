@@ -1,6 +1,6 @@
 const LAMPORTS = BigInt(1_000_000_000);
 
-/** lamports → "1.25" with between `min` and `max` decimals (trailing zeros trimmed down to min). */
+/** lamports → "1.25" with between `min` and `max` decimals (trailing zeros trimmed down to min; a fraction never shows just one). */
 export function sol(lamports: bigint, min = 2, max = 4): string {
   const neg = lamports < BigInt(0);
   const l = neg ? -lamports : lamports;
@@ -8,6 +8,8 @@ export function sol(lamports: bigint, min = 2, max = 4): string {
   const frac = (l % LAMPORTS).toString().padStart(9, "0").slice(0, max);
   let f = frac;
   while (f.length > min && f.endsWith("0")) f = f.slice(0, -1);
+  // one rule for every amount: whole SOL is bare ("1 SOL"), any fraction shows at least 2 decimals ("0.20 SOL")
+  if (f.length === 1) f += "0";
   return `${neg ? "-" : ""}${whole.toString()}${f.length ? "." + f : ""}`;
 }
 

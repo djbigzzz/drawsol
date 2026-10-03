@@ -11,7 +11,7 @@ import { inkAt } from "@/lib/print";
 import type { DrawView } from "@/lib/types";
 import { Addr, ProofLink } from "./bits";
 import { BuyPanel } from "./BuyPanel";
-import { durationParts, localComma, plural, stampDay, longDay } from "./fmt";
+import { durationParts, localComma, plural, stampDay, longDay, utcHhmm } from "./fmt";
 import { Barcode, yoursText } from "./print/Barcode";
 import { Microtext, Specimen } from "./print/Mark";
 import { NumberWheel } from "./print/NumberWheel";
@@ -45,7 +45,7 @@ export function Lede() {
       `${n} is open.`,
       <>
         One prize of {prize}, locked away before the first ticket {d.nextTicket === 0 ? "sells" : "sold"}. {d.ticketCap} tickets at{" "}
-        <span className="nw">{sol(d.ticketPrice, 2, 4)} SOL</span>, and every ticket gets an instant result.
+        <span className="nw">{sol(d.ticketPrice, 2, 4)} SOL</span>, and every paid ticket gets an instant result.
       </>,
     ],
     due: [
@@ -353,7 +353,7 @@ function FactLeft({ d, ph, now }: { d: DrawView; ph: Phase; now: number }) {
 }
 
 function FactRight({ d, ph }: { d: DrawView; ph: Phase }) {
-  const { myEntries, wallet, myState } = useDrawSol();
+  const { myEntries, wallet, myState, staleSince } = useDrawSol();
   if (ph === "settled")
     return (
       <div className="fact fact-sold">
@@ -408,6 +408,7 @@ function FactRight({ d, ph }: { d: DrawView; ph: Phase }) {
       <p className="fig">
         <span className="t-fact">{d.paidTickets}</span>
         <span className="unit">of {d.ticketCap} sold</span>
+        {staleSince !== null && <i className="asof nw">as of {utcHhmm(staleSince)} UTC</i>}
       </p>
       <p className="note">
         {ph === "due"

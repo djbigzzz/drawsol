@@ -4,6 +4,7 @@ import { useDrawSol } from "@/hooks/context";
 import { PROGRAM_ID, SOURCE_URL } from "@/lib/config";
 import { ProofLink } from "./bits";
 import { Microtext } from "./print/Mark";
+import { utcHhmm } from "./fmt";
 
 function Head() {
   return (
@@ -108,30 +109,29 @@ export function NoDraw({ reason }: { reason: "no-program" | "no-config" | "no-dr
 
 /**
  * Polls of the current draw keep failing after a good read: keep what was read, say when, and say the page
- * is trying again. No box: ink rules above and below, like the error note, but no red (nothing failed that
- * you did).
+ * is trying again. One line (two at most on a phone), no box and no rule: a degraded-data notice, not an
+ * alarm, so the ticket keeps its place in the first viewport. The lead-in in red ink like the other error
+ * lead-ins; the ticket's sold figure also carries "as of" while this shows.
  */
 export function StaleNote() {
   const { staleSince, retryIn, refresh } = useDrawSol();
   if (staleSince === null) return null;
-  const d = new Date(staleSince * 1000);
-  const hhmm = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+  const hhmm = utcHhmm(staleSince);
   return (
     <div className="stale" role="status">
-      <p className="stale-top">
-        <span className="stale-lead">Devnet isn’t answering.</span>
+      <p className="stale-msg">
+        <span className="stale-lead">Devnet isn’t answering.</span>{" "}
+        <span className="nw">Figures as of {hhmm} UTC</span>
+        {retryIn !== null ? (
+          <>
+            {" · "}
+            <span className="nw">{retryIn > 0 ? `retrying in ${retryIn} s` : "retrying now…"}</span>
+          </>
+        ) : null}
+        {" · "}
         <button type="button" className="tbtn" onClick={refresh}>
           Try now
         </button>
-      </p>
-      <p className="stale-msg">
-        Everything below was read at <span className="nw">{hhmm} UTC</span> and may be out of date.
-        {retryIn !== null ? (
-          <>
-            {" "}
-            Trying again in <span className="nw">{retryIn} s</span>.
-          </>
-        ) : null}
       </p>
     </div>
   );

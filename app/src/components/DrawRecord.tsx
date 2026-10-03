@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { PublicKey } from "@solana/web3.js";
 import { useDrawSol } from "@/hooks/context";
-import { isDefaultKey, phaseOf, type Phase } from "@/lib/derive";
+import { useOraoRead } from "@/hooks/useOraoRead";
+import { isDefaultKey, phaseOf, remaining, type Phase } from "@/lib/derive";
 import { drawPda, vaultPda } from "@/lib/chain";
 import { toHex } from "@/lib/fairness";
 import { shortDate, sol, ticketNo, utcLabel } from "@/lib/format";
@@ -14,7 +15,8 @@ import { EntryLedger } from "./EntryLedger";
 import { plural } from "./fmt";
 import { InstantTable } from "./InstantWins";
 import { CarbonSlip } from "./print/CarbonSlip";
-import { SettledTicket, SettleTxLine, useSettleTx } from "./SettledTicket";
+import { CancelledTicket, SettledTicket, SettleTxLine, useSettleTx } from "./SettledTicket";
+import { Barcode, yoursText } from "./print/Barcode";
 
 const STATUS: Record<Phase, string> = {
   selling: "Open",
@@ -30,8 +32,23 @@ const STATUS: Record<Phase, string> = {
  * a 404; no number lists every draw.
  */
 export function DrawRecord({ raw }: { raw: string | null }) {
-  const { load, draws, config } = useDrawSol();
+  const { load, draws, config, refresh, now } = useDrawSol();
   const n = raw !== null && /^\d{1,9}$/.test(raw.trim()) ? Number(raw.trim()) : null;
+  const found = load.kind === "ready" && n !== null ? draws.find((x) => x.id === n) : undefined;
+  // tabs and history tell draws apart: "Draw Nº 0 · settled · DrawSol", "No Draw Nº 99 · DrawSol"
+  const docTitle =
+    load.kind !== "ready"
+      ? null
+      : found
+        ? `Draw Nº ${found.id} · ${STATUS[phaseOf(found, now)].toLowerCase()} · DrawSol`
+        : n !== null
+          ? `No Draw Nº ${n} · DrawSol`
+          : raw !== null && raw.trim() !== ""
+            ? "No such draw · DrawSol"
+            : "Every draw · DrawSol";
+  useEffect(() => {
+    if (docTitle) document.title = docTitle;
+  }, [docTitle]);
 
   if (load.kind === "loading")
     return (
@@ -45,7 +62,12 @@ export function DrawRecord({ raw }: { raw: string | null }) {
     return (
       <SectionGrid id="draw" level={1} title="Can’t reach devnet.">
         <p className="t-body" role="alert">
-          We couldn’t read {n !== null ? `Draw Nº ${n}` : "the draws"} from the Solana devnet RPC, so we’re not showing any numbers. Reload the page to try again.
+          We couldn’t read {n !== null ? `Draw Nº ${n}` : "the draws"} from the Solana devnet RPC, so we’re not showing any numbers.
+        </p>
+        <p className="sec-link">
+          <button type="button" className="btn" onClick={refresh}>
+            Try again
+          </button>
         </p>
       </SectionGrid>
     );
@@ -56,7 +78,7 @@ export function DrawRecord({ raw }: { raw: string | null }) {
   // no such draw, or no number at all: say what exists, from chain
   const sorted = draws.slice().sort((a, b) => b.id - a.id);
   const next = config?.nextDrawId ?? null;
-  const title = n !== null ? `Draw Nº ${n}` : raw !== null && raw.trim() !== "" ? "No such draw" : "Every draw";
+  const title = n !== null ? `No Draw Nº ${n}` : raw !== null && raw.trim() !== "" ? "No such draw" : "Every draw";
   const where = n !== null ? drawPda(n) : null;
   return (
     <SectionGrid
@@ -72,7 +94,7 @@ export function DrawRecord({ raw }: { raw: string | null }) {
                 <>The program hasn’t opened a draw yet.</>
               ) : (
                 <>
-                  The program has opened {next} {plural(next, "draw", "draws")} so far, Nº 0{next > 1 ? <> to Nº {next - 1}</> : null}.
+                  The program has handed out {next} draw {plural(next, "number", "numbers")} so far, Nº 0{next > 1 ? <> to Nº {next - 1}</> : null}.
                 </>
               )
             ) : null}
@@ -91,17 +113,33 @@ export function DrawRecord({ raw }: { raw: string | null }) {
         ) : undefined
       }
     >
-      <DrawIndex draws={sorted} />
+      <DrawIndex draws={sorted} next={next} />
     </SectionGrid>
   );
 }
 
-function DrawIndex({ draws }: { draws: DrawView[] }) {
+function DrawIndex({ draws, next }: { draws: DrawView[]; next: number | null }) {
   const { now } = useDrawSol();
-  if (draws.length === 0) return <p className="t-body c-ink-2">No draw has been opened on devnet yet.</p>;
+  if (draws.length === 0 && !next) return <p className="t-body c-ink-2">No draw has been opened on devnet yet.</p>;
+  // every number the program has handed out, newest first; a number with no Draw account on devnet says so
+  const ids = new Set(draws.map((d) => d.id));
+  const gaps = next !== null ? Array.from({ length: next }, (_, i) => next - 1 - i).filter((i) => !ids.has(i)) : [];
+  const rows: ({ kind: "draw"; d: DrawView } | { kind: "gap"; id: number })[] = [
+    ...draws.map((d) => ({ kind: "draw" as const, d })),
+    ...gaps.map((id) => ({ kind: "gap" as const, id })),
+  ].sort((a, b) => (b.kind === "draw" ? b.d.id : b.id) - (a.kind === "draw" ? a.d.id : a.id));
   return (
     <ul className="older dindex" aria-label="Every draw">
-      {draws.map((d) => {
+      {rows.map((r) => {
+        if (r.kind === "gap")
+          return (
+            <li key={`gap-${r.id}`} className="older-row gap c-ink-3">
+              <b>Draw Nº {r.id}</b>
+              <span className="d">not found</span>
+              <span className="d">no account on devnet (closed or never created)</span>
+            </li>
+          );
+        const d = r.d;
         const ph = phaseOf(d, now);
         return (
           <li key={d.address.toBase58()} className="older-row">
@@ -130,27 +168,6 @@ function DrawIndex({ draws }: { draws: DrawView[] }) {
       })}
     </ul>
   );
-}
-
-type Orao = { kind: "none" } | { kind: "reading" } | { kind: "error" } | { kind: "pending" } | { kind: "fulfilled"; bytes: Uint8Array };
-
-/** The ORAO request account's randomness, read in this browser (fulfilment, separate from the request). */
-function useOrao(d: DrawView): Orao {
-  const { readOrao } = useDrawSol();
-  const [o, setO] = useState<Orao>({ kind: "reading" });
-  const key = isDefaultKey(d.drawVrfRequest) ? null : d.drawVrfRequest.toBase58();
-  useEffect(() => {
-    if (!key) return setO({ kind: "none" });
-    let alive = true;
-    setO({ kind: "reading" });
-    readOrao(new PublicKey(key))
-      .then((r) => alive && setO(r ? { kind: "fulfilled", bytes: r } : { kind: "pending" }))
-      .catch(() => alive && setO({ kind: "error" }));
-    return () => {
-      alive = false;
-    };
-  }, [key, readOrao, d.status]);
-  return o;
 }
 
 function Row({ k, children, className = "" }: { k: ReactNode; children: ReactNode; className?: string }) {
@@ -184,8 +201,13 @@ function Record({ d }: { d: DrawView }) {
 
   const ph = phaseOf(d, now);
   const settled = ph === "settled";
+  // the sales meter: free entries punched, this wallet's tickets raised in blue (only once entries are read)
+  const free = state === "ready" ? entries.filter((e) => e.isFree).map((e) => e.firstTicket) : [];
+  const me = wallet?.address;
+  const mine = me ? entries.filter((e) => e.owner.equals(me)).flatMap((e) => Array.from({ length: e.count }, (_, i) => e.firstTicket + i)) : [];
   const tx = useSettleTx(d);
-  const orao = useOrao(d);
+  // shared with the carbon slip below, so the record row and the slip can never disagree
+  const { o: orao, retry: retryOrao } = useOraoRead(isDefaultKey(d.drawVrfRequest) ? null : d.drawVrfRequest, { again: d.status });
   const closed = ph !== "selling";
   const soldOut = d.paidTickets >= d.ticketCap;
   const prize = `${sol(d.prizeLamports, 0, 4)} SOL`;
@@ -220,40 +242,20 @@ function Record({ d }: { d: DrawView }) {
         level={1}
         title={`Draw Nº ${d.id}`}
         sub={sub}
-        aside={
-          <>
-            <dl className="ledger big">
-              <Row k="Status">{STATUS[ph]}</Row>
-              <Row k={closed ? "Sold at close" : "Sold so far"}>
-                {d.paidTickets} / {d.ticketCap}
-              </Row>
-              <Row k="Free entries">
-                {d.freeTickets} / {d.freeCap}
-              </Row>
-              <Row k="Grand prize" className={settled ? "won" : ""}>
-                {settled ? `${prize}, paid` : ph === "cancelled" ? `${prize}, returned` : prize}
-              </Row>
-            </dl>
-            {ph === "selling" && (
-              <p className="sec-link">
-                <Link className="tbtn" href="/#buy">
-                  Buy tickets for Draw Nº {d.id}
-                </Link>
-              </p>
-            )}
-            {ph !== "cancelled" && <InstantTable d={d} entries={entries} state={state} selling={ph === "selling"} />}
-          </>
-        }
       >
         <dl className="ledger record">
+          <Row k="Status">{STATUS[ph]}</Row>
+          <Row k="Grand prize" className={settled ? "won" : ""}>
+            {settled ? `${prize}, paid` : ph === "cancelled" ? `${prize}, returned` : prize}
+          </Row>
           <Row k="Opened">{utcLabel(d.createdAt)}</Row>
           <Row k={closed ? "Closed" : "Closes"}>
             {utcLabel(d.closesAt)}
             {closed && soldOut ? ", sold out" : ""}
           </Row>
           <Row k={closed ? "Tickets at close" : "Tickets so far"}>
-            {d.paidTickets} of {d.ticketCap} sold{d.freeTickets > 0 ? `, plus ${d.freeTickets} free ${plural(d.freeTickets, "entry", "entries")}` : ""} ·{" "}
-            {d.nextTicket} in the draw
+            {d.paidTickets} of {d.ticketCap} sold
+            {d.freeCap > 0 ? `, ${d.freeTickets} of ${d.freeCap} free ${plural(d.freeCap, "entry", "entries")}` : ""} · {d.nextTicket} in the draw
           </Row>
           <Row k="Ticket price">{sol(d.ticketPrice, 2, 4)} SOL</Row>
           {settled && (
@@ -273,17 +275,22 @@ function Record({ d }: { d: DrawView }) {
           )}
           {orao.kind !== "none" && (
             <Row k="Randomness fulfilled">
-              {orao.kind === "reading" ? (
+              {orao.kind === "reading" || orao.kind === "idle" ? (
                 <>
                   <Busy /> <span className="c-ink-3">reading ORAO…</span>
                 </>
               ) : orao.kind === "error" ? (
-                <span className="c-ink-3">can’t read ORAO right now</span>
+                <span className="c-ink-3">
+                  Couldn’t read ORAO’s request account.{" "}
+                  <button type="button" className="tbtn" onClick={retryOrao}>
+                    Try again
+                  </button>
+                </span>
               ) : orao.kind === "pending" ? (
                 <span className="c-ink-3">not yet</span>
               ) : (
                 <>
-                  <code className="nw" title={hex}>
+                  <code title={hex}>
                     {hex.slice(0, 8)}…{hex.slice(-8)}
                   </code>
                   {matches === true ? <span className="c-ink-2">, as stored</span> : matches === false ? <span className="c-red">, differs from the draw</span> : null}
@@ -297,7 +304,7 @@ function Record({ d }: { d: DrawView }) {
             </Row>
           )}
           <Row k="Instant wins paid" className={d.iwPaidLamports > BigInt(0) ? "won" : ""}>
-            {sol(d.iwPaidLamports, 2, 4)} of {sol(d.iwReserveLamports, 0, 4)} SOL
+            {sol(d.iwPaidLamports, 2, 4)} of {sol(d.iwReserveLamports, 2, 4)} SOL
           </Row>
           <Row k="Draw account">
             <ProofLink account={d.address}>{d.address.toBase58().slice(0, 4)}… on Solscan</ProofLink>
@@ -306,10 +313,50 @@ function Record({ d }: { d: DrawView }) {
             <ProofLink account={vaultPda(d.address)}>{vaultPda(d.address).toBase58().slice(0, 4)}… on Solscan</ProofLink>
           </Row>
         </dl>
+        {ph === "selling" && (
+          <div className="drec-card">
+            <p className="drec-card-h">
+              <b>Sales so far</b>
+              <i>one bar per ticket</i>
+            </p>
+            <Barcode
+              slots={d.ticketCap + d.freeTickets}
+              taken={d.nextTicket}
+              free={free}
+              mine={mine}
+              label={
+                `${d.paidTickets} of ${d.ticketCap} tickets sold` +
+                (d.freeTickets > 0 ? `, plus ${d.freeTickets} free ${plural(d.freeTickets, "entry", "entries")}` : "") +
+                "." +
+                yoursText(mine)
+              }
+              leftLabel={`${remaining(d)} left`}
+            />
+            {/* the ticket office sells the current draw; an older draw still open is bought from there too, so
+                only the current one gets the button */}
+            {isCurrent && (
+              <p className="drec-buy">
+                <Link className="btn" href="/#buy">
+                  Buy tickets for Draw Nº {d.id}
+                </Link>
+              </p>
+            )}
+          </div>
+        )}
+        {ph === "cancelled" && (
+          <div className="past drec-past">
+            <CancelledTicket d={d} />
+          </div>
+        )}
         {settled && (
           <div className="past drec-past">
             <SettledTicket d={d} />
             <CarbonSlip d={d} tilt id={`recompute-${d.id}`} />
+          </div>
+        )}
+        {ph !== "cancelled" && (
+          <div className="drec-odds">
+            <InstantTable d={d} entries={entries} state={state} selling={ph === "selling"} full />
           </div>
         )}
       </SectionGrid>
@@ -319,7 +366,8 @@ function Record({ d }: { d: DrawView }) {
         title="Every entry"
         sub={
           <>
-            Each row is an Entry account of Draw Nº {d.id} on devnet, so the list can’t be padded. Search by wallet or ticket number, or download them all.
+            Each row is an Entry account of Draw Nº {d.id} on devnet, so the list can’t be padded.
+            {entries.length > 0 ? " Search by wallet or ticket number, or download them all." : ""}
           </>
         }
       >

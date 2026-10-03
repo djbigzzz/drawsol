@@ -762,7 +762,7 @@ It is replaced by `NumberWheel` (§4.5) for the countdown. The prize, sold count
    - The expanded detail is one Newsreader 15 paragraph (§6).
    - If `costs` is unavailable: "+ network & randomness fee, shown in your wallet before you sign".
 6. **Buy button** (margin-top 16): primary, 56px, with the live total inside: "Buy 5 tickets · 0.05 SOL".
-7. **Guarantee** (`.t-small` ink-2, margin-top 8), scoped to the grand prize (research P0-4): "Drawn at Fri 16 Oct, 10:14 UTC or when all 150 tickets sell, whichever comes first. Grand prize already locked: [1 SOL ↗]. Never extended; the grand prize is never reduced." The link is the vault on Solscan. "Never reduced" is never extended to instant wins (they are paid up to what the reserve holds).
+7. **Guarantee** (`.t-small` ink-2, margin-top 8), scoped to the grand prize (research P0-4): "Drawn at Fri 16 Oct, 10:14 UTC or when all 150 tickets sell, whichever comes first. Grand prize already locked: 1 SOL. Never extended; the grand prize is never reduced." Plain text, no link: the ticket face right above already carries the one proof link, the vault (§8.1). "Never reduced" is never extended to instant wins (they are paid up to what the reserve holds).
 8. **Ledger** (margin-top 24): rows of `.t-small` label and `.t-ui` 15/700 value, 1px rules, 36px rows:
    - "Ticket price, flat": "0.01 SOL";
    - "Grand-prize odds, per ticket": "1 in 102 now";
@@ -1241,7 +1241,7 @@ Rules for all copy:
 
 | State | h1 | Sentence |
 |---|---|---|
-| open | Draw Nº 3 is open. | One prize of 1 SOL, locked away before the first ticket sold. 150 tickets at 0.01 SOL, and every ticket gets an instant result. |
+| open | Draw Nº 3 is open. | One prize of 1 SOL, locked away before the first ticket sold. 150 tickets at 0.01 SOL, and every paid ticket gets an instant result. |
 | due | Draw Nº 3 has closed. | Sales are over: {the deadline passed at Sun 4 Oct, 04:13 UTC \| every ticket sold}. The draw is due, and anyone can run it. |
 | drawing | Draw Nº 3 is being drawn. | Randomness has been requested from ORAO. Once it lands, anyone can settle the draw and pay the winner. |
 | settled | Draw Nº 3 is settled. | Ticket #0067 won 1 SOL, paid to 5ggm…7nnQ on 2 Oct. |
@@ -1290,7 +1290,7 @@ Rules for all copy:
 | Tabs | Buy tickets · Free entry |
 | Buy | Buy 5 tickets · 0.05 SOL · Connect wallet to buy · Wallet limit reached (50 of 50) · Get devnet SOL |
 | Picks | 1 · 5 · 10 · Max (25) |
-| Guarantee | Drawn at Fri 16 Oct, 10:14 UTC or when all 150 tickets sell, whichever comes first. Grand prize already locked: [1 SOL ↗]. Never extended; the grand prize is never reduced. |
+| Guarantee | Drawn at Fri 16 Oct, 10:14 UTC or when all 150 tickets sell, whichever comes first. Grand prize already locked: 1 SOL. Never extended; the grand prize is never reduced. (Plain text: no vault link here.) |
 | Low balance help | You have 0.0123 SOL. 1 ticket needs ≈0.013 SOL with fees. · You have 0.031 devnet SOL. [Get 0.5 devnet SOL] · Asks the public devnet faucet for 0.5 SOL, from your browser. Devnet SOL is play money: it has no value and can't be cashed out. · Asking the devnet faucet… · Confirming on devnet… · 0.5 devnet SOL arrived from the faucet. [Faucet transaction] |
 | Airdrop failed | **Didn't go through.** The devnet faucet is turning away requests from this connection for now (429 Too Many Requests). No SOL was sent. / The devnet faucet has run dry for now. No SOL was sent. · Other ways to get it: [faucet.solana.com] (sign in with GitHub there and its airdrop button works for you), or [solfaucet.com]. Paste your wallet address there, then come back here. |
 | Ledger | Ticket price, flat — 0.01 SOL · Grand-prize odds, per ticket — 1 in 102 now · You hold — 16 [see them] · You can still buy — 34 · zero tickets: Grand-prize odds — No tickets yet |
@@ -1375,7 +1375,7 @@ Rules for all copy:
 | The prize is locked before the first ticket sells. | `create_draw` moves the 1 SOL prize and the 2 SOL instant-win reserve into the program's vault in the same instruction that opens the draw. Only the winning ticket can collect the prize; if the draw is cancelled, every paid ticket can claim a full refund. | [Vault account] |
 | Fixed tickets, fixed close. | 150 tickets, closing Sun 4 Oct, 04:13 UTC. Both are written into the draw account and can't change. The draw happens at sell-out or the deadline, whichever comes first. | [Draw account] |
 | Nobody chooses the randomness. | Every result comes from ORAO VRF. The request seed is fixed by program state, so the buyer, the operator and whoever runs the draw get no say, us included. | [ORAO VRF program] |
-| An instant result on every ticket. | About 2 s after you buy, the reveal transaction works out each ticket's result and pays any win from the reserve in that same transaction. | [Your last reveal] (when known), else [ORAO VRF program] |
+| An instant result on every paid ticket. | About 2 s after you buy, the reveal transaction works out each paid ticket's result and pays any win from the reserve in that same transaction. | [Your last reveal] (when known), else [ORAO VRF program] |
 | Anyone can run and settle the draw. | Running, settling, revealing and refunding are open to any wallet. If we disappear, anyone can finish the job and the winner still gets paid. If the randomness never arrives within 48 h, refunds open. | [Program] · [Source] |
 | Every result can be recomputed. | Instant results and the winning ticket follow from the randomness by plain arithmetic, so this page can redo it in your browser. | [Recompute Draw Nº 2] (anchor) |
 

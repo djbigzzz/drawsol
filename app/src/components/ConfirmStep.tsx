@@ -4,7 +4,8 @@ import { useEffect, useId, useState } from "react";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { sol, ticketNo, utcLabel } from "@/lib/format";
 import type { DrawView } from "@/lib/types";
-import { Busy, ErrorNote, inFlight } from "./bits";
+import { vaultPda } from "@/lib/chain";
+import { Busy, ErrorNote, ProofLink, inFlight } from "./bits";
 import { useBuy } from "./BuyContext";
 import { FeeLine } from "./Fee";
 import { plural } from "./fmt";
@@ -133,15 +134,16 @@ export function AdultRow({
 }
 
 /**
- * The draw guarantee, scoped to the grand prize (research P0-4). Every figure is the draw account's. It is
- * plain text: the ticket face already carries its one proof link, the vault, right above (DESIGN.md §8.1).
+ * The draw guarantee, scoped to the grand prize (research P0-4), as the spec words it. Every figure is the
+ * draw account's, and the locked prize links to the vault that holds it: on phones this line sits in the
+ * stub and the confirm sheet, far from the ticket face's own vault link.
  * "Never reduced" covers the grand prize only: instant wins are paid up to what is left in the reserve.
  */
 export function Guarantee({ d, className = "" }: { d: DrawView; className?: string }) {
   return (
     <p className={`guarantee t-small ${className}`}>
       Drawn at <span className="nw">{utcLabel(d.closesAt)}</span> or when all {d.ticketCap} tickets sell, whichever comes first. Grand prize already locked:{" "}
-      <span className="nw">{sol(d.prizeLamports, 0, 4)} SOL</span>, in the program vault. The draw is never extended and the grand prize is never reduced.
+      <ProofLink account={vaultPda(d.address)}>{sol(d.prizeLamports, 0, 4)} SOL</ProofLink>. The draw is never extended and the grand prize is never reduced.
     </p>
   );
 }

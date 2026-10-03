@@ -195,8 +195,7 @@ p { margin: 0; }
 .strip { position: sticky; top: 0; z-index: 100; height: var(--strip-h); background: var(--blue); color: var(--stock); display: flex; align-items: center; }
 .strip-in { display: flex; align-items: center; gap: 16px; width: 100%; font-family: var(--grot); white-space: nowrap; overflow: hidden; }
 .strip b { font-weight: 800; font-stretch: 112%; font-size: 13px; }
-.strip-more { display: none; font-stretch: 88%; font-weight: 500; font-size: 13px; opacity: .86; }
-@media (min-width: 761px) { .strip b { font-size: 13px; } .strip-more { display: inline; } .strip-q { display: none; } }
+@media (max-width: 760px) { .strip-long { display: none; } }
 
 .mast { height: 56px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 @media (min-width: 761px) { .mast { height: 72px; gap: 32px; } }
@@ -233,7 +232,7 @@ p { margin: 0; }
 .wmenu .proof { padding: 0; margin: 0; font-size: 15px; }
 
 /* ---------- paper objects ---------- */
-.ticket, .oldticket, .back, .slip, .rstub, .stubby, .sheet, .buybar, .wmenu { background-color: var(--stock); background-image: var(--grain-stock); background-size: 180px 180px; }
+.ticket, .oldticket, .back, .slip, .drec-card, .rstub, .stubby, .sheet, .buybar, .wmenu { background-color: var(--stock); background-image: var(--grain-stock); background-size: 180px 180px; }
 
 /* ---------- 4.1 the draw ticket ---------- */
 .hero { display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; align-items: start; }
@@ -596,7 +595,7 @@ p { margin: 0; }
 .odds-head b { font-family: var(--grot); font-stretch: 88%; font-weight: 700; font-size: 14px; }
 .odds-head i { font-family: var(--serif); font-size: 14px; color: var(--ink-3); }
 .odds table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums lining-nums; }
-.odds th { height: 32px; padding: 0; text-align: left; vertical-align: bottom; padding-bottom: 6px; border-bottom: 1px solid var(--ink); font-family: var(--grot); font-stretch: 88%; font-weight: 600; font-size: 14px; color: var(--ink-2); white-space: nowrap; }
+.odds th { height: 32px; padding: 0; text-align: left; vertical-align: bottom; padding-bottom: 6px; border-bottom: 1px solid var(--ink); font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 15px; color: var(--ink-2); white-space: nowrap; }
 .odds th:last-child, .odds td:last-child { text-align: right; }
 .odds td { height: 36px; padding: 0 8px 0 0; border-bottom: 1px solid var(--rule); font-family: var(--grot); font-stretch: 85%; font-size: 16px; }
 .odds td:last-child { padding-right: 0; }
@@ -707,7 +706,7 @@ p { margin: 0; }
 
 /* ---------- 5.9 every entry ---------- */
 .eledger { border-top: 2px solid var(--ink); }
-.erow { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; gap: 16px; align-items: center; min-height: 44px; padding: 0; border-bottom: 1px solid var(--rule); text-decoration: none; font-family: var(--grot); font-stretch: 88%; font-size: 15px; font-variant-numeric: tabular-nums lining-nums; }
+.erow { display: grid; grid-template-columns: 64px minmax(0, 1fr) minmax(0, auto); gap: 16px; align-items: center; min-height: 44px; padding: 0; border-bottom: 1px solid var(--rule); text-decoration: none; font-family: var(--grot); font-stretch: 88%; font-size: 15px; font-variant-numeric: tabular-nums lining-nums; }
 /* a clerk's ledger: fixed columns read left to right as one line, the result right after the tickets
    (nothing floats at the far end of a 1000px rule) */
 @media (min-width: 761px) { .erow { grid-template-columns: 96px 176px 176px minmax(0, 1fr); gap: 24px; } }
@@ -720,8 +719,17 @@ a.erow:hover { background: var(--stock-2); box-shadow: -8px 0 0 var(--stock-2), 
 .erow .x { color: var(--ink-3); margin-left: 6px; }
 .erow .tix { display: none; }
 @media (min-width: 761px) { .erow .tix { display: block; } .erow .x-m { display: none; } }
-.erow .r { text-align: right; white-space: nowrap; }
-@media (min-width: 761px) { .erow .r { text-align: left; } }
+/* phones: the result may wrap, and a drawn ticket's marker takes a line of its own under it, so the wallet
+   and its ticket range keep their width even at 320px (the result column never passes 45% of the row) */
+.erow .r { text-align: right; max-width: 45vw; padding: 6px 0; }
+.erow .r .dmark { display: block; }
+.erow .r .dsep { display: none; }
+@media (min-width: 761px) { .erow .r { text-align: left; max-width: none; padding: 0; } .erow .r .dmark { display: inline; } .erow .r .dsep { display: inline; } }
+/* a ticket search: which ticket of the range matched, in the blue ink of "you chose this" */
+.erow .has { font-family: var(--serif); color: var(--blue-ink); }
+/* the head's "Time (UTC)" runs into the gap rather than wrapping in the 64px column */
+.erow.head > span:first-child { white-space: nowrap; }
+@media (max-width: 359px) { .erow { gap: 12px; } }
 .erow .r i { font-family: var(--serif); color: var(--ink-3); }
 .erow .r i.free { color: var(--ink-2); }
 .erow .r .w { color: var(--red-ink); font-weight: 700; }
@@ -774,6 +782,8 @@ a.erow:hover { background: var(--stock-2); box-shadow: -8px 0 0 var(--stock-2), 
 .older-row { display: flex; flex-wrap: wrap; align-items: baseline; align-content: center; gap: 0 16px; padding: 8px 0; border-bottom: 1px solid var(--rule); min-height: 48px; }
 .older-row b { font-family: var(--grot); font-stretch: 88%; font-weight: 800; font-size: 16px; }
 .older-row .d { color: var(--ink-2); font-size: 16px; }
+/* a draw number with no account: set back in ink-3, title included, since there is nothing to open */
+.older-row.gap b, .older-row.gap .d { color: var(--ink-3); }
 .older-open { padding: 24px 0 32px; }
 .ledger-link { margin-top: 16px; display: flex; align-items: center; gap: 8px; min-height: 24px; }
 
@@ -1192,11 +1202,12 @@ a.erow:hover { background: var(--stock-2); box-shadow: -8px 0 0 var(--stock-2), 
 }
 
 /* ---------- stale data: polls failing after a good read ---------- */
-.stale { border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); padding: 16px 0; margin-bottom: 24px; }
-.stale-top { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
-.stale-lead { font-family: var(--grot); font-stretch: 88%; font-weight: 800; font-size: 15px; }
-.stale-msg { font-family: var(--serif); font-size: 16px; line-height: 1.4; margin-top: 8px; color: var(--ink-2); text-wrap: pretty; }
-.stale-top .tbtn { margin: -12px -10px; }
+.stale { padding: 8px 0; margin-bottom: 8px; }
+.stale-lead { font-family: var(--grot); font-stretch: 88%; font-weight: 800; font-size: 15px; color: var(--red-ink); }
+/* while polls fail, the sold figure says when it was read */
+.fig .asof { margin-left: 8px; font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 15px; color: var(--ink-3); }
+.stale-msg { font-family: var(--grot); font-stretch: 88%; font-size: 15px; line-height: 1.5; color: var(--ink-2); text-wrap: pretty; }
+.stale-msg .tbtn { margin: -12px -10px; }
 
 /* sealed tickets: the date to reveal by */
 .roll-due { margin-top: 8px; color: var(--ink); }
@@ -1246,10 +1257,10 @@ a.erow:hover { background: var(--stock-2); box-shadow: -8px 0 0 var(--stock-2), 
 .sheet .free .c-head + .free-lead { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--rule-2); }
 .free-rules { margin-top: 16px; color: var(--ink-2); text-wrap: pretty; }
 
-/* phones: the strip carries "(not real)" too (P0-8); below 361px "Devnet" stands for "Devnet demo" */
-.strip-n { display: none; }
+/* the strip is one string at every width (P0-8); it truncates only if something sits beside it */
+.strip b { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 760px) { .strip b { font-size: 12px; } }
-@media (max-width: 360px) { .strip-w { display: none; } .strip-n { display: inline; } }
+@media (max-width: 359px) { .strip b { font-stretch: 100%; } }
 /* a page of its own (the per-draw page) starts under the masthead, not a section gap below it */
 .main.record-page > .sec:first-of-type { padding-top: 24px; }
 /* phones: 24px won back above the barcode, so its key ends clear of the sticky bar's double rule */
@@ -1258,3 +1269,50 @@ a.erow:hover { background: var(--stock-2); box-shadow: -8px 0 0 var(--stock-2), 
   .fact-sold { margin-top: 8px; }
   .tk-bar { margin-top: 8px; }
 }
+/* a decimal prize ("0.2 SOL") sets smaller on the old ticket, so its figure clears the DRAWN stamp */
+.ob .t-prize.long { font-size: 56px; }
+@media (min-width: 761px) { .ob .t-prize.long { font-size: 80px; } }
+
+/* the per-draw record below 761px: label above value, value left-aligned and free to wrap, so a long value
+   never takes the label's space */
+@media (max-width: 760px) {
+  .ledger.record > div { grid-template-columns: minmax(0, 1fr); gap: 2px; padding: 10px 0; }
+  .ledger.record dd { text-align: left; }
+  .ledger.record dd code { overflow-wrap: anywhere; }
+}
+/* the draw page's instant-win block sits in the wide column under the record, with its own 2px head */
+.drec-odds { margin-top: 48px; }
+@media (min-width: 761px) { .drec-odds { max-width: 760px; } }
+/* the draw index: facts on fixed columns from 761px, so each row's figures start at the same x */
+@media (min-width: 761px) {
+  .dindex .older-row { display: grid; grid-template-columns: 112px 200px minmax(0, 1fr) 184px; gap: 16px; }
+  .dindex .older-row > :last-child { text-align: right; }
+  /* a gap row's reason runs across the last two columns, so it stays on one line like its neighbours */
+  .dindex .older-row.gap > :last-child { grid-column: 3 / -1; text-align: left; }
+}
+/* 320–359: the old ticket's stamp drops under its figure, so it never touches "SOL" (§8.2) */
+@media (max-width: 359px) {
+  .ob-prize { grid-template-columns: minmax(0, 1fr); }
+  .ob .stamp { justify-self: start; margin: 8px 0 0; }
+}
+/* wallet cell: the wallet, and on phones a second line for the hidden column (ticket range, or draw and kind) */
+.erow .wcell { display: block; min-width: 0; padding: 6px 0; }
+.erow .wcell .wl { display: block; overflow: hidden; text-overflow: ellipsis; }
+.erow .wcell .sub-m { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: 500; color: var(--ink-2); }
+.erow .wcell .sub-m .x { margin-left: 4px; }
+@media (min-width: 761px) { .erow .wcell { padding: 0; } .erow .wcell .sub-m { display: none; } }
+.odds table { table-layout: auto; max-width: 100%; }
+/* a two-decimal prize ("0.20 SOL") sets smaller again, so it still clears the DRAWN stamp beside it */
+.ob .t-prize.xlong { font-size: 44px; }
+@media (min-width: 761px) { .ob .t-prize.xlong { font-size: 60px; } }
+
+/* the open draw's page: its sales meter on a card of ticket stock, with the one primary under it */
+.drec-card { margin-top: 48px; padding: 16px 16px 24px; border-radius: 5px; box-shadow: var(--shadow-ticket); }
+@media (min-width: 761px) { .drec-card { max-width: 760px; padding: 24px 32px 32px; } }
+.drec-card-h { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; margin-bottom: 16px; }
+.drec-card-h b { font-family: var(--grot); font-stretch: 88%; font-weight: 700; font-size: 14px; }
+.drec-card-h i { font-family: var(--serif); font-size: 14px; color: var(--ink-3); }
+.drec-buy { margin-top: 24px; }
+/* a cancelled draw's ticket: the refund on its stub is a figure, not a winning number, so ink, not red */
+.oldticket.cancelled .ostub .t-serial { color: var(--ink); font-size: 22px; }
+@media (min-width: 761px) { .oldticket.cancelled .ostub .t-serial { font-size: 32px; } }

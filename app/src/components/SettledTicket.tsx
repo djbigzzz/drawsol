@@ -90,7 +90,7 @@ export function SettledTicket({ d }: { d: DrawView }) {
         <Holes />
         {/* the stamp has its own cell beside the figure, so it never touches "SOL" */}
         <div className="ob-prize">
-          <p className="t-prize">
+          <p className={`t-prize ${prize.length > 3 ? "long xlong" : prize.length > 2 ? "long" : ""}`}>
             {prize}
             <span className="u">SOL</span>
           </p>
@@ -123,6 +123,58 @@ export function SettledTicket({ d }: { d: DrawView }) {
         </p>
         <span className="t-serial">{ticketNo(d.winningTicket)}</span>
         <Stamp kind="paid" seed={inkAt(d.randomness, 16)} label="Stamped: paid" top={`PRIZE ${prize} SOL`} bottom="DRAWSOL" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * A cancelled draw's ticket: the CANCELLED stamp across the figure, the prize marked returned, and on its
+ * stub what was refunded. Its ink is seeded from the draw account (a cancelled draw has no randomness).
+ */
+export function CancelledTicket({ d }: { d: DrawView }) {
+  const prize = sol(d.prizeLamports, 0, 4);
+  const none = d.nextTicket === 0;
+  return (
+    <div className="oldticket cancelled" role="group" aria-label={`Draw Nº ${d.id} ticket, stamped cancelled`}>
+      <div className="ob">
+        <div className="tk-head">
+          <span className="t-ticket-head">
+            <span className="th-brand">
+              DrawSol<span className="th-sep"> · </span>
+            </span>
+            grand draw
+          </span>
+          <span className="t-serial">Nº {String(d.id).padStart(4, "0")}</span>
+        </div>
+        <span className="dbl" aria-hidden="true" />
+        <div className="ob-prize">
+          <p className={`t-prize c-ink-3 ${prize.length > 3 ? "long xlong" : prize.length > 2 ? "long" : ""}`}>
+            {prize}
+            <span className="u">SOL</span>
+          </p>
+          <Stamp kind="cancelled" seed={inkAt(d.address.toBytes(), 16)} label="Stamped: cancelled" top={`DRAW Nº ${d.id}`} />
+        </div>
+        <p className="otext t-small">{none ? "No tickets sold. The grand prize and the reserve went back to the operator." : "Grand prize returned to the operator. Every paid ticket can be refunded in full."}</p>
+        {!none && (
+          <div className="tk-bar">
+            <Barcode
+              slots={d.nextTicket}
+              taken={d.nextTicket}
+              showKey={false}
+              compact
+              spread={false}
+              label={`Draw Nº ${d.id}: ${d.nextTicket} tickets, none drawn.`}
+            />
+          </div>
+        )}
+      </div>
+      <div className="ostub">
+        <p className="t-label" style={{ fontSize: 14 }}>
+          {none ? "Tickets" : "Refunded"}
+        </p>
+        <span className="t-serial">{none ? "0" : `${sol(d.refundedLamports, 2, 4)}`}</span>
+        {!none && <p className="t-small c-ink-2">of {sol(d.proceedsLamports, 2, 4)} SOL</p>}
       </div>
     </div>
   );

@@ -62,3 +62,9 @@ export function groupDigits(s: string) {
 }
 
 export const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+
+/** "22:37" in UTC, for "read at" marks */
+export function utcHhmm(unix: number) {
+  const d = new Date(unix * 1000);
+  return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+}

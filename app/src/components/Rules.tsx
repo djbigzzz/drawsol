@@ -10,6 +10,7 @@ import { vaultPda } from "@/lib/chain";
 import { ProofLink } from "./bits";
 import { useBuy } from "./BuyContext";
 import { Microtext } from "./print/Mark";
+import { reserveUnlockAt } from "./InstantWins";
 
 /**
  * The back of the ticket: the reverse of the hero ticket, at the same width and x, with the same
@@ -59,8 +60,14 @@ export function Rules() {
       c: <ProofLink account={ORAO_PROGRAM_ID}>ORAO VRF program</ProofLink>,
     },
     {
-      p: "An instant result on every ticket.",
-      h: <>About <span className="nw">2 s</span> after you buy, the reveal transaction works out each ticket’s result and pays any win from the reserve in that same transaction.</>,
+      p: "An instant result on every paid ticket.",
+      h: (
+        <>
+          About <span className="nw">2 s</span> after you buy, the reveal transaction works out each paid ticket’s result and pays any win from the reserve in that
+          same transaction. Reserve nobody wins goes back to the operator, who can withdraw it 7 days after close (
+          <span className="nw">{utcLabel(reserveUnlockAt(d))}</span>); after that, tickets still unrevealed can’t be paid.
+        </>
+      ),
       c: lastRevealTx ? (
         <ProofLink tx={lastRevealTx}>Your last reveal</ProofLink>
       ) : lastRevealed ? (
@@ -177,8 +184,8 @@ export function Rules() {
             </ul>
             {QUESTION_TERMS_HASHES.includes(hash) && (
               <p className="terms t-fine">
-                Draw Nº {d.id}’s published terms (committed in <code>terms_hash</code>) mention an in-app question. It was removed on 2 Oct 2026, and it was
-                never checked on-chain.
+                Draw Nº {d.id}’s published terms (committed in <code>terms_hash</code>) mention an in-app question. It was removed on 2 Oct 2026; it never affected who
+                could enter or win, and it was never checked on-chain.
               </p>
             )}
             <p className="terms t-fine">

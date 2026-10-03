@@ -138,9 +138,15 @@ export function Winners() {
                   aria-label={`${short(w.owner.toBase58())}${mine ? " (you)" : ""} won ${sol(w.amount, 2, 4)} SOL in Draw Nº ${w.drawId}, ${w.what}. ${w.grand ? "Winning entry" : "Entry"} account on Solscan.`}
                 >
                   <span className="t">{sameDay(w.at) ? clock(w.at) : shortDate(w.at)}</span>
-                  <span className="nw" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {short(w.owner.toBase58())}
-                    {mine && <span className="you">you</span>}
+                  <span className="wcell">
+                    <span className="nw wl">
+                      {short(w.owner.toBase58())}
+                      {mine && <span className="you">you</span>}
+                    </span>
+                    {/* phones: the Draw column is hidden, so its short form sits under the wallet */}
+                    <span className="sub-m nw">
+                      Nº {w.drawId} · {w.grand ? w.what.replace("grand prize, ticket", "grand") : "instant"}
+                    </span>
                   </span>
                   <span className="tix wwhat">
                     Nº {w.drawId} · {w.what}

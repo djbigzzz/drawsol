@@ -88,7 +88,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   // After two failed polls the page keeps the draw it last read, marked stale with that time, instead of
   // blanking; the load itself failing (nothing read yet) is still the error state.
-  const staleSince = load.kind === "ready" && failures >= 2 && lastOk !== null ? lastOk : null;
+  // one failed poll is enough to mark the figures: a poll only fails after web3.js's own 429 retries
+  const staleSince = load.kind === "ready" && failures >= 1 && lastOk !== null ? lastOk : null;
   const retryIn = staleSince !== null && nextAt !== null ? Math.max(0, Math.ceil(nextAt / 1000 - now)) : null;
   const all = useAllEntries(program, draws, nonce);
   const fetchDrawEntries = useCallback((draw: PublicKey) => fetchEntries(program, draw), [program]);

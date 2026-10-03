@@ -111,7 +111,7 @@ function LeadLedger({ d }: { d: DrawView }) {
             <Addr k={d.winner} link />
           </dd>
         </div>
-        <div>
+        <div className="won">
           <dt>Prize</dt>
           <dd>{sol(d.prizeLamports, 0, 4)} SOL, paid</dd>
         </div>

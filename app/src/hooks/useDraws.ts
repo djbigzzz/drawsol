@@ -21,16 +21,31 @@ export function useDraws(program: AnyProgram) {
 
   useEffect(() => {
     let alive = true;
+    // a retry from the error state shows "reading" again rather than the old error
+    setLoad((l) => (l.kind === "error" ? { kind: "loading" } : l));
     (async () => {
       try {
         const conn = program.provider.connection;
-        const programInfo = await conn.getAccountInfo(PROGRAM_ID);
-        if (!alive) return;
-        if (!programInfo) {
-          setLoad({ kind: "nodraw", reason: "no-program" });
-          return;
+        // a rate-limited or flaky RPC often answers the second or third time: every read here (the program
+        // account, the config and the draws) is tried twice more (2 s, then 4 s) before the error state, which
+        // shows no numbers at all
+        let got: [Awaited<ReturnType<typeof fetchConfig>>, Awaited<ReturnType<typeof fetchAllDraws>>] | null = null;
+        for (let i = 0; ; i++) {
+          try {
+            const programInfo = await conn.getAccountInfo(PROGRAM_ID);
+            if (!alive) return;
+            if (!programInfo) {
+              setLoad({ kind: "nodraw", reason: "no-program" });
+              return;
+            }
+            got = await Promise.all([fetchConfig(program), fetchAllDraws(program)]);
+            break;
+          } catch (e) {
+            if (i >= 2 || !alive) throw e;
+            await new Promise((r) => setTimeout(r, 2000 * 2 ** i));
+          }
         }
-        const [cfg, all] = await Promise.all([fetchConfig(program), fetchAllDraws(program)]);
+        const [cfg, all] = got;
         if (!alive) return;
         setConfig(cfg);
         setDraws(all);

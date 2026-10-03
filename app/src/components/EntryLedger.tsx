@@ -12,17 +12,26 @@ import { plural } from "./fmt";
 const PAGE = 12;
 
 /** "#0034", "0034", "34" → 34; anything else → null */
-function ticketQuery(q: string): number | null {
+export function ticketQuery(q: string): number | null {
   const m = q.trim().match(/^(?:#|no\.?\s*|nº\s*)?(\d{1,6})$/i);
   return m ? Number(m[1]) : null;
 }
 
+/** Base58 has no 0, so only a 5+ digit run without one could be part of an address. */
+const maybeBase58 = (s: string) => /^[1-9]{5,}$/.test(s);
+
+/**
+ * A ticket number matches the entry that holds it, and nothing else: an address that merely contains the
+ * digits ("19" inside an Entry address nobody sees in the row) is not a match. Other text matches the
+ * wallet or the Entry address, any part of it.
+ */
 export function matchEntry(e: EntryView, q: string): boolean {
   const s = q.trim();
   if (!s) return true;
   const t = ticketQuery(s);
   if (t !== null && t >= e.firstTicket && t < e.firstTicket + e.count) return true;
-  // wallet or entry address, any part of it (base58 is case-sensitive, but people type in any case)
+  if (t !== null && !maybeBase58(s)) return false;
+  // base58 is case-sensitive, but people type in any case
   const lo = s.toLowerCase();
   return e.owner.toBase58().toLowerCase().includes(lo) || e.address.toBase58().toLowerCase().includes(lo);
 }
@@ -72,6 +81,16 @@ export function entriesCsv(d: DrawView, entries: EntryView[]): string {
   return [head, ...rows].map((r) => r.join(",")).join("\r\n") + "\r\n";
 }
 
+/** "#0031–#0040 ×10", and "has #0034" in blue ink when a ticket search matched inside the range. */
+function Range({ e, hit }: { e: EntryView; hit: number | null }) {
+  return (
+    <>
+      <span className="nw">{ticketRange(e.firstTicket, e.count)}</span> <span className="x nw">×{e.count}</span>
+      {hit !== null && <i className="has nw"> has {ticketNo(hit)}</i>}
+    </>
+  );
+}
+
 function download(name: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" }));
   const a = document.createElement("a");
@@ -108,6 +127,7 @@ export function EntryLedger({
   const [q, setQ] = useState("");
   const qid = useId();
   const found = useMemo(() => entries.filter((e) => matchEntry(e, q)), [entries, q]);
+  const qt = ticketQuery(q);
   const searching = q.trim() !== "";
   const rows = searching || all || !paged ? found : found.slice(0, PAGE);
   const sameDay = (t: number) => now - t < 86400;
@@ -128,7 +148,7 @@ export function EntryLedger({
               inputMode="search"
               autoComplete="off"
               spellCheck={false}
-              placeholder="5zXY… or #0034"
+              placeholder="Wallet address or #0020"
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -186,6 +206,8 @@ export function EntryLedger({
               const mine = !!me && e.owner.equals(me);
               const result = e.isFree ? "free entry" : !e.revealed ? "sealed" : wins > 0 ? `+${sol(e.instantPaid, 2, 3)} SOL` : "no win";
               const drawn = d.status === "settled" && d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count;
+              // a ticket-number search: say which ticket of a multi-ticket range matched
+              const hit = qt !== null && e.count > 1 && qt >= e.firstTicket && qt < e.firstTicket + e.count ? qt : null;
               return (
                 <a
                   role="listitem"
@@ -197,17 +219,28 @@ export function EntryLedger({
                   aria-label={`${short(e.owner.toBase58())}${mine ? " (you)" : ""}, ${ticketRange(e.firstTicket, e.count)}, ${result}${drawn ? `, holds the winning ticket ${ticketNo(d.winningTicket)}` : ""}. Entry account on Solscan.`}
                 >
                   <span className="t">{sameDay(e.createdAt) ? clock(e.createdAt) : shortDate(e.createdAt)}</span>
-                  <span className="nw" style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {short(e.owner.toBase58())}
-                    {mine && <span className="you">you</span>}
-                    <span className="x x-m">×{e.count}</span>
+                  <span className="wcell">
+                    <span className="nw wl">
+                      {short(e.owner.toBase58())}
+                      {mine && <span className="you">you</span>}
+                    </span>
+                    {/* phones: the Tickets column is hidden, so the range sits under the wallet (a ticket search shows its match) */}
+                    <span className="sub-m">
+                      <Range e={e} hit={hit} />
+                    </span>
                   </span>
-                  <span className="tix nw">
-                    {ticketRange(e.firstTicket, e.count)} <span className="x">×{e.count}</span>
+                  <span className="tix">
+                    <Range e={e} hit={hit} />
                   </span>
                   <span className="r">
-                    {e.isFree ? <i className="free">free entry</i> : !e.revealed ? <i>sealed</i> : wins > 0 ? <span className="w">+{sol(e.instantPaid, 2, 3)} SOL</span> : <i>no win</i>}
-                    {drawn && <span className="w drawn nw"> · {ticketNo(d.winningTicket)} drawn</span>}
+                    {e.isFree ? <i className="free">free entry</i> : !e.revealed ? <i>sealed</i> : wins > 0 ? <span className="w nw">+{sol(e.instantPaid, 2, 3)} SOL</span> : <i className="nw">no win</i>}
+                    {/* phones: the drawn ticket gets a line of its own, so the wallet and range keep their width */}
+                    {drawn && (
+                      <span className="w drawn nw dmark">
+                        <span className="dsep"> · </span>
+                        {ticketNo(d.winningTicket)} drawn
+                      </span>
+                    )}
                   </span>
                 </a>
               );

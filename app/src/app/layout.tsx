@@ -8,7 +8,7 @@ import { WalletContextProvider } from "@/components/WalletProvider";
 export const metadata: Metadata = {
   title: "DrawSol · a prize draw you can check on-chain",
   description:
-    "The prize is locked in a vault before the first ticket sells. Drawn at sell-out or the deadline. Every ticket gets an instant result from ORAO VRF randomness. Devnet demo with play money.",
+    "The prize is locked in a vault before the first ticket sells. Drawn at sell-out or the deadline. Every paid ticket gets an instant result from ORAO VRF randomness. Devnet demo with play money.",
 };
 
 export const viewport: Viewport = {

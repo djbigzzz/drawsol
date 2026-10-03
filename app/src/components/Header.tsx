@@ -5,16 +5,18 @@ import { useDrawSol } from "@/hooks/context";
 import { WalletButton } from "./WalletButton";
 import { Mark } from "./print/Mark";
 
-/** The honesty marker: always on top, on every screen, including over the sheet and the reveal. */
+/**
+ * The honesty marker (research P0-8): always on top, on every screen, including over the sheet and the
+ * reveal. One wording everywhere: "Devnet demo · play money (devnet tokens are not real)"; phones drop only
+ * the word "devnet tokens are", so "play money" and "not real" read the same on every screen and width.
+ */
 export function DevnetStrip() {
   return (
     <div className="strip" role="note">
       <div className="page strip-in">
         <b>
-          <span className="strip-w">Devnet demo</span>
-          <span className="strip-n">Devnet</span> · play money<span className="strip-q"> (not real)</span>
+          Devnet demo · play money (<span className="strip-long">devnet tokens are </span>not real)
         </b>
-        <span className="strip-more">Tickets and prizes have no cash value.</span>
       </div>
     </div>
   );
