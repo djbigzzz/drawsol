@@ -42,12 +42,11 @@ export function RpcError() {
   );
 }
 
-export function NoDraw({ reason }: { reason: "no-program" | "no-config" | "upgrading" | "no-draws" }) {
+export function NoDraw({ reason }: { reason: "no-program" | "no-config" | "no-draws" }) {
   const copy = {
     "no-program": "The DrawSol program isn’t deployed on devnet yet.",
     "no-config": "The program is deployed but not set up yet.",
-    upgrading: "The program on devnet is still the previous version; this page reads the new one, so it shows no draw until the upgrade is done.",
-    "no-draws": "The program is live, but no headline draw has been opened yet.",
+    "no-draws": "The program is live, but no draw has been opened yet.",
   }[reason];
   return (
     <section className="hero card hero-msg" aria-labelledby="nodraw-h">

@@ -8,7 +8,7 @@ import { sol, utcLabel } from "@/lib/format";
 import { vaultPda } from "@/lib/chain";
 import type { DrawView } from "@/lib/types";
 import { Addr, ProofLink, Section } from "./bits";
-import { n, plural, prizeFig, tno, usd, usdPrize } from "./fmt";
+import { n, plural, prizeFig, prizeSol, solRound, tno, usd, usdPrize } from "./fmt";
 
 /**
  * The prizes: the end prize (its rule stated plainly) and the instant prizes, one accordion row per tier of the
@@ -18,18 +18,14 @@ export function Prizes({ d }: { d: DrawView }) {
   const { solUsd, entries, entriesState, wallet } = useDrawSol();
   const [hideWon, setHideWon] = useState(false);
   const camp = campaignOf(d.id);
-  const { count, total } = scheduleTotals(d);
+  // the counts come from the Schedule account's won bits; the entries say which wallet holds each number
+  const { count, total, wonCount, wonTotal } = scheduleTotals(d);
   const won = wonNumbers(d, entries);
   const locked = endPrizeLocked(d);
   const now = endPrize(d);
   const nowUsd = usd(now, solUsd);
   const settled = d.status === "settled";
   const me = wallet?.address;
-  const wonCount = won.size;
-  const wonTotal = Array.from(won.keys()).reduce((s, t) => {
-    const tier = d.schedule.find((x) => x.numbers.includes(t));
-    return s + (tier ? tier.lamports : BigInt(0));
-  }, BigInt(0));
   return (
     <Section
       id="prizes"
@@ -37,7 +33,7 @@ export function Prizes({ d }: { d: DrawView }) {
       lead={
         d.schedule.length ? (
           <>
-            One end prize, drawn {utcLabel(d.drawAt)}, and {n(count)} instant prizes worth {usdPrize(total, solUsd) ?? `${sol(total, 2, 4)} SOL`} with their winning ticket numbers
+            One end prize, drawn {utcLabel(d.drawAt)}, and {n(count)} instant prizes worth {usdPrize(total, solUsd) ?? `${solRound(total, 3, 2)} SOL`} with their winning ticket numbers
             published on-chain before sales opened.
           </>
         ) : (
@@ -48,29 +44,23 @@ export function Prizes({ d }: { d: DrawView }) {
       <div className="card prize-end">
         <div className="pe-main">
           <p className="pe-eyebrow">End prize</p>
-          <p className="pe-amount">{camp ? usdWhole(camp.usd) : `${prizeFig(d.prizeLamports)} SOL`} {camp ? "cash" : ""}</p>
+          <p className="pe-amount">{camp ? usdWhole(camp.usd) : `${prizeFig(d.endPrizeLamports)} SOL`} {camp ? "cash" : ""}</p>
           <p className="pe-rule">
-            {d.guaranteed ? (
-              settled ? (
-                <>
-                  Paid as <b>{prizeFig(d.prizePaidLamports)} SOL</b>
-                  {d.paidTickets >= d.minTickets ? ", the escrowed prize" : `, ${d.potBps / 100}% of ticket sales: fewer than ${n(d.minTickets)} tickets sold`}.
-                </>
-              ) : (
-                <>
-                  <b>{camp ? usdWhole(camp.usd) : `${prizeFig(d.prizeLamports)} SOL`} is escrowed</b> and is paid in full once <b>{n(d.minTickets)}</b> tickets have sold by the draw. Below
-                  that, the end prize is <b>{d.potBps / 100}% of ticket sales</b> instead. The draw runs either way, with no refunds.
-                </>
-              )
+            {settled ? (
+              <>
+                Paid as <b>{prizeFig(d.endPrizePaid)} SOL</b>
+                {d.paidTickets >= d.minTickets ? ", the escrowed prize" : `, ${d.potBps / 100}% of ticket sales: fewer than ${n(d.minTickets)} tickets sold`}.
+              </>
             ) : (
               <>
-                Escrowed in the vault. Drawn once {n(d.minTickets)} tickets sell; otherwise everyone is refunded in full.
+                <b>{camp ? usdWhole(camp.usd) : `${prizeFig(d.endPrizeLamports)} SOL`} is escrowed</b> and is paid in full once <b>{n(d.minTickets)}</b> paid tickets have sold by the draw.
+                Below that, the end prize is <b>{d.potBps / 100}% of ticket sales</b> instead. The draw runs either way, with no refunds.
               </>
             )}
           </p>
         </div>
         <div className="pe-side">
-          {d.guaranteed && !settled ? (
+          {!settled ? (
             <>
               <p className="pe-k">End prize right now</p>
               <p className="pe-now tab">
@@ -78,14 +68,14 @@ export function Prizes({ d }: { d: DrawView }) {
                 {nowUsd && <span className="sub nw">{sol(now, 2, 3)} SOL</span>}
               </p>
               <p className="pe-k2">
-                {locked ? "Minimum reached: the full prize is locked in" : `Becomes ${camp ? usdWhole(camp.usd) : `${prizeFig(d.prizeLamports)} SOL`} at ${n(d.minTickets)} sold · ${n(d.minTickets - d.paidTickets)} to go`}
+                {locked ? "Minimum reached: the full prize is locked in" : `Becomes ${camp ? usdWhole(camp.usd) : `${prizeFig(d.endPrizeLamports)} SOL`} at ${n(d.minTickets)} sold · ${n(d.minTickets - d.paidTickets)} to go`}
               </p>
             </>
           ) : (
             <>
-              <p className="pe-k">{settled ? "Paid from the vault" : "Escrowed"}</p>
+              <p className="pe-k">Paid from the vault</p>
               <p className="pe-now tab">
-                <b>{prizeFig(settled ? d.prizePaidLamports : d.prizeLamports)} SOL</b>
+                <b>{prizeFig(d.endPrizePaid)} SOL</b>
               </p>
             </>
           )}
@@ -102,7 +92,7 @@ export function Prizes({ d }: { d: DrawView }) {
             <p className="c-2">
               {entriesState === "ready" ? (
                 <>
-                  {wonCount} of {count} won so far{wonTotal > BigInt(0) ? ` (${usdPrize(wonTotal, solUsd) ?? `${sol(wonTotal, 2, 4)} SOL`})` : ""}
+                  {wonCount} of {count} won so far{wonTotal > BigInt(0) ? ` (${usdPrize(wonTotal, solUsd) ?? `${prizeSol(wonTotal)} SOL`})` : ""}
                 </>
               ) : (
                 <>{count} prizes</>
@@ -115,7 +105,8 @@ export function Prizes({ d }: { d: DrawView }) {
           </div>
           <p className="instant-how">
             Winning numbers were published on-chain before sales opened and can’t change. Your ticket numbers are assigned at random by ORAO when you reveal,
-            about 2 s after paying, so nobody can pick a known winning number. A match is paid in the reveal transaction.
+            about 2 s after paying, so nobody can pick a known winning number. A match is paid in the reveal transaction. A number is marked won from the
+            schedule account itself; the wallet beside it comes from the entry that holds it.
           </p>
           <div className="tiers">
             {d.schedule.map((tier, i) => {
@@ -125,9 +116,9 @@ export function Prizes({ d }: { d: DrawView }) {
               return (
                 <details key={i} className="tier" open={i === 0}>
                   <summary>
-                    <span className="tier-amt tab">{amount ? <b>{amount}</b> : <b>{sol(tier.lamports, 2, 4)} SOL</b>}</span>
+                    <span className="tier-amt tab">{amount ? <b>{amount}</b> : <b>{prizeSol(tier.lamports)} SOL</b>}</span>
                     <span className="tier-what">
-                      {amount ? <span className="sub nw">{sol(tier.lamports, 2, 4)} SOL</span> : null}
+                      {amount ? <span className="sub nw">{prizeSol(tier.lamports)} SOL</span> : null}
                       <span className="tier-count">
                         {left.length} of {tier.numbers.length} still to be won
                       </span>
@@ -139,18 +130,21 @@ export function Prizes({ d }: { d: DrawView }) {
                   {shown.length === 0 ? (
                     <p className="tier-empty c-3">Every prize in this tier has been won.</p>
                   ) : (
-                    <ul className="chips-grid" aria-label={`Winning numbers worth ${amount ?? `${sol(tier.lamports, 2, 4)} SOL`}`}>
+                    <ul className="chips-grid" aria-label={`Winning numbers worth ${amount ?? `${prizeSol(tier.lamports)} SOL`}`}>
                       {shown.map((t) => {
-                        const by = won.get(t);
+                        const gone = won.has(t);
+                        const by = won.get(t) ?? null;
                         const mine = !!by && !!me && by.owner.equals(me);
                         return (
-                          <li key={t} className={`tchip ${by ? "won" : ""} ${mine ? "mine" : ""}`}>
+                          <li key={t} className={`tchip ${gone ? "won" : ""} ${mine ? "mine" : ""}`}>
                             <b className="tab">{tno(t)}</b>
                             <span>
                               {by ? (
                                 <>
                                   Won by {mine ? "you" : <Addr k={by.owner} head={4} tail={4} />}
                                 </>
+                              ) : gone ? (
+                                "Won"
                               ) : (
                                 "Not yet won"
                               )}
@@ -165,7 +159,7 @@ export function Prizes({ d }: { d: DrawView }) {
             })}
           </div>
           <p className="helper">
-            {count} {plural(count, "prize", "prizes")} in all. A number is marked won once a reveal has handed it to a wallet; numbers still in the unsold pool stay in play until the draw closes.
+            {count} {plural(count, "prize", "prizes")} in all. A number is marked won once a reveal has handed it to a wallet; numbers still in the unsold pool stay in play until sales close.
           </p>
         </div>
       )}

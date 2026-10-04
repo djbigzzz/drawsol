@@ -3,9 +3,8 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { phaseOf } from "@/lib/derive";
-import { drawRolls } from "@/lib/chain";
-import { sol, ticketNo, ticketRange, utcLabel } from "@/lib/format";
-import { Busy, Check, ErrorNote, ProofLink, inFlight, phaseLabel } from "./bits";
+import { sol, utcLabel } from "@/lib/format";
+import { Busy, ErrorNote, inFlight, phaseLabel } from "./bits";
 import { useBuy } from "./BuyContext";
 import { FeeLine } from "./Fee";
 import { n, plural, usd } from "./fmt";
@@ -30,16 +29,16 @@ export function AdultRow({ remembered, checked, onChange, onUndo, disabled }: { 
 }
 
 /**
- * The confirm step and the success state, as a dialog: centred on desktop, a bottom sheet on phones. Focus is
- * trapped; scrim and Esc close it (not while a transaction is in flight).
+ * The confirm step as a dialog: centred on desktop, a bottom sheet on phones. Focus is trapped; scrim and Esc
+ * close it (not while a transaction is in flight). Once the purchase confirms, the reveal sheet takes over.
  */
 export function ConfirmSheet() {
   const { current: d, now } = useDrawSol();
-  const { phase, done } = useActions();
+  const { phase } = useActions();
   const { step, closeSheet } = useBuy();
   const ref = useRef<HTMLDivElement>(null);
   const busy = inFlight(phase.buy);
-  const open = !!d && (step === "done" ? !!done : step === "confirm" && phaseOf(d, now) === "selling");
+  const open = !!d && step === "confirm" && phaseOf(d, now) === "selling";
 
   useEffect(() => {
     if (!open) return;
@@ -73,7 +72,7 @@ export function ConfirmSheet() {
     <>
       <div className="scrim" onClick={busy ? undefined : closeSheet} aria-hidden="true" />
       <div className="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-h" ref={ref}>
-        {step === "done" && done ? <DoneStep /> : <ConfirmStep />}
+        <ConfirmStep />
       </div>
     </>
   );
@@ -101,7 +100,7 @@ function ConfirmStep() {
   const pay = () => {
     if (!ready) return;
     if (adult) rememberAdult();
-    buy(qty, 0);
+    buy(qty);
   };
   return (
     <div className="sheet-in">
@@ -118,21 +117,21 @@ function ConfirmStep() {
           <dt>
             {qty} {plural(qty, "ticket", "tickets")} × {price ?? `${sol(d.ticketPrice, 2, 5)} SOL`}
           </dt>
-          <dd className="tab">{total ?? `${sol(subtotal, 2, 4)} SOL`}</dd>
+          <dd className="tab">{total ?? `${sol(subtotal, 2, 5)} SOL`}</dd>
         </div>
         {total && (
           <div>
             <dt>Paid in SOL</dt>
-            <dd className="tab">{sol(subtotal, 2, 4)} SOL</dd>
+            <dd className="tab">{sol(subtotal, 2, 5)} SOL</dd>
           </div>
         )}
       </dl>
-      <FeeLine />
-      <p className="helper">{d.randomNumbers ? "Your ticket numbers are assigned at random by ORAO about 2 s after you pay; you sign once more to reveal them." : `Numbered from ${ticketNo(d.nextTicket)}, unless someone buys first.`}</p>
+      <FeeLine count={qty} />
+      <p className="helper">Your ticket numbers are assigned at random by ORAO about 2 s after you pay; you sign once more to reveal them.</p>
       <AdultRow remembered={adultRemembered} checked={adult} onChange={setAdult} onUndo={forgetAdult} disabled={busy} />
       <button type="button" className="btn btn-primary btn-xl btn-block" onClick={pay} disabled={!ready} aria-describedby={!ageOk ? hint : undefined}>
         {busy && <Busy />}
-        {phaseLabel(bp, `Pay ${sol(subtotal, 2, 4)} SOL`)}
+        {phaseLabel(bp, `Pay ${sol(subtotal, 2, 5)} SOL`)}
       </button>
       {!ageOk && !busy && (
         <p className="helper" id={hint}>
@@ -142,68 +141,9 @@ function ConfirmStep() {
       {disabledReason && <p className="helper">{disabledReason}</p>}
       {errors.buy && <ErrorNote onDismiss={() => clearError("buy")}>{errors.buy.message}</ErrorNote>}
       <p className="helper">
-        Then approve in your wallet.{" "}
-        {drawRolls(d) ? "About 2 s later it asks once more, to reveal your numbers and pay any instant win." : "Your tickets go straight into the draw."}{" "}
-        {d.guaranteed ? (
-          <>
-            Drawn <span className="nw">{utcLabel(d.drawAt)}</span>, guaranteed; the full end prize once {n(d.minTickets)} tickets sell, else {d.potBps / 100}% of sales. No refunds.
-          </>
-        ) : (
-          <>
-            Drawn <span className="nw">{utcLabel(d.drawAt)}</span> once {n(d.minTickets)} tickets sell; otherwise everyone is refunded in full.
-          </>
-        )}
+        Then approve in your wallet. About 2 s later it asks once more, to reveal your numbers and pay any instant win. Drawn{" "}
+        <span className="nw">{utcLabel(d.drawAt)}</span>, guaranteed; the full end prize once {n(d.minTickets)} tickets sell, else {d.potBps / 100}% of sales. No refunds.
       </p>
-    </div>
-  );
-}
-
-/** "You're in": the tickets that landed, read back from the Entry account, and the transaction. */
-function DoneStep() {
-  const { current: d } = useDrawSol();
-  const { done } = useActions();
-  const { closeSheet } = useBuy();
-  useEffect(() => {
-    const t = setTimeout(() => document.getElementById("sheet-h")?.focus({ preventScroll: true }), 60);
-    return () => clearTimeout(t);
-  }, []);
-  if (!d || !done) return null;
-  const free = done.kind === "free";
-  return (
-    <div className="sheet-in done">
-      <span className="done-mark" aria-hidden="true">
-        <Check size={22} stroke={2.6} />
-      </span>
-      <h2 className="t-h3" id="sheet-h" tabIndex={-1}>
-        You’re in
-      </h2>
-      <p className="done-tix tab">{done.entry ? (done.count === 1 ? `Ticket ${ticketNo(done.firstTicket)}` : `Tickets ${ticketRange(done.firstTicket, done.count)}`) : "Confirmed on devnet"}</p>
-      <p className="panel-text">
-        {done.entry ? (
-          <>
-            {done.count} {free ? "free " : ""}
-            {plural(done.count, "ticket", "tickets")} in Draw № {d.id}, numbered like every other ticket.
-          </>
-        ) : (
-          <>Your {free ? "free entry" : "purchase"} confirmed, but the entry couldn’t be read back yet. It will appear under Your tickets.</>
-        )}{" "}
-        {d.guaranteed ? (
-          <>
-            Drawn <span className="nw">{utcLabel(d.drawAt)}</span>, guaranteed.
-          </>
-        ) : (
-          <>
-            Drawn <span className="nw">{utcLabel(d.drawAt)}</span> once {n(d.minTickets)} tickets sell; otherwise everyone is refunded in full.
-          </>
-        )}
-      </p>
-      <p className="done-links">
-        <ProofLink tx={done.sig}>Transaction on Solscan</ProofLink>
-        {done.entry && <ProofLink account={done.entry.address}>Your entry account</ProofLink>}
-      </p>
-      <button type="button" className="btn btn-primary btn-xl btn-block" onClick={closeSheet}>
-        Done
-      </button>
     </div>
   );
 }

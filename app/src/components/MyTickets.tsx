@@ -3,14 +3,14 @@
 import { useState, type ReactNode } from "react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { useActions, useDrawSol } from "@/hooks/context";
-import { grandPrize, scheduleWinsOf, ticketNumbersOf } from "@/lib/derive";
-import { clock, shortDate, sol, ticketNo, ticketRange } from "@/lib/format";
+import { grandPrize, holdsWinner, scheduleWinsOf, ticketNumbersOf } from "@/lib/derive";
+import { clock, shortDate, sol, ticketRange } from "@/lib/format";
 import type { DrawView, EntryView } from "@/lib/types";
 import { Addr, Busy, ErrorNote, ProofLink, Section, inFlight, phaseLabel } from "./bits";
 import { refundOf } from "./EntryPanel";
-import { n, plural, prizeFig, tno, usd, usdPrize } from "./fmt";
+import { n, plural, prizeFig, prizeSol, tnoOf, usdPrize } from "./fmt";
 
-/** This wallet's entries in the featured draw: one row per purchase, with the refund button when cancelled. */
+/** This wallet's entries in the featured draw: one row per purchase, with the reveal or refund button. */
 export function MyTickets() {
   const { wallet, myEntries, myState, player, current: d, refresh } = useDrawSol();
   const { setVisible } = useWalletModal();
@@ -53,7 +53,7 @@ export function MyTickets() {
       <Section id="my-tickets" title="Your tickets">
         <div className="card pad">
           <p className="panel-text">
-            No tickets in Draw № {d.id} for <Addr k={wallet.address} /> yet. The next ticket is {ticketNo(d.nextTicket)}.
+            No tickets in Draw № {d.id} for <Addr k={wallet.address} /> yet. {n(d.ticketCap - d.nextPos)} of {n(d.ticketCap)} numbers are still in the pool.
           </p>
         </div>
       </Section>
@@ -61,20 +61,20 @@ export function MyTickets() {
 
   const tickets = player?.tickets ?? myEntries.reduce((k, e) => k + e.count, 0);
   const spent = player?.spent ?? myEntries.reduce((k, e) => k + e.paidLamports, BigInt(0));
-  const won = player?.won ?? myEntries.reduce((k, e) => k + e.solPaid, BigInt(0));
+  const won = player?.won ?? myEntries.reduce((k, e) => k + e.instantPaid, BigInt(0));
   const sealed = myEntries.filter((e) => e.needsReveal && !e.revealed).length;
-  const holdsWinner = d.status === "settled" && myEntries.some((e) => d.winningTicket >= e.firstTicket && d.winningTicket < e.firstTicket + e.count);
+  const winner = d.status === "settled" ? myEntries.find((e) => holdsWinner(d, e)) : undefined;
   const paidCount = myEntries.filter((e) => !e.isFree).reduce((k, e) => k + e.count, 0);
   const allRefunded = myEntries.filter((e) => !e.isFree).every((e) => e.refunded);
   const lead: ReactNode =
     d.status === "settled" ? (
-      holdsWinner ? (
+      winner ? (
         <>
-          All {tickets} were in the draw, and you hold the winner, {ticketNo(d.winningTicket)}.
+          All {tickets} were in the draw, and you hold the winner, {tnoOf(d, d.winningTicket)}.
         </>
       ) : (
         <>
-          None of your {tickets} was drawn; {ticketNo(d.winningTicket)} won.
+          None of your {tickets} was drawn; {tnoOf(d, d.winningTicket)} won.
         </>
       )
     ) : d.status === "cancelled" ? (
@@ -86,7 +86,7 @@ export function MyTickets() {
         </>
       ) : (
         <>
-          Draw № {d.id} was cancelled. Your {paidCount} paid {plural(paidCount, "ticket", "tickets")} can be refunded in full.
+          Draw № {d.id} was cancelled. Your {paidCount} paid {plural(paidCount, "ticket", "tickets")} can be refunded, net of any instant prize already paid.
         </>
       )
     ) : (
@@ -102,7 +102,7 @@ export function MyTickets() {
       lead={
         <>
           {lead} Wallet <Addr k={wallet.address} />. Spent {sol(spent, 2, 4)} SOL
-          {won > BigInt(0) ? <>, won {sol(won, 2, 4)} SOL in instant prizes</> : null}
+          {won > BigInt(0) ? <>, won {prizeSol(won)} SOL in instant prizes</> : null}
           {sealed > 0 ? <>, {sealed} {plural(sealed, "purchase", "purchases")} still to reveal</> : null}.
         </>
       }
@@ -123,7 +123,7 @@ function Row({ e, d }: { e: EntryView; d: DrawView }) {
   const { solUsd } = useDrawSol();
   const nums = ticketNumbersOf(e);
   const sealed = e.needsReveal && !e.revealed;
-  const holds = d.status === "settled" && !sealed && nums.includes(d.winningTicket);
+  const holds = holdsWinner(d, e);
   const rk = `refund:${e.address.toBase58()}` as const;
   const vk = `reveal:${e.address.toBase58()}` as const;
   const rp = phase[rk];
@@ -139,21 +139,23 @@ function Row({ e, d }: { e: EntryView; d: DrawView }) {
   return (
     <li className={`row ${holds ? "row-win" : ""}`}>
       <div className="row-main">
-        <b className="tab">{sealed ? (random ? "Numbers pending reveal" : ticketRange(e.firstTicket, e.count)) : random ? `${n(e.count)} ${plural(e.count, "number", "numbers")}` : ticketRange(e.firstTicket, e.count)}</b>
+        <b className="tab">
+          {random ? (sealed ? "Numbers pending reveal" : `${n(e.count)} ${plural(e.count, "number", "numbers")}`) : ticketRange(e.firstPos, e.count)}
+        </b>
         <span className="row-what">
           {what} · {shortDate(e.createdAt)}, {clock(e.createdAt)} UTC
           {!e.isFree && <> · {sol(e.paidLamports, 2, 4)} SOL</>}
-          {e.revealed && e.needsReveal && (e.solPaid > BigInt(0) ? <> · won {usdPrize(e.solPaid, solUsd) ?? `${sol(e.solPaid, 2, 4)} SOL`}</> : <> · no instant win</>)}
+          {e.revealed && e.needsReveal && (e.instantPaid > BigInt(0) ? <> · won {usdPrize(e.instantPaid, solUsd) ?? `${prizeSol(e.instantPaid)} SOL`}</> : <> · no instant win</>)}
         </span>
         {random && !sealed && (
           <ul className="nums" aria-label="Your ticket numbers">
             {shown.map((t) => {
               const w = wins.find((x) => x.ticket === t);
-              const drawn = d.status === "settled" && t === d.winningTicket;
+              const drawn = holds && t === d.winningTicket;
               return (
-                <li key={t} className={`num tab ${winSet.has(t) ? "win" : ""} ${drawn ? "drawn" : ""}`} title={w ? `Won ${sol(w.lamports, 2, 4)} SOL` : drawn ? "Won the end prize" : undefined}>
-                  {tno(t)}
-                  {w && <span className="num-w">{usdPrize(w.lamports, solUsd) ?? `${sol(w.lamports, 2, 4)} SOL`}</span>}
+                <li key={t} className={`num tab ${winSet.has(t) ? "win" : ""} ${drawn ? "drawn" : ""}`} title={w ? `Won ${prizeSol(w.lamports)} SOL` : drawn ? "Won the end prize" : undefined}>
+                  {tnoOf(d, t)}
+                  {w && <span className="num-w">{usdPrize(w.lamports, solUsd) ?? `${prizeSol(w.lamports)} SOL`}</span>}
                   {drawn && <span className="num-w">end prize</span>}
                 </li>
               );

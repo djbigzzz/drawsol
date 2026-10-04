@@ -2,15 +2,16 @@
   "address": "FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb",
   "metadata": {
     "name": "drawsol",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "spec": "0.1.0",
-    "description": "DrawSol v2 - escrowed prize draw with ORAO VRF instant wins"
+    "description": "DrawSol v3 - pot and headline prize draws with ORAO VRF instant wins"
   },
   "instructions": [
     {
       "name": "buy_tickets",
       "docs": [
-        "Buys `quantity` tickets as one Entry and requests its ORAO randomness."
+        "Buys `quantity` tickets as one entry, `use_credits` of them paid with credits.",
+        "Pot draws with instant tiers request the entry's ORAO randomness."
       ],
       "discriminator": [
         48,
@@ -34,13 +35,14 @@
                   100,
                   114,
                   97,
-                  119
+                  119,
+                  51
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "Draw"
+                "account": "DrawV3"
               }
             ]
           }
@@ -57,7 +59,8 @@
                   97,
                   117,
                   108,
-                  116
+                  116,
+                  51
                 ]
               },
               {
@@ -79,7 +82,8 @@
                   110,
                   116,
                   114,
-                  121
+                  121,
+                  51
                 ]
               },
               {
@@ -89,7 +93,7 @@
               {
                 "kind": "account",
                 "path": "draw.entry_count",
-                "account": "Draw"
+                "account": "DrawV3"
               }
             ]
           }
@@ -107,7 +111,8 @@
                   97,
                   121,
                   101,
-                  114
+                  114,
+                  51
                 ]
               },
               {
@@ -122,9 +127,33 @@
           }
         },
         {
+          "name": "profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
           "name": "buyer",
           "docs": [
-            "Pays the tickets, the ORAO fee and rent; becomes the entry owner."
+            "Pays the tickets, the ORAO fee (pot draws) and rent; becomes the entry owner."
           ],
           "writable": true,
           "signer": true
@@ -132,13 +161,15 @@
         {
           "name": "vrf_request",
           "docs": [
-            "`vrf_request_address(seed)` in the handler and created by the ORAO CPI (`init`, so never reused)."
+            "checked in `request_randomness` and created by the ORAO CPI (`init`, so never reused)."
           ],
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "vrf_config",
           "writable": true,
+          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -218,10 +249,12 @@
         },
         {
           "name": "vrf_treasury",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "vrf",
+          "optional": true,
           "address": "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y"
         },
         {
@@ -232,6 +265,10 @@
       "args": [
         {
           "name": "quantity",
+          "type": "u16"
+        },
+        {
+          "name": "use_credits",
           "type": "u16"
         },
         {
@@ -272,13 +309,14 @@
                   100,
                   114,
                   97,
-                  119
+                  119,
+                  51
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "Draw"
+                "account": "DrawV3"
               }
             ]
           }
@@ -289,7 +327,7 @@
     {
       "name": "claim_free_entry",
       "docs": [
-        "One free grand-draw ticket per wallet, up to `free_cap`."
+        "One free ticket per wallet, up to `free_cap`. Rolls for instant wins in pot draws."
       ],
       "discriminator": [
         201,
@@ -313,13 +351,14 @@
                   100,
                   114,
                   97,
-                  119
+                  119,
+                  51
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "Draw"
+                "account": "DrawV3"
               }
             ]
           }
@@ -336,7 +375,8 @@
                   110,
                   116,
                   114,
-                  121
+                  121,
+                  51
                 ]
               },
               {
@@ -346,7 +386,7 @@
               {
                 "kind": "account",
                 "path": "draw.entry_count",
-                "account": "Draw"
+                "account": "DrawV3"
               }
             ]
           }
@@ -364,7 +404,8 @@
                   97,
                   121,
                   101,
-                  114
+                  114,
+                  51
                 ]
               },
               {
@@ -379,24 +420,154 @@
           }
         },
         {
+          "name": "profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
           "name": "buyer",
           "docs": [
-            "The claiming wallet (pays rent; becomes the entry owner)."
+            "The claiming wallet (pays rent and, in pot draws, the ORAO fee; becomes the entry owner)."
           ],
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "vrf_request",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "vrf_config",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  97,
+                  111,
+                  45,
+                  118,
+                  114,
+                  102,
+                  45,
+                  110,
+                  101,
+                  116,
+                  119,
+                  111,
+                  114,
+                  107,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103,
+                  117,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                7,
+                71,
+                177,
+                26,
+                250,
+                145,
+                180,
+                209,
+                249,
+                34,
+                242,
+                123,
+                14,
+                186,
+                193,
+                218,
+                178,
+                59,
+                33,
+                41,
+                164,
+                190,
+                243,
+                79,
+                50,
+                164,
+                123,
+                88,
+                245,
+                206,
+                252,
+                120
+              ]
+            }
+          }
+        },
+        {
+          "name": "vrf_treasury",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "vrf",
+          "optional": true,
+          "address": "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y"
         },
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "client_nonce",
+          "type": {
+            "array": [
+              "u8",
+              16
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "claim_refund",
       "docs": [
-        "Permissionless. Refunds a paid entry of a cancelled draw to its owner."
+        "Permissionless. Refunds an entry of a cancelled draw (paid − instant SOL received; credits back)."
       ],
       "discriminator": [
         15,
@@ -420,13 +591,14 @@
                   100,
                   114,
                   97,
-                  119
+                  119,
+                  51
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "Draw"
+                "account": "DrawV3"
               }
             ]
           },
@@ -446,7 +618,8 @@
                   97,
                   117,
                   108,
-                  116
+                  116,
+                  51
                 ]
               },
               {
@@ -468,7 +641,8 @@
                   110,
                   116,
                   114,
-                  121
+                  121,
+                  51
                 ]
               },
               {
@@ -478,7 +652,32 @@
               {
                 "kind": "account",
                 "path": "entry.seq",
-                "account": "Entry"
+                "account": "EntryV3"
+              }
+            ]
+          }
+        },
+        {
+          "name": "profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "entry.owner",
+                "account": "EntryV3"
               }
             ]
           }
@@ -494,19 +693,19 @@
       "args": []
     },
     {
-      "name": "create_draw",
+      "name": "create_headline_draw",
       "docs": [
-        "Admin only. Creates a Draw + Vault and escrows prize + instant-win reserve."
+        "Admin only. Headline draw; escrows the prize. Enforces sell-out house share and the floor margin."
       ],
       "discriminator": [
-        107,
-        29,
-        230,
-        63,
-        112,
-        148,
-        0,
-        105
+        213,
+        32,
+        22,
+        3,
+        28,
+        221,
+        209,
+        205
       ],
       "accounts": [
         {
@@ -539,7 +738,8 @@
                   100,
                   114,
                   97,
-                  119
+                  119,
+                  51
                 ]
               },
               {
@@ -562,7 +762,8 @@
                   97,
                   117,
                   108,
-                  116
+                  116,
+                  51
                 ]
               },
               {
@@ -574,6 +775,9 @@
         },
         {
           "name": "admin",
+          "docs": [
+            "Pays rent and escrows the prize."
+          ],
           "writable": true,
           "signer": true,
           "relations": [
@@ -590,7 +794,112 @@
           "name": "params",
           "type": {
             "defined": {
-              "name": "CreateDrawParams"
+              "name": "HeadlineDrawParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "create_pot_draw",
+      "docs": [
+        "Admin or keeper. Nightly pot draw; no escrow. Enforces the house/pot/instant split bounds."
+      ],
+      "discriminator": [
+        18,
+        114,
+        222,
+        212,
+        15,
+        39,
+        32,
+        111
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119,
+                  51
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config.next_draw_id",
+                "account": "Config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  51
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator",
+          "docs": [
+            "Admin or keeper; pays rent only (no escrow)."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "PotDrawParams"
             }
           }
         }
@@ -599,7 +908,7 @@
     {
       "name": "init_config",
       "docs": [
-        "Creates the global Config. Signer must be the program's upgrade authority."
+        "Fresh deployments: creates the v3 Config. Signer must be the program's upgrade authority."
       ],
       "discriminator": [
         23,
@@ -648,26 +957,60 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "keeper",
+          "type": "pubkey"
+        }
+      ]
     },
     {
-      "name": "request_draw",
+      "name": "legacy_close_v2",
       "docs": [
-        "Permissionless once due. Requests the grand-draw randomness (or cancels if nobody entered)."
+        "Admin only. Closes an empty or fully settled v2 draw + vault (raw-byte parse) into the admin."
       ],
       "discriminator": [
-        22,
-        180,
-        8,
-        81,
-        47,
-        21,
-        86,
-        159
+        137,
+        242,
+        182,
+        192,
+        93,
+        74,
+        120,
+        216
       ],
       "accounts": [
         {
-          "name": "draw",
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Receives every lamport of the v2 draw and vault."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "legacy_draw",
           "writable": true,
           "pda": {
             "seeds": [
@@ -681,9 +1024,154 @@
                 ]
               },
               {
+                "kind": "arg",
+                "path": "draw_id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "legacy_vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "legacy_draw"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "draw_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "migrate_config",
+      "docs": [
+        "Admin only. Reallocs the v2 Config into the v3 layout and sets the keeper."
+      ],
+      "discriminator": [
+        92,
+        131,
+        58,
+        105,
+        210,
+        154,
+        224,
+        193
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "owner, discriminator and length checked in the handler."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Must be the admin stored in the v2 Config. Pays the extra rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "keeper",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "request_draw",
+      "docs": [
+        "At draw_at: keeper/authority first, anyone after the public grace. Requests the grand-draw",
+        "randomness, or cancels (no tickets / headline below min_tickets)."
+      ],
+      "discriminator": [
+        22,
+        180,
+        8,
+        81,
+        47,
+        21,
+        86,
+        159
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119,
+                  51
+                ]
+              },
+              {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "Draw"
+                "account": "DrawV3"
               }
             ]
           }
@@ -700,7 +1188,8 @@
                   97,
                   117,
                   108,
-                  116
+                  116,
+                  51
                 ]
               },
               {
@@ -717,18 +1206,23 @@
         {
           "name": "payer",
           "docs": [
-            "Pays the ORAO fee."
+            "Pays the ORAO fee; must be the keeper or the authority during the grace window."
           ],
           "writable": true,
           "signer": true
         },
         {
           "name": "vrf_request",
-          "writable": true
+          "docs": [
+            "Not needed when the draw is cancelled here (no tickets / headline undersold)."
+          ],
+          "writable": true,
+          "optional": true
         },
         {
           "name": "vrf_config",
           "writable": true,
+          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -808,10 +1302,12 @@
         },
         {
           "name": "vrf_treasury",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "vrf",
+          "optional": true,
           "address": "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y"
         },
         {
@@ -834,7 +1330,7 @@
     {
       "name": "reveal_entry",
       "docs": [
-        "Permissionless. Computes the entry's instant results from fulfilled randomness and pays them."
+        "Permissionless. Computes a pot entry's instant results and pays them from the instant pool."
       ],
       "discriminator": [
         55,
@@ -858,13 +1354,14 @@
                   100,
                   114,
                   97,
-                  119
+                  119,
+                  51
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "Draw"
+                "account": "DrawV3"
               }
             ]
           },
@@ -884,7 +1381,8 @@
                   97,
                   117,
                   108,
-                  116
+                  116,
+                  51
                 ]
               },
               {
@@ -906,7 +1404,8 @@
                   110,
                   116,
                   114,
-                  121
+                  121,
+                  51
                 ]
               },
               {
@@ -916,7 +1415,7 @@
               {
                 "kind": "account",
                 "path": "entry.seq",
-                "account": "Entry"
+                "account": "EntryV3"
               }
             ]
           }
@@ -934,7 +1433,8 @@
                   97,
                   121,
                   101,
-                  114
+                  114,
+                  51
                 ]
               },
               {
@@ -944,7 +1444,35 @@
               {
                 "kind": "account",
                 "path": "entry.owner",
-                "account": "Entry"
+                "account": "EntryV3"
+              }
+            ]
+          }
+        },
+        {
+          "name": "profile",
+          "docs": [
+            "Receives credit prizes."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "entry.owner",
+                "account": "EntryV3"
               }
             ]
           }
@@ -961,6 +1489,170 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "self_exclude",
+      "docs": [
+        "Self-exclusion until `until` (unix seconds); can only be extended."
+      ],
+      "discriminator": [
+        18,
+        245,
+        91,
+        0,
+        7,
+        239,
+        172,
+        213
+      ],
+      "accounts": [
+        {
+          "name": "profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "wallet",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "until",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "set_keeper",
+      "docs": [
+        "Admin only."
+      ],
+      "discriminator": [
+        102,
+        94,
+        23,
+        78,
+        157,
+        222,
+        243,
+        214
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "keeper",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "set_limit",
+      "docs": [
+        "Spend limit per 30 days (0 = none). Decrease now, increase after 72 h."
+      ],
+      "discriminator": [
+        51,
+        224,
+        252,
+        238,
+        154,
+        84,
+        60,
+        174
+      ],
+      "accounts": [
+        {
+          "name": "profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "wallet",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "lamports",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "settle_draw",
@@ -989,13 +1681,14 @@
                   100,
                   114,
                   97,
-                  119
+                  119,
+                  51
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "Draw"
+                "account": "DrawV3"
               }
             ]
           }
@@ -1012,7 +1705,8 @@
                   97,
                   117,
                   108,
-                  116
+                  116,
+                  51
                 ]
               },
               {
@@ -1036,7 +1730,8 @@
                   110,
                   116,
                   114,
-                  121
+                  121,
+                  51
                 ]
               },
               {
@@ -1046,7 +1741,7 @@
               {
                 "kind": "account",
                 "path": "winning_entry.seq",
-                "account": "Entry"
+                "account": "EntryV3"
               }
             ]
           }
@@ -1061,7 +1756,7 @@
     {
       "name": "withdraw",
       "docs": [
-        "Authority only. Withdraws proceeds / reserve leftovers / an unpaid prize when allowed."
+        "Authority only. House share after settlement; a cancelled headline's escrow."
       ],
       "discriminator": [
         183,
@@ -1085,13 +1780,14 @@
                   100,
                   114,
                   97,
-                  119
+                  119,
+                  51
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "Draw"
+                "account": "DrawV3"
               }
             ]
           }
@@ -1108,7 +1804,8 @@
                   97,
                   117,
                   108,
-                  116
+                  116,
+                  51
                 ]
               },
               {
@@ -1145,29 +1842,29 @@
       ]
     },
     {
-      "name": "Draw",
+      "name": "DrawV3",
       "discriminator": [
-        225,
-        131,
-        41,
+        206,
+        90,
+        215,
+        73,
+        142,
+        148,
         222,
-        122,
-        20,
-        146,
-        202
+        180
       ]
     },
     {
-      "name": "Entry",
+      "name": "EntryV3",
       "discriminator": [
-        63,
-        18,
-        152,
-        113,
-        215,
-        246,
+        74,
+        167,
+        205,
+        142,
         221,
-        250
+        218,
+        145,
+        92
       ]
     },
     {
@@ -1184,29 +1881,42 @@
       ]
     },
     {
-      "name": "Player",
+      "name": "PlayerV3",
       "discriminator": [
-        205,
-        222,
-        112,
-        7,
-        165,
-        155,
-        206,
-        218
+        130,
+        220,
+        60,
+        9,
+        70,
+        116,
+        81,
+        47
       ]
     },
     {
-      "name": "Vault",
+      "name": "Profile",
       "discriminator": [
-        211,
-        8,
-        232,
-        43,
-        2,
-        152,
-        117,
-        119
+        184,
+        101,
+        165,
+        188,
+        95,
+        63,
+        127,
+        188
+      ]
+    },
+    {
+      "name": "VaultV3",
+      "discriminator": [
+        184,
+        9,
+        135,
+        157,
+        3,
+        29,
+        93,
+        211
       ]
     }
   ],
@@ -1290,6 +2000,45 @@
       ]
     },
     {
+      "name": "KeeperSet",
+      "discriminator": [
+        116,
+        85,
+        200,
+        22,
+        76,
+        163,
+        56,
+        243
+      ]
+    },
+    {
+      "name": "LegacyClosed",
+      "discriminator": [
+        206,
+        178,
+        254,
+        228,
+        149,
+        196,
+        78,
+        17
+      ]
+    },
+    {
+      "name": "LimitSet",
+      "discriminator": [
+        61,
+        207,
+        15,
+        115,
+        70,
+        8,
+        73,
+        102
+      ]
+    },
+    {
       "name": "Refunded",
       "discriminator": [
         35,
@@ -1300,6 +2049,19 @@
         123,
         221,
         99
+      ]
+    },
+    {
+      "name": "SelfExcluded",
+      "discriminator": [
+        234,
+        247,
+        55,
+        66,
+        132,
+        250,
+        160,
+        150
       ]
     },
     {
@@ -1407,8 +2169,8 @@
     },
     {
       "code": 6015,
-      "name": "FreeEntryNoReveal",
-      "msg": "Free entries have no instant result or refund"
+      "name": "NoInstantRoll",
+      "msg": "This entry has no instant roll"
     },
     {
       "code": 6016,
@@ -1427,26 +2189,137 @@
     },
     {
       "code": 6019,
+      "name": "NothingToRefund",
+      "msg": "Nothing to refund for this entry"
+    },
+    {
+      "code": 6020,
       "name": "NothingToWithdraw",
       "msg": "Nothing to withdraw right now"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "MathOverflow",
       "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6022,
+      "name": "DrawNotDue",
+      "msg": "The draw is not due yet (draw_at)"
+    },
+    {
+      "code": 6023,
+      "name": "InsufficientCredits",
+      "msg": "Not enough credits"
+    },
+    {
+      "code": 6024,
+      "name": "SpendLimitExceeded",
+      "msg": "This purchase would exceed your spend limit for the period"
+    },
+    {
+      "code": 6025,
+      "name": "SelfExcluded",
+      "msg": "This wallet is self-excluded"
+    },
+    {
+      "code": 6026,
+      "name": "VaultShortfall",
+      "msg": "The vault cannot cover this payment yet; the operator must top it up"
+    },
+    {
+      "code": 6027,
+      "name": "AlreadyMigrated",
+      "msg": "Config is already migrated"
+    },
+    {
+      "code": 6028,
+      "name": "NotLegacyAccount",
+      "msg": "Account is not a v2 account of this program"
+    },
+    {
+      "code": 6029,
+      "name": "LegacyNotClosable",
+      "msg": "The v2 draw still holds liabilities and cannot be closed"
     }
   ],
   "types": [
     {
+      "name": "CommonDrawParams",
+      "docs": [
+        "Parameters shared by both draw kinds."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket_price",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_cap",
+            "type": "u32"
+          },
+          {
+            "name": "max_per_tx",
+            "type": "u16"
+          },
+          {
+            "name": "max_per_wallet",
+            "type": "u32"
+          },
+          {
+            "name": "free_cap",
+            "type": "u32"
+          },
+          {
+            "name": "closes_at",
+            "type": "i64"
+          },
+          {
+            "name": "draw_at",
+            "type": "i64"
+          },
+          {
+            "name": "public_grace_secs",
+            "type": "u32"
+          },
+          {
+            "name": "house_bps",
+            "type": "u16"
+          },
+          {
+            "name": "terms_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "Config",
       "docs": [
-        "seeds = [b\"config\"]"
+        "seeds = [b\"config\"]",
+        "",
+        "v3 layout. The v2 layout was `admin, next_draw_id, bump` (8 + 41 bytes, same discriminator);",
+        "`migrate_config` reallocs a v2 Config into this layout."
       ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "keeper",
+            "docs": [
+              "Low-trust automation key: may create pot draws and request draws during the public-grace window."
+            ],
             "type": "pubkey"
           },
           {
@@ -1461,294 +2334,9 @@
       }
     },
     {
-      "name": "CreateDrawParams",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "ticket_price",
-            "type": "u64"
-          },
-          {
-            "name": "ticket_cap",
-            "type": "u32"
-          },
-          {
-            "name": "max_per_tx",
-            "type": "u16"
-          },
-          {
-            "name": "max_per_wallet",
-            "type": "u32"
-          },
-          {
-            "name": "free_cap",
-            "type": "u32"
-          },
-          {
-            "name": "closes_at",
-            "type": "i64"
-          },
-          {
-            "name": "prize_lamports",
-            "type": "u64"
-          },
-          {
-            "name": "iw_reserve_lamports",
-            "type": "u64"
-          },
-          {
-            "name": "iw_denominator",
-            "type": "u32"
-          },
-          {
-            "name": "iw_tiers",
-            "type": {
-              "array": [
-                {
-                  "defined": {
-                    "name": "IwTier"
-                  }
-                },
-                4
-              ]
-            }
-          },
-          {
-            "name": "terms_hash",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          }
-        ]
-      }
-    },
-    {
-      "name": "Draw",
-      "docs": [
-        "seeds = [b\"draw\", id.to_le_bytes()]"
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "id",
-            "type": "u64"
-          },
-          {
-            "name": "authority",
-            "docs": [
-              "admin at creation; receives proceeds / leftovers"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "status",
-            "type": {
-              "defined": {
-                "name": "DrawStatus"
-              }
-            }
-          },
-          {
-            "name": "ticket_price",
-            "docs": [
-              "lamports"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "ticket_cap",
-            "docs": [
-              "paid tickets"
-            ],
-            "type": "u32"
-          },
-          {
-            "name": "max_per_tx",
-            "type": "u16"
-          },
-          {
-            "name": "max_per_wallet",
-            "docs": [
-              "includes the free entry"
-            ],
-            "type": "u32"
-          },
-          {
-            "name": "free_cap",
-            "docs": [
-              "max free tickets (separate from ticket_cap)"
-            ],
-            "type": "u32"
-          },
-          {
-            "name": "created_at",
-            "type": "i64"
-          },
-          {
-            "name": "closes_at",
-            "type": "i64"
-          },
-          {
-            "name": "prize_lamports",
-            "type": "u64"
-          },
-          {
-            "name": "iw_reserve_lamports",
-            "docs": [
-              "escrowed instant-win budget"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "iw_paid_lamports",
-            "type": "u64"
-          },
-          {
-            "name": "iw_denominator",
-            "type": "u32"
-          },
-          {
-            "name": "iw_tiers",
-            "type": {
-              "array": [
-                {
-                  "defined": {
-                    "name": "IwTier"
-                  }
-                },
-                4
-              ]
-            }
-          },
-          {
-            "name": "proceeds_lamports",
-            "docs": [
-              "sum of paid ticket revenue"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "refunded_lamports",
-            "type": "u64"
-          },
-          {
-            "name": "paid_tickets",
-            "type": "u32"
-          },
-          {
-            "name": "free_tickets",
-            "type": "u32"
-          },
-          {
-            "name": "next_ticket",
-            "docs": [
-              "paid + free; ticket numbers are 0..next_ticket"
-            ],
-            "type": "u32"
-          },
-          {
-            "name": "entry_count",
-            "type": "u32"
-          },
-          {
-            "name": "paid_entries",
-            "type": "u32"
-          },
-          {
-            "name": "revealed_entries",
-            "docs": [
-              "paid entries revealed"
-            ],
-            "type": "u32"
-          },
-          {
-            "name": "draw_vrf_request",
-            "docs": [
-              "default until request_draw"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "draw_vrf_seed",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "randomness",
-            "docs": [
-              "copied at settlement for audit"
-            ],
-            "type": {
-              "array": [
-                "u8",
-                64
-              ]
-            }
-          },
-          {
-            "name": "winning_ticket",
-            "type": "u32"
-          },
-          {
-            "name": "winning_entry",
-            "type": "pubkey"
-          },
-          {
-            "name": "winner",
-            "type": "pubkey"
-          },
-          {
-            "name": "settled_at",
-            "type": "i64"
-          },
-          {
-            "name": "prize_paid",
-            "type": "bool"
-          },
-          {
-            "name": "proceeds_withdrawn",
-            "type": "bool"
-          },
-          {
-            "name": "reserve_withdrawn",
-            "type": "bool"
-          },
-          {
-            "name": "terms_hash",
-            "docs": [
-              "sha256 of the published terms + skill question + odds"
-            ],
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          },
-          {
-            "name": "vault_bump",
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
       "name": "DrawCancelled",
       "docs": [
-        "reason: 0 = no tickets, 1 = randomness timeout"
+        "reason: 0 = no tickets, 1 = randomness timeout, 2 = headline undersold (below min_tickets)"
       ],
       "type": {
         "kind": "struct",
@@ -1778,12 +2366,16 @@
             "type": "u64"
           },
           {
-            "name": "prize_lamports",
-            "type": "u64"
+            "name": "kind",
+            "type": {
+              "defined": {
+                "name": "DrawKind"
+              }
+            }
           },
           {
-            "name": "iw_reserve_lamports",
-            "type": "u64"
+            "name": "creator",
+            "type": "pubkey"
           },
           {
             "name": "ticket_price",
@@ -1796,6 +2388,47 @@
           {
             "name": "closes_at",
             "type": "i64"
+          },
+          {
+            "name": "draw_at",
+            "type": "i64"
+          },
+          {
+            "name": "house_bps",
+            "type": "u16"
+          },
+          {
+            "name": "pot_bps",
+            "type": "u16"
+          },
+          {
+            "name": "instant_bps",
+            "type": "u16"
+          },
+          {
+            "name": "prize_lamports",
+            "docs": [
+              "headline: escrowed prize; pot: 0"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "min_tickets",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DrawKind",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Pot"
+          },
+          {
+            "name": "Headline"
           }
         ]
       }
@@ -1842,7 +2475,7 @@
             "type": "pubkey"
           },
           {
-            "name": "prize_lamports",
+            "name": "prize",
             "type": "u64"
           }
         ]
@@ -1869,54 +2502,211 @@
       }
     },
     {
-      "name": "Entry",
+      "name": "DrawV3",
       "docs": [
-        "seeds = [b\"entry\", draw.key(), seq.to_le_bytes()] where seq = draw.entry_count at creation."
+        "seeds = [b\"draw3\", id.to_le_bytes()]"
       ],
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "draw",
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "config.admin at creation; receives the house share / returned escrow"
+            ],
             "type": "pubkey"
           },
           {
-            "name": "owner",
-            "type": "pubkey"
+            "name": "kind",
+            "type": {
+              "defined": {
+                "name": "DrawKind"
+              }
+            }
           },
           {
-            "name": "seq",
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "DrawStatus"
+              }
+            }
+          },
+          {
+            "name": "ticket_price",
+            "type": "u64"
+          },
+          {
+            "name": "ticket_cap",
+            "docs": [
+              "paid tickets (free and credit tickets never count)"
+            ],
             "type": "u32"
           },
           {
-            "name": "first_ticket",
-            "type": "u32"
-          },
-          {
-            "name": "count",
+            "name": "max_per_tx",
             "type": "u16"
           },
           {
-            "name": "is_free",
-            "type": "bool"
+            "name": "max_per_wallet",
+            "docs": [
+              "all ticket kinds"
+            ],
+            "type": "u32"
           },
           {
-            "name": "paid_lamports",
-            "type": "u64"
+            "name": "free_cap",
+            "type": "u32"
           },
           {
             "name": "created_at",
             "type": "i64"
           },
           {
-            "name": "vrf_request",
+            "name": "closes_at",
+            "type": "i64"
+          },
+          {
+            "name": "draw_at",
             "docs": [
-              "ORAO randomness request PDA (default for free entries)"
+              ">= closes_at; sell-out ends sales early, the draw still waits for draw_at"
             ],
+            "type": "i64"
+          },
+          {
+            "name": "public_grace_secs",
+            "docs": [
+              "only keeper/authority may request the draw during [draw_at, draw_at + grace)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "house_bps",
+            "type": "u16"
+          },
+          {
+            "name": "pot_bps",
+            "type": "u16"
+          },
+          {
+            "name": "instant_bps",
+            "type": "u16"
+          },
+          {
+            "name": "prize_lamports",
+            "docs": [
+              "headline: fixed escrow; pot: 0 until settled (then the prize actually computed)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "min_tickets",
+            "docs": [
+              "headline only"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "floor_margin_bps",
+            "docs": [
+              "headline only"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "pot_lamports",
+            "docs": [
+              "pot draws: accumulated pot share"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "instant_pool_lamports",
+            "docs": [
+              "pot draws: current instant pool balance"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "house_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "house_withdrawn",
+            "type": "u64"
+          },
+          {
+            "name": "revenue_lamports",
+            "docs": [
+              "every lamport paid for tickets"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "refunded_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "iw_denominator",
+            "type": "u32"
+          },
+          {
+            "name": "iw_tiers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "IwTierV3"
+                  }
+                },
+                4
+              ]
+            }
+          },
+          {
+            "name": "paid_tickets",
+            "type": "u32"
+          },
+          {
+            "name": "free_tickets",
+            "type": "u32"
+          },
+          {
+            "name": "credit_tickets",
+            "type": "u32"
+          },
+          {
+            "name": "next_ticket",
+            "docs": [
+              "ticket numbers are 0..next_ticket (all kinds)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "entry_count",
+            "type": "u32"
+          },
+          {
+            "name": "rolled_entries",
+            "docs": [
+              "entries that need a reveal (have an ORAO request)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "revealed_entries",
+            "type": "u32"
+          },
+          {
+            "name": "draw_vrf_request",
             "type": "pubkey"
           },
           {
-            "name": "vrf_seed",
+            "name": "draw_vrf_seed",
             "type": {
               "array": [
                 "u8",
@@ -1925,34 +2715,56 @@
             }
           },
           {
-            "name": "revealed",
-            "docs": [
-              "free entries are created revealed (no instant roll)"
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "tiers",
-            "docs": [
-              "per ticket: 0 = no win, 1..=4 = tier index + 1"
-            ],
+            "name": "randomness",
             "type": {
               "array": [
                 "u8",
-                25
+                64
               ]
             }
           },
           {
-            "name": "instant_paid",
+            "name": "winning_ticket",
+            "type": "u32"
+          },
+          {
+            "name": "winning_entry",
+            "type": "pubkey"
+          },
+          {
+            "name": "winner",
+            "type": "pubkey"
+          },
+          {
+            "name": "prize_paid_lamports",
             "type": "u64"
           },
           {
-            "name": "refunded",
+            "name": "settled_at",
+            "type": "i64"
+          },
+          {
+            "name": "prize_paid",
+            "docs": [
+              "prize disbursed: to the winner (Settled) or the escrow back to the authority (Cancelled headline)"
+            ],
             "type": "bool"
           },
           {
+            "name": "terms_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
             "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
             "type": "u8"
           }
         ]
@@ -1993,8 +2805,128 @@
             }
           },
           {
-            "name": "paid",
+            "name": "sol_paid",
             "type": "u64"
+          },
+          {
+            "name": "credits_won",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EntryV3",
+      "docs": [
+        "seeds = [b\"entry3\", draw.key(), seq.to_le_bytes()] where seq = draw.entry_count at creation."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u32"
+          },
+          {
+            "name": "first_ticket",
+            "type": "u32"
+          },
+          {
+            "name": "count",
+            "docs": [
+              "paid + credit (+1 for a free entry)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "paid_count",
+            "type": "u16"
+          },
+          {
+            "name": "credit_count",
+            "type": "u16"
+          },
+          {
+            "name": "is_free",
+            "type": "bool"
+          },
+          {
+            "name": "paid_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "pool_snapshot",
+            "docs": [
+              "pot draws: `instant_pool_lamports` right after this purchase's contribution"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "vrf_request",
+            "docs": [
+              "ORAO randomness request PDA (default when the entry has no roll)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "vrf_seed",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "needs_reveal",
+            "type": "bool"
+          },
+          {
+            "name": "revealed",
+            "type": "bool"
+          },
+          {
+            "name": "tiers",
+            "docs": [
+              "per ticket: 0 = no win, 1..=4 = tier index + 1"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                25
+              ]
+            }
+          },
+          {
+            "name": "sol_paid",
+            "docs": [
+              "instant SOL actually paid"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "credits_won",
+            "type": "u32"
+          },
+          {
+            "name": "refunded",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }
@@ -2024,23 +2956,120 @@
       }
     },
     {
-      "name": "IwTier",
+      "name": "HeadlineDrawParams",
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "amount",
-            "docs": [
-              "lamports paid per winning ticket"
-            ],
+            "name": "common",
+            "type": {
+              "defined": {
+                "name": "CommonDrawParams"
+              }
+            }
+          },
+          {
+            "name": "prize_lamports",
             "type": "u64"
           },
+          {
+            "name": "min_tickets",
+            "type": "u32"
+          },
+          {
+            "name": "floor_margin_bps",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IwTierV3",
+      "docs": [
+        "One instant-win tier. Unused = all zero."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
           {
             "name": "odds",
             "docs": [
               "winning outcomes out of `iw_denominator`"
             ],
             "type": "u32"
+          },
+          {
+            "name": "kind",
+            "docs": [
+              "0 none, 1 sol_share, 2 credits"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "value",
+            "docs": [
+              "sol_share: bps of the entry's pool snapshot; credits: free-ticket credits"
+            ],
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "KeeperSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "keeper",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LegacyClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw_id",
+            "type": "u64"
+          },
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LimitSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "limit_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "pending_limit",
+            "type": "u64"
+          },
+          {
+            "name": "pending_from",
+            "docs": [
+              "0 = nothing pending"
+            ],
+            "type": "i64"
           }
         ]
       }
@@ -2134,9 +3163,9 @@
       }
     },
     {
-      "name": "Player",
+      "name": "PlayerV3",
       "docs": [
-        "seeds = [b\"player\", draw.key(), wallet]"
+        "seeds = [b\"player3\", draw.key(), wallet]"
       ],
       "type": {
         "kind": "struct",
@@ -2152,24 +3181,128 @@
           {
             "name": "tickets",
             "docs": [
-              "paid + free"
+              "all kinds (paid + credit + free)"
             ],
             "type": "u32"
           },
           {
-            "name": "spent",
-            "type": "u64"
-          },
-          {
-            "name": "won",
+            "name": "paid",
             "docs": [
-              "instant wins paid"
+              "lamports paid for tickets"
             ],
             "type": "u64"
           },
           {
+            "name": "won_sol",
+            "type": "u64"
+          },
+          {
+            "name": "won_credits",
+            "type": "u32"
+          },
+          {
             "name": "free_claimed",
             "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PotDrawParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "common",
+            "type": {
+              "defined": {
+                "name": "CommonDrawParams"
+              }
+            }
+          },
+          {
+            "name": "pot_bps",
+            "type": "u16"
+          },
+          {
+            "name": "instant_bps",
+            "type": "u16"
+          },
+          {
+            "name": "iw_denominator",
+            "docs": [
+              "0 = no instant wins (all tiers must then be unused)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "iw_tiers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "IwTierV3"
+                  }
+                },
+                4
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Profile",
+      "docs": [
+        "seeds = [b\"profile\", wallet]. Global across draws."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "credits",
+            "docs": [
+              "free-ticket credits (won as instant prizes, spent with `use_credits`)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "limit_lamports",
+            "docs": [
+              "0 = no limit"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "pending_limit",
+            "type": "u64"
+          },
+          {
+            "name": "pending_from",
+            "docs": [
+              "0 = no pending change; otherwise `pending_limit` applies from this time"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "period_start",
+            "type": "i64"
+          },
+          {
+            "name": "period_spent",
+            "type": "u64"
+          },
+          {
+            "name": "excluded_until",
+            "type": "i64"
           },
           {
             "name": "bump",
@@ -2198,6 +3331,26 @@
           {
             "name": "amount",
             "type": "u64"
+          },
+          {
+            "name": "credits",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SelfExcluded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "excluded_until",
+            "type": "i64"
           }
         ]
       }
@@ -2232,18 +3385,36 @@
             "type": "u16"
           },
           {
+            "name": "paid_count",
+            "type": "u16"
+          },
+          {
+            "name": "credit_count",
+            "type": "u16"
+          },
+          {
             "name": "paid_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "pot_lamports",
+            "docs": [
+              "pot draws: the draw's pot / instant pool after this purchase"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "instant_pool_lamports",
             "type": "u64"
           }
         ]
       }
     },
     {
-      "name": "Vault",
+      "name": "VaultV3",
       "docs": [
-        "seeds = [b\"vault\", draw.key()]. Program-owned, no fields: its lamports are the escrow",
-        "(prize + instant-win reserve + ticket proceeds). Debited directly by the program; it must",
-        "always stay rent-exempt."
+        "seeds = [b\"vault3\", draw.key()]. Program-owned, no fields: its lamports are everything the draw holds.",
+        "Debited directly by the program; it always stays rent-exempt."
       ],
       "type": {
         "kind": "struct",

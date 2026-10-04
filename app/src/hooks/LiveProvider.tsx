@@ -4,9 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import type { PublicKey } from "@solana/web3.js";
-import { AIRDROP_LAMPORTS, ENTRY_SPACE, PLAYER_SPACE, PROFILE_SPACE } from "@/lib/config";
+import { AIRDROP_LAMPORTS, PLAYER_SPACE, PROFILE_SPACE, entrySpace, revealCuLimit } from "@/lib/config";
 import {
-  drawRolls,
   fetchEntries,
   fetchEntry,
   fetchLegacyEntries,
@@ -21,8 +20,8 @@ import {
   ixSettle,
   makeLegacyProgram,
 } from "@/lib/chain";
-import { cancelsAtRequest, featuredDraw } from "@/lib/derive";
-import { drawSeed, entrySeed, oraoRandomnessPda, winningTicket } from "@/lib/fairness";
+import { cancelsAtRequest, entryAtPosition, featuredDraw } from "@/lib/derive";
+import { drawSeed, entrySeed, oraoRandomnessPda, winningPosition } from "@/lib/fairness";
 import { fetchOraoNetwork, fetchRandomness } from "@/lib/orao";
 import { randomNonce, sendIxs, TxError, type TxPhase } from "@/lib/tx";
 import { airdropHuman, type HumanError } from "@/lib/errors";
@@ -33,7 +32,6 @@ import {
   type ActionKey,
   type Actions,
   type Costs,
-  type Done,
   type DrawSolData,
   type RevealSession,
 } from "./context";
@@ -45,6 +43,9 @@ import { useBalance } from "./useBalance";
 import { useNow } from "./useNow";
 import { useRandomness, waitForRandomness } from "./useRandomness";
 import { useSolPrice } from "./useSolPrice";
+
+/** The transaction's compute-unit limit when no instruction asks for more (buy, request, settle, refund…). */
+const DEFAULT_CU = 400_000;
 
 export function LiveProvider({ children }: { children: ReactNode }) {
   const { connection } = useConnection();
@@ -58,14 +59,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const { load, config, draws, legacyDraws, refresh: refreshDraws } = useDraws(program, legacy);
   const [selectedId, select] = useState<number | null>(null);
   const listed = useMemo(
-    () => (selectedId !== null ? draws.find((d) => d.id === selectedId) : undefined) ?? featuredDraw(draws),
-    [draws, selectedId]
+    () => (selectedId !== null ? [...draws, ...legacyDraws].find((d) => d.id === selectedId) : undefined) ?? featuredDraw(draws),
+    [draws, legacyDraws, selectedId]
   );
   const solUsd = useSolPrice();
-  const { draw: current, vault, failures, lastOk, nextAt, pollNow } = useDraw(program, listed);
-  const { entries, state: entriesState } = useEntries(program, current, nonce);
+  const { draw: current, vault, poolRemaining, failures, lastOk, nextAt, pollNow } = useDraw(program, legacy, listed);
+  const { entries, state: entriesState } = useEntries(program, legacy, current, nonce);
   const pk = walletCtx.publicKey;
-  const { myEntries, player, state: myState } = useMyEntries(program, current, pk, nonce);
+  const { myEntries, player, state: myState } = useMyEntries(program, legacy, current, pk, nonce);
   const { profile, state: profileState } = useProfile(program, current, pk, nonce);
   const balance = useBalance(connection, pk, nonce);
   const drawRandomness = useRandomness(
@@ -74,19 +75,23 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     current?.status === "drawing"
   );
 
-  const [costs, setCosts] = useState<Costs>({ oraoFee: null, entryRent: null, playerRent: null, profileRent: null });
+  const [costs, setCosts] = useState<Costs>({ oraoFee: null, entryRentBase: null, entryRentPerTicket: null, playerRent: null, profileRent: null });
   useEffect(() => {
     let alive = true;
     Promise.allSettled([
       fetchOraoNetwork(connection),
-      connection.getMinimumBalanceForRentExemption(ENTRY_SPACE),
+      connection.getMinimumBalanceForRentExemption(entrySpace(1)),
+      connection.getMinimumBalanceForRentExemption(entrySpace(2)),
       connection.getMinimumBalanceForRentExemption(PLAYER_SPACE),
       connection.getMinimumBalanceForRentExemption(PROFILE_SPACE),
-    ]).then(([o, e, p, f]) => {
+    ]).then(([o, e1, e2, p, f]) => {
       if (!alive) return;
+      const base = e1.status === "fulfilled" ? BigInt(e1.value) : null;
+      const two = e2.status === "fulfilled" ? BigInt(e2.value) : null;
       setCosts({
         oraoFee: o.status === "fulfilled" ? o.value.fee : null,
-        entryRent: e.status === "fulfilled" ? BigInt(e.value) : null,
+        entryRentBase: base,
+        entryRentPerTicket: base !== null && two !== null ? two - base : null,
         playerRent: p.status === "fulfilled" ? BigInt(p.value) : null,
         profileRent: f.status === "fulfilled" ? BigInt(f.value) : null,
       });
@@ -103,14 +108,14 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshDraws]);
 
-  // After two failed polls the page keeps the draw it last read, marked stale with that time, instead of
-  // blanking; the load itself failing (nothing read yet) is still the error state.
-  // one failed poll is enough to mark the figures: a poll only fails after web3.js's own 429 retries
+  // After a failed poll the page keeps the draw it last read, marked stale with that time, instead of
+  // blanking; the load itself failing (nothing read yet) is still the error state. One failed poll is
+  // enough: a poll only fails after web3.js's own 429 retries.
   const staleSince = load.kind === "ready" && failures >= 1 && lastOk !== null ? lastOk : null;
   const retryIn = staleSince !== null && nextAt !== null ? Math.max(0, Math.ceil(nextAt / 1000 - now)) : null;
-  const all = useAllEntries(program, draws, nonce);
+  const all = useAllEntries(program, legacy, draws, legacyDraws, nonce);
   const fetchDrawEntries = useCallback(
-    (draw: DrawView) => (draw.kind === "v2" ? fetchLegacyEntries(legacy, draw.address) : fetchEntries(program, draw.address)),
+    (draw: DrawView) => (draw.legacy ? fetchLegacyEntries(legacy, draw.address) : fetchEntries(program, draw.address)),
     [program, legacy]
   );
 
@@ -142,12 +147,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const data: DrawSolData = {
     load,
     config,
-    draws: current ? draws.map((d) => (d.address.equals(current.address) ? current : d)) : draws,
-    legacyDraws,
+    draws: current && !current.legacy ? draws.map((d) => (d.address.equals(current.address) ? current : d)) : draws,
+    legacyDraws: current && current.legacy ? legacyDraws.map((d) => (d.address.equals(current.address) ? current : d)) : legacyDraws,
     current,
     select,
     solUsd,
     vaultLamports: vault,
+    poolRemaining,
     entries,
     entriesState,
     wallet: pk ? { address: pk, balance } : null,
@@ -176,7 +182,6 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<RevealSession | null>(null);
   const sessionRef = useRef<RevealSession | null>(null);
   sessionRef.current = session;
-  const [done, setDone] = useState<Done | null>(null);
 
   const patchSession = (entry: PublicKey, p: Partial<RevealSession>) =>
     setSession((s) => (s && s.entry.equals(entry) ? { ...s, ...p } : s));
@@ -186,9 +191,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
 
-  /** Shared runner: guards wallet, tracks phase, decodes errors. */
+  /** Shared runner: guards wallet, tracks phase, decodes errors. `computeUnits` is the transaction's limit. */
   const run = useCallback(
-    async (key: ActionKey, build: (wallet: PublicKey) => Promise<Parameters<typeof sendIxs>[3]>, onPhase?: (p: TxPhase) => void) => {
+    async (
+      key: ActionKey,
+      build: (wallet: PublicKey) => Promise<{ ixs: Parameters<typeof sendIxs>[3]; computeUnits?: number }>,
+      onPhase?: (p: TxPhase) => void
+    ) => {
       const wallet = walletCtx.publicKey;
       if (!wallet) {
         setVisible(true);
@@ -197,11 +206,18 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       setErrors((e) => ({ ...e, [key]: null }));
       try {
         setPhase((p) => ({ ...p, [key]: "simulating" }));
-        const ixs = await build(wallet);
-        const sig = await sendIxs(connection, walletCtx, wallet, ixs, (ph) => {
-          setPhase((p) => ({ ...p, [key]: ph }));
-          onPhase?.(ph);
-        });
+        const { ixs, computeUnits } = await build(wallet);
+        const sig = await sendIxs(
+          connection,
+          walletCtx,
+          wallet,
+          ixs,
+          (ph) => {
+            setPhase((p) => ({ ...p, [key]: ph }));
+            onPhase?.(ph);
+          },
+          computeUnits ?? DEFAULT_CU
+        );
         setLastSig((s) => ({ ...s, [key]: sig }));
         setPhase((p) => ({ ...p, [key]: "idle" }));
         refresh();
@@ -217,7 +233,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     [connection, walletCtx, setVisible, refresh]
   );
 
-  /** VRF wait → auto reveal tx → read tiers back from the Entry account. */
+  /** VRF wait → reveal tx (with its compute budget) → read the tickets and prizes back from the Entry account. */
   const revealFlow = useCallback(
     async (entry: EntryView) => {
       const drawKey = entry.draw;
@@ -235,28 +251,23 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       }
       const fresh = await fetchEntry(program, entry.address).catch(() => null);
       if (fresh?.revealed) {
-        patchSession(entry.address, { stage: "revealed", tiers: fresh.tiers, numbers: fresh.numbers, solPaid: fresh.solPaid, creditsWon: fresh.creditsWon, poolSnapshot: fresh.poolSnapshot });
+        patchSession(entry.address, { stage: "revealed", tickets: fresh.tickets, prizes: fresh.prizes, instantPaid: fresh.instantPaid });
         refresh();
         return;
       }
       patchSession(entry.address, { stage: "revealing" });
       const key: ActionKey = `reveal:${entry.address.toBase58()}`;
-      const { sig, error } = await run(key, async () => [await ixRevealEntry(program, drawKey, entry)]);
+      const { sig, error } = await run(key, async () => {
+        const { ix, computeUnits } = await ixRevealEntry(program, drawKey, entry);
+        return { ixs: [ix], computeUnits };
+      });
       if (!sig) {
         patchSession(entry.address, { stage: "failed", error: error ?? { message: "Reveal failed." } });
         return;
       }
       const after = await fetchEntry(program, entry.address).catch(() => null);
       if (after?.revealed) {
-        patchSession(entry.address, {
-          stage: "revealed",
-          tiers: after.tiers,
-          numbers: after.numbers,
-          solPaid: after.solPaid,
-          creditsWon: after.creditsWon,
-          poolSnapshot: after.poolSnapshot,
-          revealTx: sig,
-        });
+        patchSession(entry.address, { stage: "revealed", tickets: after.tickets, prizes: after.prizes, instantPaid: after.instantPaid, revealTx: sig });
       } else {
         patchSession(entry.address, { stage: "failed", revealTx: sig, error: { message: "Reveal confirmed but the entry hasn't updated yet. Refresh in a moment." } });
       }
@@ -265,56 +276,39 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     [connection, program, run, refresh]
   );
 
-  const tierSpecs = () => currentRef.current?.iwTiers ?? [];
-
   /**
-   * One flow for a purchase and a free entry: send it, then (pot draws with instant tiers) open the reveal
-   * session for the new entry, wait for ORAO and reveal. A draw without an instant roll just refreshes.
+   * One flow for a purchase and a free entry: send it, then open the reveal session for the new entry, wait
+   * for ORAO and reveal (every v4 entry rolls: the roll assigns its ticket numbers).
    */
   const enter = useCallback(
-    async (key: "buy" | "free", quantity: number, useCredits: number) => {
+    async (key: "buy" | "free", quantity: number) => {
       const draw = currentRef.current;
-      if (!draw) return;
-      const rolls = drawRolls(draw);
+      if (!draw || draw.legacy) return;
       let entryKey: PublicKey | null = null;
       const { sig } = await run(
         key,
         async (wallet) => {
           const nonceBytes = randomNonce();
-          const vrfRequest = rolls ? oraoRandomnessPda(entrySeed(draw.address, wallet, draw.entryCount, nonceBytes)) : null;
+          const vrfRequest = oraoRandomnessPda(entrySeed(draw.address, wallet, draw.entryCount, nonceBytes));
           const built =
             key === "buy"
-              ? await ixBuyTickets(program, { draw, buyer: wallet, quantity, useCredits, nonce: nonceBytes, vrfRequest })
+              ? await ixBuyTickets(program, { draw, buyer: wallet, quantity, nonce: nonceBytes, vrfRequest })
               : await ixClaimFree(program, { draw, wallet, nonce: nonceBytes, vrfRequest });
           entryKey = built.entry;
-          return [built.ix];
+          return { ixs: [built.ix] };
         },
         (ph) => {
-          if (ph === "confirming" && entryKey && rolls) {
+          if (ph === "confirming" && entryKey) {
             setSession({
               entry: entryKey,
-              firstTicket: draw.nextTicket,
+              firstPos: draw.nextPos,
               count: quantity,
               stage: "confirming",
               free: key === "free",
-              tierSpecs: tierSpecs(),
             });
           }
         }
       );
-      if (!rolls) {
-        // no instant roll (headline draws): the success state is the entry as read back from chain
-        if (!sig || !entryKey) return;
-        const landed = await fetchEntry(program, entryKey).catch(() => null);
-        setDone({
-          kind: key,
-          sig,
-          entry: landed,
-          firstTicket: landed?.firstTicket ?? draw.nextTicket,
-          count: landed?.count ?? quantity,
-        });
-        return;
-      }
       if (!sig || !entryKey) {
         setSession((s) => (s && entryKey && s.entry.equals(entryKey) && s.stage === "confirming" ? null : s));
         return;
@@ -324,27 +318,25 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         patchSession(entryKey, { stage: "failed", buyTx: sig, error: { message: "Confirmed, but the entry couldn’t be read yet. It will appear in Your tickets." } });
         return;
       }
-      patchSession(entryKey, { buyTx: sig, firstTicket: entry.firstTicket, count: entry.count, poolSnapshot: entry.poolSnapshot });
+      patchSession(entryKey, { buyTx: sig, firstPos: entry.firstPos, count: entry.count });
       await revealFlow(entry);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [program, run, revealFlow]
   );
 
-  const buy = useCallback((quantity: number, useCredits: number) => void enter("buy", quantity, useCredits), [enter]);
-  const claimFree = useCallback(() => void enter("free", 1, 0), [enter]);
+  const buy = useCallback((quantity: number) => void enter("buy", quantity), [enter]);
+  const claimFree = useCallback(() => void enter("free", 1), [enter]);
 
   const reveal = useCallback(
     (entry: EntryView) => {
       setSession({
         entry: entry.address,
-        firstTicket: entry.firstTicket,
+        firstPos: entry.firstPos,
         count: entry.count,
         stage: "vrf",
         vrfRequest: entry.vrfRequest,
-        poolSnapshot: entry.poolSnapshot,
         free: entry.isFree,
-        tierSpecs: tierSpecs(),
       });
       revealFlow(entry);
     },
@@ -353,11 +345,11 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   );
 
   const setLimit = useCallback(
-    (lamports: bigint) => void run("limit", async (wallet) => [await ixSetLimit(program, wallet, lamports)]),
+    (lamports: bigint) => void run("limit", async (wallet) => ({ ixs: [await ixSetLimit(program, wallet, lamports)] })),
     [program, run]
   );
   const selfExclude = useCallback(
-    (until: number) => void run("exclude", async (wallet) => [await ixSelfExclude(program, wallet, until)]),
+    (until: number) => void run("exclude", async (wallet) => ({ ixs: [await ixSelfExclude(program, wallet, until)] })),
     [program, run]
   );
 
@@ -390,41 +382,49 @@ export function LiveProvider({ children }: { children: ReactNode }) {
 
   const runDraw = useCallback(() => {
     const draw = currentRef.current;
-    if (!draw) return;
+    if (!draw || draw.legacy) return;
     run("run", async (wallet) => {
       const n = randomNonce();
-      // a request that cancels (nothing sold, or a headline draw below its minimum) makes no ORAO request
-      const vrfRequest = cancelsAtRequest(draw) ? null : oraoRandomnessPda(drawSeed(draw.address, draw.nextTicket, n));
-      return [await ixRequestDraw(program, { draw, caller: wallet, nonce: n, vrfRequest })];
+      // a request that cancels (nothing sold) makes no ORAO request
+      const vrfRequest = cancelsAtRequest(draw) ? null : oraoRandomnessPda(drawSeed(draw.address, draw.nextPos, n));
+      return { ixs: [await ixRequestDraw(program, { draw, caller: wallet, nonce: n, vrfRequest })] };
     });
   }, [program, run]);
 
+  /**
+   * settle_draw: the winning position from ORAO's randomness, the entry that holds it, and the settle. The
+   * program requires that entry to be revealed first (SPEC-v4 §6); when it isn't and its own randomness has
+   * landed, the reveal goes in the same transaction, ahead of the settle.
+   */
   const settle = useCallback(() => {
     const draw = currentRef.current;
-    if (!draw) return;
+    if (!draw || draw.legacy) return;
     run("settle", async () => {
       const rand = await waitForRandomness(connection, draw.drawVrfRequest, 5_000);
-      const w = winningTicket(rand, draw.nextTicket);
-      let list = entriesRef.current;
-      let hit = list.find((e) => e.firstTicket <= w && w < e.firstTicket + e.count);
-      if (!hit) {
-        list = await fetchEntries(program, draw.address);
-        hit = list.find((e) => e.firstTicket <= w && w < e.firstTicket + e.count);
+      const pos = winningPosition(rand, draw.nextPos);
+      let hit = entryAtPosition(entriesRef.current, pos);
+      if (!hit) hit = entryAtPosition(await fetchEntries(program, draw.address), pos);
+      if (!hit) throw new TxError({ message: `No entry holds position ${pos}. Refresh and try again.` });
+      if (hit.revealed) return { ixs: [await ixSettle(program, draw, hit)] };
+      try {
+        await waitForRandomness(connection, hit.vrfRequest, 5_000);
+      } catch {
+        throw new TxError({ message: `The entry holding the winning position (entry ${hit.seq}) hasn’t been revealed and ORAO hasn’t answered its request yet. Try again in a moment.` });
       }
-      if (!hit) throw new TxError({ message: `No entry holds ticket ${w}. Refresh and try again.` });
-      return [await ixSettle(program, draw, hit)];
+      const { ix } = await ixRevealEntry(program, draw.address, hit);
+      return { ixs: [ix, await ixSettle(program, draw, hit)], computeUnits: Math.min(1_400_000, revealCuLimit(hit.count) + 100_000) };
     });
   }, [connection, program, run]);
 
   const cancel = useCallback(() => {
     const draw = currentRef.current;
-    if (!draw) return;
-    run("cancel", async () => [await ixCancel(program, draw)]);
+    if (!draw || draw.legacy) return;
+    run("cancel", async (wallet) => ({ ixs: [await ixCancel(program, draw, wallet)] }));
   }, [program, run]);
 
   const refund = useCallback(
     (entry: EntryView) => {
-      run(`refund:${entry.address.toBase58()}`, async () => [await ixRefund(program, entry.draw, entry)]);
+      run(`refund:${entry.address.toBase58()}`, async () => ({ ixs: [await ixRefund(program, entry.draw, entry)] }));
     },
     [program, run]
   );
@@ -445,8 +445,6 @@ export function LiveProvider({ children }: { children: ReactNode }) {
     reveal,
     session,
     closeSession: () => setSession(null),
-    done,
-    clearDone: () => setDone(null),
     clearError: (k) => setErrors((e) => ({ ...e, [k]: null })),
     disabledReason: null,
   };

@@ -3,15 +3,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
-import { anyoneCanRun, cancelReason, cancelsAtRequest, grandPrize, liveDraw, phaseOf, publicFrom, ticketNumbersOf } from "@/lib/derive";
+import { anyoneCanRun, cancelReason, cancelsAtRequest, entryAtPosition, grandPrize, liveDraw, phaseOf, publicFrom } from "@/lib/derive";
 import { campaignOf, usdWhole } from "@/lib/campaigns";
-import { winningTicket } from "@/lib/fairness";
-import { clock, ticketNo, utcLabel } from "@/lib/format";
-import { vaultPda } from "@/lib/chain";
+import { winningPosition } from "@/lib/fairness";
+import { clock, utcLabel } from "@/lib/format";
+import { legacyVaultPda, vaultPda } from "@/lib/chain";
 import type { DrawView } from "@/lib/types";
 import { Addr, Busy, ErrorNote, Pill, ProofLink, inFlight, phaseLabel } from "./bits";
 import { Countdown } from "./Hero";
-import { n, plural, prizeFig, tno } from "./fmt";
+import { n, plural, prizeFig, tnoOf } from "./fmt";
 import { useSettleTx } from "./Recompute";
 
 const ROLL_MS = 6800;
@@ -20,8 +20,8 @@ const LOOPS = 2;
 const ease = (t: number) => 1 - Math.pow(1 - t, 5);
 
 /**
- * Where the roll's cursor is at progress p (0–1): it starts at #0000, runs LOOPS times through every ticket
- * and slows to a stop on the winning ticket. Presentation of a result already fixed by ORAO's randomness.
+ * Where the roll's cursor is at progress p (0–1): it starts at position 0, runs LOOPS times through every
+ * position and slows to a stop on the winning one. Presentation of a result already fixed by ORAO's randomness.
  */
 const cursorAt = (p: number, k: number, w: number) => Math.floor(ease(p) * (LOOPS * k + w)) % Math.max(1, k);
 
@@ -30,8 +30,9 @@ type Stage = "countdown" | "due" | "pending" | "rolling" | "won" | "paid" | "can
 /**
  * The /live page: a faceless draw show for streaming (OBS, a 1920×1080 browser source), driven purely by chain
  * state. Countdown to draw_at → "Drawing now" while ORAO is pending → the ticket numbers roll and stop on the
- * winning ticket (computed in this browser with fairness.ts from ORAO's randomness) → WON, then PAID once
- * settled, with the winner and the payout link. A draw already settled shows its result at once.
+ * winning ticket (the winning position is computed in this browser with fairness.ts from ORAO's randomness;
+ * the number at it is read from the entry that holds it) → WON, then PAID once settled, with the winner and
+ * the payout link. A draw already settled shows its result at once.
  */
 export function LiveShow({ raw }: { raw: string | null }) {
   const { load, draws, current: d, select, now, drawRandomness: r, stillRoll, entries } = useDrawSol();
@@ -86,30 +87,37 @@ export function LiveShow({ raw }: { raw: string | null }) {
 
   const ph = phaseOf(d, now);
   const rand = d.status === "settled" ? d.randomness : r?.fulfilled ? r.randomness : null;
-  const w = d.status === "settled" ? d.winningTicket : rand ? winningTicket(rand, d.nextTicket) : null;
+  // the winning position, from the stored result or from the randomness
+  const pos = d.status === "settled" ? d.winningPos : rand ? winningPosition(rand, d.nextPos) : null;
+  // the roll runs through every position; on random-number draws each position shows the number assigned to it
+  const ordered = d.randomNumbers ? entries.slice().sort((a, b) => a.seq - b.seq) : null;
+  const numberAt = (p: number): number | null => {
+    if (!ordered) return p;
+    const e = entryAtPosition(ordered, p);
+    return e && e.revealed ? e.tickets[p - e.firstPos] ?? null : null;
+  };
+  const w = pos === null ? null : d.status === "settled" ? d.winningTicket : numberAt(pos);
   const progress = stillRoll !== undefined ? stillRoll : rollStart !== null ? Math.min(1, (Date.now() - rollStart) / ROLL_MS) : 1;
-  const rolling = w !== null && progress < 1;
+  const rolling = pos !== null && progress < 1;
 
   let stage: Stage;
   if (ph === "cancelled") stage = "cancelled";
   else if (ph === "selling" || ph === "closed") stage = "countdown";
   else if (ph === "due") stage = "due";
-  else if (w === null) stage = "pending";
+  else if (pos === null) stage = "pending";
   else if (rolling) stage = "rolling";
   else stage = d.status === "settled" ? "paid" : "won";
 
-  // the roll runs through every ticket in the draw by index; on random-number draws each index shows its number
-  const numbers = d.randomNumbers ? entries.slice().sort((a, b) => a.seq - b.seq).flatMap((e) => ticketNumbersOf(e)) : null;
-  const wIndex = w === null ? 0 : numbers ? Math.max(0, numbers.indexOf(w)) : w;
-  const cursor = stage === "rolling" && w !== null ? cursorAt(progress, Math.max(1, numbers ? numbers.length : d.nextTicket), wIndex) : -1;
-  const shown = stage === "rolling" ? (numbers ? numbers[cursor] ?? cursor : cursor) : w;
-  return <Stage d={d} stage={stage} shown={shown} winning={stage === "won" || stage === "paid" ? w : null} now={now} />;
+  const cursor = stage === "rolling" && pos !== null ? cursorAt(progress, Math.max(1, d.nextPos), pos) : -1;
+  const shown = stage === "rolling" ? numberAt(cursor) : w;
+  return <Stage d={d} stage={stage} shown={shown} pos={stage === "won" || stage === "paid" ? pos : null} winning={stage === "won" || stage === "paid" ? w : null} now={now} />;
 }
 
-function Stage({ d, stage, shown, winning, now }: { d: DrawView; stage: Stage; shown: number | null; winning: number | null; now: number }) {
+function Stage({ d, stage, shown, pos, winning, now }: { d: DrawView; stage: Stage; shown: number | null; pos: number | null; winning: number | null; now: number }) {
   const settleTx = useSettleTx(d);
   const camp = campaignOf(d.id);
   const prize = prizeFig(grandPrize(d));
+  const vault = d.legacy ? legacyVaultPda(d.address) : vaultPda(d.address);
   const voice: Record<Stage, string> = {
     countdown: "Drawing in",
     due: "Drawing now",
@@ -122,13 +130,16 @@ function Stage({ d, stage, shown, winning, now }: { d: DrawView; stage: Stage; s
   const sub: Record<Stage, string> = {
     countdown: `Live at ${clock(d.drawAt)} UTC. The randomness comes from ORAO VRF, and nobody can choose it.`,
     due: cancelsAtRequest(d)
-      ? d.nextTicket === 0
+      ? d.nextPos === 0
         ? "No tickets were sold, so there is nothing to draw."
         : `Only ${n(d.paidTickets)} of the ${n(d.minTickets)} tickets it needed sold, so running it cancels it and everyone is refunded in full.`
       : "The draw time has passed. Next it is requested on-chain, and ORAO answers with the randomness, usually within seconds.",
     pending: "Randomness requested from ORAO. Waiting for it to land, usually a few seconds.",
-    rolling: "ORAO’s randomness has landed. The winning ticket is computed from it in this browser.",
-    won: "Computed from ORAO’s randomness. Anyone can settle the draw now to pay the winner.",
+    rolling: "ORAO’s randomness has landed. The winning position is computed from it in this browser.",
+    won:
+      winning === null && pos !== null
+        ? `Position ${n(pos)} wins, computed from ORAO’s randomness; its number is written when that entry is revealed. Anyone can settle the draw now to pay the winner.`
+        : "Computed from ORAO’s randomness. Anyone can settle the draw now to pay the winner.",
     paid: "Paid from the vault in the settle transaction.",
     cancelled:
       cancelReason(d) === "undersold"
@@ -137,6 +148,7 @@ function Stage({ d, stage, shown, winning, now }: { d: DrawView; stage: Stage; s
           ? "No tickets were sold."
           : "The randomness never arrived within 48 hours. Every paid ticket can be refunded.",
   };
+  const figure = shown !== null ? tnoOf(d, shown) : pos !== null ? `position ${n(pos)}` : "#????";
   return (
     <article className={`live stage-${stage}`} aria-labelledby="live-h">
       <header className="live-top">
@@ -145,7 +157,7 @@ function Stage({ d, stage, shown, winning, now }: { d: DrawView; stage: Stage; s
           <Pill tone={stage === "paid" || stage === "won" ? "accent" : stage === "cancelled" ? "neutral" : "warn"}>{stage === "countdown" ? "Live" : stage === "paid" ? "Paid" : stage === "won" ? "Won" : stage === "cancelled" ? "Cancelled" : "Drawing"}</Pill>
         </p>
         <h1 className="live-h" id="live-h">
-          {camp ? `${camp.title.replace(/^Win /, "Win ")}` : `Win ${prize} SOL`}
+          {camp ? camp.title : `Win ${prize} SOL`}
         </h1>
         <p className="live-prize">
           {stage === "paid" ? "Paid" : "Prize"} <b>{prize} SOL</b>
@@ -155,7 +167,7 @@ function Stage({ d, stage, shown, winning, now }: { d: DrawView; stage: Stage; s
               to <Addr k={d.winner} link head={6} tail={6} />
             </>
           ) : (
-            <ProofLink account={vaultPda(d.address)}>in the vault</ProofLink>
+            <ProofLink account={vault}>in the vault</ProofLink>
           )}
         </p>
       </header>
@@ -175,8 +187,8 @@ function Stage({ d, stage, shown, winning, now }: { d: DrawView; stage: Stage; s
           ) : stage === "cancelled" ? (
             <p className="live-num c-3">{n(d.paidTickets)} sold</p>
           ) : (
-            <p className={`live-num tab ${stage === "rolling" ? "" : "c-accent"}`} aria-label={stage === "rolling" ? undefined : `Winning ticket ${d.randomNumbers ? tno(shown ?? 0) : ticketNo(shown ?? 0)}`}>
-              {d.randomNumbers ? tno(shown ?? 0) : ticketNo(shown ?? 0)}
+            <p className={`live-num tab ${stage === "rolling" ? "" : "c-accent"}`} aria-label={stage === "rolling" ? undefined : `Winning ticket ${figure}`}>
+              {stage === "rolling" && shown === null ? "#·,···" : figure}
             </p>
           )}
         </div>
@@ -191,14 +203,13 @@ function Stage({ d, stage, shown, winning, now }: { d: DrawView; stage: Stage; s
 
       <footer className="live-foot">
         <span>
-          <b className="tab">{n(d.nextTicket)}</b> {plural(d.nextTicket, "ticket", "tickets")} in the draw
+          <b className="tab">{n(d.nextPos)}</b> {plural(d.nextPos, "ticket", "tickets")} in the draw
         </span>
         <span>
           {n(d.paidTickets)} paid{d.freeTickets ? `, ${d.freeTickets} free` : ""}
-          {d.creditTickets ? `, ${d.creditTickets} on credits` : ""}
         </span>
         <span>Draw time {utcLabel(d.drawAt)}</span>
-        {winning !== null && <span>Ticket {d.randomNumbers ? tno(winning) : ticketNo(winning)} drawn</span>}
+        {winning !== null && <span>Ticket {tnoOf(d, winning)} drawn</span>}
       </footer>
     </article>
   );
@@ -207,6 +218,7 @@ function Stage({ d, stage, shown, winning, now }: { d: DrawView; stage: Stage; s
 /** "Anyone can run the draw" once the public window has opened, and "Settle" once the randomness has landed. */
 function RunControls({ d, stage, now }: { d: DrawView; stage: Stage; now: number }) {
   const { runDraw, settle, phase, errors, clearError, disabledReason } = useActions();
+  if (d.legacy) return null;
   if (stage === "due") {
     const open = anyoneCanRun(d, now);
     const busy = inFlight(phase.run);

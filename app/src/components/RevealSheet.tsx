@@ -3,18 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
-import { tierCredits, tierOfNumber, tierSol } from "@/lib/derive";
-import { sol, ticketNo, utcLabel } from "@/lib/format";
+import { sol, utcLabel } from "@/lib/format";
 import { Busy, Check, ErrorNote, ProofLink } from "./bits";
 import { useBuy } from "./BuyContext";
-import { n, plural, tno, usd, usdPrize } from "./fmt";
+import { n, plural, prizeSol, tno, usdPrize } from "./fmt";
 
 const FLIP_MS = 420;
 
 /**
  * The reveal: after paying, ORAO assigns the ticket numbers (about 2 s) and the reveal transaction writes them
  * and pays any instant win. The sheet shows the wait, then each ticket flipping to its number and result. Every
- * number and amount is read from the Entry account after the reveal; nothing is invented here.
+ * number and amount is read from the Entry account after the reveal (tickets, prizes, instant_paid); nothing is
+ * invented here.
  */
 export function RevealSheet() {
   const { current: d, solUsd } = useDrawSol();
@@ -73,21 +73,14 @@ export function RevealSheet() {
 
   if (!open || !s || !d) return null;
   const finished = s.stage === "revealed" || s.stage === "failed";
-  const numbers = s.numbers?.length ? s.numbers : Array.from({ length: s.count }, (_, i) => s.firstTicket + i);
-  const random = d.randomNumbers;
-  // per ticket: the win, from the entry's tiers (pot draws) or its numbers against the schedule (v4)
+  const tickets = s.tickets ?? [];
+  // per ticket: the prize from the entry's prizes (tier + 1) against the draw's tiers
   const winOf = (i: number): bigint => {
-    if (d.schedule.length) return tierOfNumber(d, numbers[i])?.lamports ?? BigInt(0);
-    const k = s.tiers?.[i] ?? 0;
-    return k > 0 && d.iwTiers[k - 1] ? tierSol(d.iwTiers[k - 1], s.poolSnapshot ?? BigInt(0)) : BigInt(0);
+    const k = s.prizes?.[i] ?? 0;
+    return k > 0 && d.tiers[k - 1] ? d.tiers[k - 1].amount : BigInt(0);
   };
-  const creditsOf = (i: number): number => {
-    if (d.schedule.length) return 0;
-    const k = s.tiers?.[i] ?? 0;
-    return k > 0 && d.iwTiers[k - 1] ? tierCredits(d.iwTiers[k - 1]) : 0;
-  };
-  const wins = numbers.map((_, i) => winOf(i)).filter((x) => x > BigInt(0));
-  const paid = s.solPaid ?? BigInt(0);
+  const wins = tickets.map((_, i) => winOf(i)).filter((x) => x > BigInt(0));
+  const paid = s.instantPaid ?? BigInt(0);
   const allShown = shown >= s.count;
   const title =
     s.stage === "confirming"
@@ -101,7 +94,7 @@ export function RevealSheet() {
             : !allShown
               ? "Your tickets"
               : wins.length
-                ? `You won ${usdPrize(paid, solUsd) ?? `${sol(paid, 2, 4)} SOL`}`
+                ? `You won ${usdPrize(paid, solUsd) ?? `${prizeSol(paid)} SOL`}`
                 : "No instant win this time";
 
   return (
@@ -133,7 +126,7 @@ export function RevealSheet() {
             <>
               <ErrorNote>{s.error?.message ?? "The reveal failed."}</ErrorNote>
               <p className="panel-text">
-                Your {s.count} {plural(s.count, "ticket is", "tickets are")} safe and in the draw. {random ? "Their numbers are assigned when the reveal goes through; " : ""}anyone can send the
+                Your {s.count} {plural(s.count, "ticket is", "tickets are")} safe and in the draw. Their numbers are assigned when the reveal goes through; anyone can send the
                 reveal later, and any win is paid to you.
               </p>
               <div className="rv-act">
@@ -149,7 +142,7 @@ export function RevealSheet() {
               {Array.from({ length: Math.min(s.count, 30) }, (_, i) => (
                 <li key={i} className="rchip sealed">
                   <b className="tab">#·,···</b>
-                  <span>{random ? "number pending" : ticketNo(s.firstTicket + i)}</span>
+                  <span>number pending</span>
                 </li>
               ))}
               {s.count > 30 && <li className="rchip more">+{n(s.count - 30)} more</li>}
@@ -159,15 +152,14 @@ export function RevealSheet() {
           {s.stage === "revealed" && (
             <>
               <ul className="rv-grid" aria-label={`Your ${s.count} tickets`}>
-                {numbers.map((t, i) => {
+                {tickets.map((t, i) => {
                   const win = winOf(i);
-                  const credits = creditsOf(i);
                   const on = i < shown;
                   const u = usdPrize(win, solUsd);
                   return (
-                    <li key={i} className={`rchip ${on ? "on" : "sealed"} ${on && (win > BigInt(0) || credits > 0) ? "win" : ""}`} style={!reduced && on ? { transitionDelay: `${(i - (s.initialShown ?? 0)) * 20}ms` } : undefined}>
-                      <b className="tab">{on ? (random ? tno(t) : ticketNo(t)) : "#·,···"}</b>
-                      <span>{!on ? "…" : win > BigInt(0) ? `Won ${u ?? `${sol(win, 2, 4)} SOL`}` : credits > 0 ? `Won ${credits} free ${plural(credits, "ticket", "tickets")}` : "No win"}</span>
+                    <li key={i} className={`rchip ${on ? "on" : "sealed"} ${on && win > BigInt(0) ? "win" : ""}`} style={!reduced && on ? { transitionDelay: `${(i - (s.initialShown ?? 0)) * 20}ms` } : undefined}>
+                      <b className="tab">{on ? tno(t) : "#·,···"}</b>
+                      <span>{!on ? "…" : win > BigInt(0) ? `Won ${u ?? `${prizeSol(win)} SOL`}` : "No win"}</span>
                     </li>
                   );
                 })}
@@ -183,7 +175,7 @@ export function RevealSheet() {
                         <b>
                           {wins.length} of {s.count} {plural(s.count, "ticket", "tickets")} won
                         </b>{" "}
-                        · {usdPrize(paid, solUsd) ?? `${sol(paid, 2, 4)} SOL`} paid to your wallet in the reveal transaction.
+                        · {usdPrize(paid, solUsd) ?? `${prizeSol(paid)} SOL`} paid to your wallet in the reveal transaction.
                       </span>
                     </p>
                   ) : (

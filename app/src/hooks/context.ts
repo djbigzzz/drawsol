@@ -11,7 +11,6 @@ import type {
   ProfileView,
   RandomnessView,
 } from "@/lib/types";
-import type { TierSpec } from "@/lib/fairness";
 import type { HumanError } from "@/lib/errors";
 import type { TxPhase } from "@/lib/tx";
 
@@ -23,31 +22,41 @@ export interface WalletView {
 
 export interface Costs {
   oraoFee: bigint | null;
-  entryRent: bigint | null;
+  /** rent of a one-ticket EntryV4 account; the account grows 5 bytes per further ticket */
+  entryRentBase: bigint | null;
+  entryRentPerTicket: bigint | null;
   playerRent: bigint | null;
-  /** the wallet's Profile account (credits, play limits), created on its first entry */
+  /** the wallet's Profile account (play limits), created on its first entry */
   profileRent: bigint | null;
+}
+
+/** Rent of an EntryV4 account holding `count` tickets, from the two figures read; null until both are known. */
+export function entryRentFor(c: Costs, count: number): bigint | null {
+  if (c.entryRentBase === null || c.entryRentPerTicket === null) return null;
+  return c.entryRentBase + c.entryRentPerTicket * BigInt(Math.max(0, count - 1));
 }
 
 export interface DrawSolData {
   load: LoadState;
   config: ConfigView | null;
-  /** every v3 draw, newest id first */
+  /** every v4 draw, newest id first */
   draws: DrawView[];
-  /** legacy v2 draws still on chain (read-only history; closed at the cutover, then empty) */
+  /** the v3 draws still on chain (read-only history; closed one by one, then empty) */
   legacyDraws: DrawView[];
-  /** the draw this page shows: chosen with select() (/live: ?n=), else the featured headline draw */
+  /** the draw this page shows: chosen with select() (/live: ?n=), else the featured draw */
   current: DrawView | null;
   /** show another draw (/live: ?n=). null returns to the featured draw. */
   select: (id: number | null) => void;
   /** SOL in USD from a live quote; null when no quote is available (USD figures are then not shown) */
   solUsd: number | null;
   vaultLamports: bigint | null;
+  /** ticket numbers still in the current draw's Pool account; null until read (legacy draws have no pool) */
+  poolRemaining: number | null;
   entries: EntryView[];
   entriesState: "loading" | "error" | "ready";
   wallet: WalletView | null;
   player: PlayerView | null;
-  /** the wallet's global Profile: free-ticket credits and play limits (null = never created) */
+  /** the wallet's global Profile: play limits (null = never created) */
   profile: ProfileView | null;
   profileState: "loading" | "error" | "ready";
   myEntries: EntryView[];
@@ -69,7 +78,7 @@ export interface DrawSolData {
   /** every Entry account of the program, all draws (winners feed and counters) */
   allEntries: EntryView[];
   allEntriesState: "loading" | "error" | "ready";
-  /** every Entry account of one draw (the per-draw page; legacy v2 draws read through the v2 IDL) */
+  /** every Entry account of one draw (the per-draw page; legacy v3 draws read through the v3 IDL) */
   fetchDrawEntries: (draw: DrawView) => Promise<EntryView[]>;
   /**
    * finds the settle_draw transaction of a settled draw (signature); null when the RPC has no such
@@ -94,7 +103,7 @@ export type RevealStage = "confirming" | "vrf" | "revealing" | "revealed" | "fai
 
 export interface RevealSession {
   entry: PublicKey;
-  firstTicket: number;
+  firstPos: number;
   count: number;
   stage: RevealStage;
   buyTx?: string;
@@ -102,22 +111,16 @@ export interface RevealSession {
   vrfStartedAt?: number;
   vrfMs?: number;
   revealTx?: string;
-  /** read from Entry.tiers after the reveal tx; never invented */
-  tiers?: number[];
-  /** v4: the ticket numbers ORAO assigned, read from Entry.numbers after the reveal tx */
-  numbers?: number[];
-  /** instant SOL paid, read from Entry.sol_paid */
-  solPaid?: bigint;
-  /** free-ticket credits won, read from Entry.credits_won */
-  creditsWon?: number;
-  /** the pool snapshot read from the entry: SOL tiers pay a share of it */
-  poolSnapshot?: bigint;
+  /** the ticket numbers ORAO assigned, read from Entry.tickets after the reveal tx; never invented */
+  tickets?: number[];
+  /** per ticket: 0 = no prize, t + 1 = tier t, read from Entry.prizes */
+  prizes?: number[];
+  /** instant SOL paid, read from Entry.instant_paid */
+  instantPaid?: bigint;
   /** a free entry (one ticket) rather than a purchase */
   free?: boolean;
   error?: HumanError;
-  /** the draw's instant tiers (odds, kind, value) */
-  tierSpecs: TierSpec[];
-  /** the entry's fulfilled ORAO randomness (64 bytes), for per-ticket rolls and stamp ink */
+  /** the entry's fulfilled ORAO randomness (64 bytes) */
   randomness?: Uint8Array;
   /** fixtures only: how many stubs are already turned */
   initialShown?: number;
@@ -135,22 +138,12 @@ export type ActionKey =
   | `refund:${string}`
   | `reveal:${string}`;
 
-/** A purchase or free entry that has just confirmed on a draw with no instant roll: what landed, from chain. */
-export interface Done {
-  kind: "buy" | "free";
-  sig: string;
-  /** the Entry account as read after confirmation; null when it could not be read yet */
-  entry: EntryView | null;
-  firstTicket: number;
-  count: number;
-}
-
 export interface Actions {
   phase: Partial<Record<ActionKey, TxPhase>>;
   errors: Partial<Record<ActionKey, HumanError | null>>;
   lastSig: Partial<Record<ActionKey, string>>;
-  /** quantity tickets, of which useCredits are paid with free-ticket credits */
-  buy: (quantity: number, useCredits: number) => void;
+  /** buy_tickets(quantity): the purchase, then the reveal session for the new entry */
+  buy: (quantity: number) => void;
   claimFree: () => void;
   /** set_limit: lamports per 30-day period, 0 = none (a raise or removal waits 72 h) */
   setLimit: (lamports: bigint) => void;
@@ -165,9 +158,6 @@ export interface Actions {
   reveal: (entry: EntryView) => void;
   session: RevealSession | null;
   closeSession: () => void;
-  /** the last confirmed entry on a draw without instant rolls (headline draws): the success state */
-  done: Done | null;
-  clearDone: () => void;
   clearError: (k: ActionKey) => void;
   /** null when the wallet adapter is in charge; otherwise a notice to show */
   disabledReason: string | null;

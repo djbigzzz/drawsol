@@ -28,19 +28,11 @@ export const SOLFAUCET_URL = "https://solfaucet.com";
 export const AIRDROP_LAMPORTS = 500_000_000;
 /** Below this (or below one ticket plus fees) the stub offers "Get devnet SOL". */
 export const LOW_BALANCE_LAMPORTS = BigInt(50_000_000);
-/**
- * terms_hash values (hex) of published terms that mention the in-app question, removed from the app on
- * 2 Oct 2026: scripts/terms/draw-0.md and draw-1.md, as committed on-chain at create_draw. The back of the
- * ticket says so for those draws only. Newer terms (scripts/terms.md v3) have no question.
- */
-export const QUESTION_TERMS_HASHES = [
-  "af22f9dfb92c6a7a6101136632acfffd42bcf9bcbfa9d69c360f9db96e8ff35f",
-  "8cdfab33b62705ebbc2c6d344d28a6e811eeade80ffb87e203d9170e48ece441",
-];
 export const GAMBLE_AWARE_URL = "https://www.begambleaware.org";
 
-// SPEC-v3 §2.1
-export const MAX_PER_TX = 25;
+// SPEC-v4 §1 / constants.rs
+/** the program's hard cap on one purchase; a draw's own max_per_tx is at most this */
+export const MAX_PER_TX = 1000;
 /** a draw stuck in Drawing this long after draw_at may be cancelled by anyone (refunds) */
 export const CANCEL_GRACE_SECS = 48 * 3600;
 /** raising (or removing) a play limit takes effect this long after it is asked for */
@@ -48,9 +40,15 @@ export const LIMIT_INCREASE_DELAY = 72 * 3600;
 /** the play-limit period */
 export const PERIOD_SECS = 30 * 86400;
 
-/** Account sizes (8-byte discriminator + InitSpace of EntryV3 / PlayerV3 / Profile) for rent estimates. */
-export const ENTRY_SPACE = 8 + 32 + 32 + 4 + 4 + 2 + 2 + 2 + 1 + 8 + 8 + 8 + 32 + 32 + 1 + 1 + 25 + 8 + 4 + 1 + 1;
-export const PLAYER_SPACE = 8 + 32 + 32 + 4 + 8 + 8 + 4 + 1 + 1;
+/**
+ * Compute budget a client must request for `reveal_entry` (SPEC-v4 §6): ≈ 24k + 362 CU per ticket measured;
+ * the 200k default only covers ≈ 480 tickets, so every reveal sends a SetComputeUnitLimit with this.
+ */
+export const revealCuLimit = (count: number) => Math.min(1_400_000, 80_000 + 400 * count);
+
+/** Account sizes (8-byte discriminator + fields) for rent estimates. EntryV4 is sized from its ticket count. */
+export const entrySpace = (count: number) => 8 + 160 + (4 + 4 * count) + (4 + count);
+export const PLAYER_SPACE = 8 + 32 + 32 + 4 + 8 + 8 + 1 + 1;
 export const PROFILE_SPACE = 8 + 32 + 4 + 8 + 8 + 8 + 8 + 8 + 8 + 1;
 
 export const solscanAccount = (addr: string) =>

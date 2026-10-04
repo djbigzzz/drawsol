@@ -73,7 +73,7 @@ export const tno = (t: number) => {
   return `#${s.slice(0, -3)},${s.slice(-3)}`;
 };
 
-/** A ticket number as the draw prints it: random-number draws "#0,679", sequential draws "#0009". */
+/** A ticket number as the draw prints it: random-number draws "#0,679", sequential (legacy) draws "#0009". */
 export const tnoOf = (d: { randomNumbers: boolean }, t: number) => (d.randomNumbers ? tno(t) : `#${String(t).padStart(4, "0")}`);
 
 export const plural = (k: number, one: string, many: string) => (k === 1 ? one : many);
@@ -84,10 +84,13 @@ export function utcHhmm(unix: number) {
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 
-/** "pot draw", "headline draw"; a legacy v2 draw was a "grand draw" */
-export const kindName = (k: "pot" | "headline" | "v2") => (k === "pot" ? "pot draw" : k === "headline" ? "headline draw" : "grand draw");
+/** "prize draw" (v4); the v3 draws still on chain were a "pot draw" or a "headline draw" */
+export const kindName = (d: { legacy: null | "pot" | "headline" }) => (d.legacy === null ? "prize draw" : d.legacy === "pot" ? "pot draw (v3)" : "headline draw (v3)");
 /** "Draw № 6" */
 export const drawName = (d: { id: number }) => `Draw № ${d.id}`;
+
+/** A schedule prize or instant payout in SOL, rounded half-up to 4 decimals: 8,379,999 lamports → "0.0084". */
+export const prizeSol = (l: bigint) => solRound(l, 4, 2);
 
 /** "1 SOL" figures stay whole; a pot shows two decimals ("0.68"), never a misleading round number. */
 export const prizeFig = (l: bigint) => sol(l, 0, l < BigInt(1_000_000_000) ? 4 : 2);

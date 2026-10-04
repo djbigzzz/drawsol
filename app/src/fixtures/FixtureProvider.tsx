@@ -6,12 +6,13 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { PublicKey } from "@solana/web3.js";
-import { ActionsContext, DataContext, type ActionKey, type Actions, type Done, type DrawSolData, type RevealSession } from "@/hooks/context";
+import { ActionsContext, DataContext, type ActionKey, type Actions, type DrawSolData, type RevealSession } from "@/hooks/context";
 import { useNow } from "@/hooks/useNow";
 import { featuredDraw } from "@/lib/derive";
 import { FIXED_NOW, playerOf, revealSessionFor, scenario, SCENARIOS, SOL_USD, type Scenario } from "./data";
 
 const NOTE = { message: "Fixture build — nothing is sent to devnet." };
+const Z = BigInt(0);
 
 /** The fixture clock starts at a fixed instant so every shot shows the same times, then ticks for real. */
 export function FixtureProvider({ children }: { children: ReactNode }) {
@@ -38,22 +39,23 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
   useEffect(() => select(fx.selected), [fx]);
   const [session, setSession] = useState<RevealSession | null>(fx.session);
   useEffect(() => setSession(fx.session), [fx]);
-  const [done, setDone] = useState<Done | null>(fx.done);
-  useEffect(() => setDone(fx.done), [fx]);
   const [errors, setErrors] = useState<Actions["errors"]>({});
   useEffect(() => setErrors(fx.errors ?? {}), [fx]);
 
-  const current = (selectedId !== null ? fx.draws.find((d) => d.id === selectedId) : undefined) ?? featuredDraw(fx.draws);
+  const current = (selectedId !== null ? [...fx.draws, ...fx.legacyDraws].find((d) => d.id === selectedId) : undefined) ?? featuredDraw(fx.draws);
   const world = current ? fx.worlds.get(current.address.toBase58()) : undefined;
   const wallet = fx.wallet;
   const mine = world && wallet ? world.entries.filter((e) => e.owner.equals(wallet.address)) : [];
-  const player = world && wallet ? playerOf(world, wallet.address) : null;
+  const player = world && wallet && !current?.legacy ? playerOf(world, wallet.address) : null;
+  // what the vault holds: v4 = sales − refunds + the escrow still in it (end prize + schedule, less instants paid)
   const vault = current
-    ? current.kind === "pot"
+    ? current.legacy === "pot"
       ? current.status === "settled"
         ? current.houseLamports - current.houseWithdrawn
-        : current.houseLamports + current.potLamports + current.instantPoolLamports - current.refundedLamports
-      : current.revenueLamports - current.refundedLamports + (current.prizePaid ? BigInt(0) : current.prizeLamports) - world!.entries.reduce((s, e) => s + e.solPaid, BigInt(0))
+        : current.revenueLamports - current.instantsPaid
+      : current.legacy === "headline"
+        ? current.revenueLamports - current.refundedLamports + (current.prizePaid ? Z : current.endPrizeLamports)
+        : current.revenueLamports - current.refundedLamports - current.instantsPaid + (current.prizePaid ? Z : current.endPrizeLamports + current.scheduleTotalLamports) - (current.status === "settled" ? current.houseWithdrawn : Z)
     : null;
 
   const data: DrawSolData = {
@@ -65,6 +67,7 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
     select,
     solUsd: noUsd ? null : SOL_USD,
     vaultLamports: vault,
+    poolRemaining: world && current && !current.legacy ? world.pool.length : null,
     entries: world?.entries ?? [],
     entriesState: "ready",
     wallet,
@@ -74,7 +77,7 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
     myEntries: my === "ready" ? mine : [],
     myState: my,
     drawRandomness: current ? fx.drawRandomness.get(current.address.toBase58()) ?? null : null,
-    costs: { oraoFee: BigInt(500_000), entryRent: BigInt(2_394_480), playerRent: BigInt(1_573_440), profileRent: BigInt(1_538_640) },
+    costs: { oraoFee: BigInt(500_000), entryRentBase: BigInt(2_289_840), entryRentPerTicket: BigInt(34_800), playerRent: BigInt(1_545_600), profileRent: BigInt(1_538_640) },
     now,
     refresh: () => {},
     staleSince: fx.staleSince ?? null,
@@ -108,12 +111,10 @@ export function FixtureProvider({ children }: { children: ReactNode }) {
     reveal: (e) => {
       const rand = fx.entryRandomness.get(e.address.toBase58());
       if (!current || !rand || !e.needsReveal) return fail(`reveal:${e.address.toBase58()}`)();
-      setSession(revealSessionFor(e, current, rand, String(e.seq)));
+      setSession(revealSessionFor(e, rand, String(e.seq)));
     },
     session,
     closeSession: () => setSession(null),
-    done,
-    clearDone: () => setDone(null),
     clearError: (k) => setErrors((e) => ({ ...e, [k]: null })),
     disabledReason: null,
   };

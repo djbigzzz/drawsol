@@ -3,18 +3,20 @@
 import { useId, useMemo, useState } from "react";
 import type { PublicKey } from "@solana/web3.js";
 import { useDrawSol } from "@/hooks/context";
-import { entryWins, ticketNumbersOf } from "@/lib/derive";
-import { clock, short, shortDate, sol, ticketNo, ticketRange } from "@/lib/format";
+import { entryWins, holdsWinner, ticketNumbersOf } from "@/lib/derive";
+import { clock, short, shortDate, sol, ticketRange } from "@/lib/format";
 import { solscanAccount } from "@/lib/config";
 import type { DrawView, EntryView } from "@/lib/types";
-import { plural, tno } from "./fmt";
+import { n, plural, prizeSol, tnoOf } from "./fmt";
 
 const PAGE = 12;
 
-/** "#0034", "0034", "34" → 34; anything else → null */
+/** "#0034", "#0,034", "0034", "34" → 34; anything else → null */
 export function ticketQuery(q: string): number | null {
   const m = q.trim().match(/^(?:#|no\.?\s*|nº\s*)?(\d{1,6})$/i);
-  return m ? Number(m[1]) : null;
+  if (m) return Number(m[1]);
+  const c = q.trim().match(/^#?(\d{1,3}),(\d{3})$/);
+  return c ? Number(c[1] + c[2]) : null;
 }
 
 /** Base58 has no 0, so only a 5+ digit run without one could be part of an address. */
@@ -23,13 +25,13 @@ const maybeBase58 = (s: string) => /^[1-9]{5,}$/.test(s);
 /**
  * A ticket number matches the entry that holds it, and nothing else: an address that merely contains the
  * digits ("19" inside an Entry address nobody sees in the row) is not a match. Other text matches the
- * wallet or the Entry address, any part of it.
+ * wallet or the Entry address, any part of it. A sealed entry has no numbers yet, so it never matches one.
  */
 export function matchEntry(e: EntryView, q: string): boolean {
   const s = q.trim();
   if (!s) return true;
   const t = ticketQuery(s);
-  if (t !== null && (e.numbers.length ? e.numbers.includes(t) : t >= e.firstTicket && t < e.firstTicket + e.count)) return true;
+  if (t !== null && e.tickets.includes(t)) return true;
   if (t !== null && !maybeBase58(s)) return false;
   // base58 is case-sensitive, but people type in any case
   const lo = s.toLowerCase();
@@ -39,29 +41,25 @@ export function matchEntry(e: EntryView, q: string): boolean {
 const iso = (unix: number) => new Date(unix * 1000).toISOString().replace(".000Z", "Z");
 const lamportsToSol = (l: bigint) => sol(l, 1, 9);
 
-/** One CSV row per Entry account, straight from the decoded accounts (nothing derived but the last ticket). */
+/** One CSV row per Entry account, straight from the decoded accounts. */
 export function entriesCsv(d: DrawView, entries: EntryView[]): string {
   const head = [
     "draw",
     "entry_account",
     "seq",
     "owner",
-    "first_ticket",
-    "last_ticket",
+    "first_pos",
     "count",
     "kind",
-    "paid_count",
-    "credit_count",
     "paid_sol",
     "created_at_utc",
-    "pool_snapshot_sol",
     "revealed",
+    "tickets",
+    "prizes",
     "instant_wins",
-    "sol_paid",
-    "credits_won",
+    "instant_paid_sol",
     "refunded",
     "vrf_request",
-    "numbers",
   ];
   const rows = entries
     .slice()
@@ -71,43 +69,54 @@ export function entriesCsv(d: DrawView, entries: EntryView[]): string {
       e.address.toBase58(),
       e.seq,
       e.owner.toBase58(),
-      e.firstTicket,
-      e.firstTicket + e.count - 1,
+      e.firstPos,
       e.count,
-      e.isFree ? "free" : e.paidCount === 0 ? "credits" : e.creditCount > 0 ? "paid+credits" : "paid",
-      e.paidCount,
-      e.creditCount,
+      e.isFree ? "free" : "paid",
       lamportsToSol(e.paidLamports),
       iso(e.createdAt),
-      e.needsReveal ? lamportsToSol(e.poolSnapshot) : "",
       e.needsReveal ? (e.revealed ? "yes" : "no") : "",
+      e.tickets.length ? e.tickets.join(" ") : "",
+      e.revealed ? e.prizes.join(" ") : "",
       e.needsReveal && e.revealed ? entryWins(e) : "",
-      e.needsReveal && e.revealed ? lamportsToSol(e.solPaid) : "",
-      e.needsReveal && e.revealed ? e.creditsWon : "",
+      e.needsReveal && e.revealed ? lamportsToSol(e.instantPaid) : "",
       e.refunded ? "yes" : "no",
       e.needsReveal ? e.vrfRequest.toBase58() : "",
-      e.numbers.length ? e.numbers.join(" ") : "",
     ]);
   return [head, ...rows].map((r) => r.join(",")).join("\r\n") + "\r\n";
 }
 
-/** "#0031–#0040 ×10", and "has #0034" in blue ink when a ticket search matched inside the range. */
-function Range({ e, hit }: { e: EntryView; hit: number | null }) {
-  if (e.numbers.length) {
-    const nums = ticketNumbersOf(e);
+/** The tickets as the row says them: "#0,701, #1,325, #1,908, +27 ×30"; sealed: "numbers pending ×30"; legacy: the range. */
+function describeTickets(d: DrawView, e: EntryView): string {
+  if (!d.randomNumbers) return ticketRange(e.firstPos, e.count);
+  const nums = ticketNumbersOf(e);
+  if (!nums.length) return `numbers pending ×${e.count}`;
+  return `${nums.slice(0, 3).map((t) => tnoOf(d, t)).join(", ")}${nums.length > 3 ? `, +${nums.length - 3}` : ""}`;
+}
+
+/** "#0,701, #1,325, #1,908, +27 ×30", and "has #0,034" in blue ink when a ticket search matched inside. */
+function Range({ d, e, hit }: { d: DrawView; e: EntryView; hit: number | null }) {
+  const nums = ticketNumbersOf(e);
+  if (!d.randomNumbers)
     return (
       <>
-        <span className="nw">{nums.slice(0, 3).map(tno).join(", ")}{nums.length > 3 ? `, +${nums.length - 3}` : ""}</span>{" "}
-        <span className="x nw">{e.isFree ? "free" : `×${e.count}`}</span>
-        {hit !== null && <i className="has nw"> has {tno(hit)}</i>}
+        <span className="nw">{ticketRange(e.firstPos, e.count)}</span> <span className="x nw">{e.isFree ? "free" : `×${e.count}`}</span>
+        {hit !== null && <i className="has nw"> has {tnoOf(d, hit)}</i>}
       </>
     );
-  }
+  if (!nums.length)
+    return (
+      <>
+        <span className="nw c-3">numbers pending</span> <span className="x nw">{e.isFree ? "free" : `×${e.count}`}</span>
+      </>
+    );
   return (
     <>
-      <span className="nw">{ticketRange(e.firstTicket, e.count)}</span>{" "}
-      <span className="x nw">{e.isFree ? "free" : e.creditCount > 0 ? `×${e.count}, ${e.creditCount} on credits` : `×${e.count}`}</span>
-      {hit !== null && <i className="has nw"> has {ticketNo(hit)}</i>}
+      <span className="nw">
+        {nums.slice(0, 3).map((t) => tnoOf(d, t)).join(", ")}
+        {nums.length > 3 ? `, +${nums.length - 3}` : ""}
+      </span>{" "}
+      <span className="x nw">{e.isFree ? "free" : `×${e.count}`}</span>
+      {hit !== null && <i className="has nw"> has {tnoOf(d, hit)}</i>}
     </>
   );
 }
@@ -169,7 +178,7 @@ export function EntryLedger({
               inputMode="search"
               autoComplete="off"
               spellCheck={false}
-              placeholder="Wallet address or #0020"
+              placeholder={d.randomNumbers ? "Wallet address or #1,908" : "Wallet address or #0020"}
               value={q}
               onChange={(e) => setQ(e.target.value)}
             />
@@ -197,7 +206,7 @@ export function EntryLedger({
             <span>Time (UTC)</span>
             <span>Wallet</span>
             <span className="tix">Tickets</span>
-            <span className="r">{d.kind === "headline" ? "Result" : "Instant result"}</span>
+            <span className="r">{d.legacy === "headline" ? "Result" : "Instant result"}</span>
           </div>
         )}
         {state === "loading" && entries.length === 0 ? (
@@ -218,18 +227,27 @@ export function EntryLedger({
           </p>
         ) : entries.length === 0 ? (
           <p className="t-body c-ink-2" style={{ padding: "16px 0" }}>
-            {d.status === "open" ? <>No tickets yet. The first entry gets ticket {ticketNo(0)}.</> : <>No tickets were sold or claimed in Draw Nº {d.id}.</>}
+            {d.status === "open" ? (
+              <>No tickets yet. Ticket numbers are handed out at random from the pool of {n(d.ticketCap)} when each entry is revealed.</>
+            ) : (
+              <>No tickets were sold or claimed in Draw Nº {d.id}.</>
+            )}
           </p>
         ) : (
           <div role="list" aria-label={`Entries of Draw Nº ${d.id}`}>
             {rows.map((e) => {
               const wins = entryWins(e);
               const mine = !!me && e.owner.equals(me);
-              const won = [e.solPaid > BigInt(0) ? `+${sol(e.solPaid, 2, 4)} SOL` : "", e.creditsWon > 0 ? `+${e.creditsWon} free ${plural(e.creditsWon, "ticket", "tickets")}` : ""].filter(Boolean).join(" ");
+              const won = [
+                e.instantPaid > BigInt(0) ? `+${prizeSol(e.instantPaid)} SOL` : "",
+                (e.legacyCreditsWon ?? 0) > 0 ? `+${e.legacyCreditsWon} free ${plural(e.legacyCreditsWon!, "ticket", "tickets")}` : "",
+              ]
+                .filter(Boolean)
+                .join(" ");
               const result = !e.needsReveal ? (e.isFree ? "free entry" : "in the draw") : !e.revealed ? "sealed" : wins > 0 ? won || "won" : "no win";
-              const drawn = d.status === "settled" && ticketNumbersOf(e).includes(d.winningTicket);
-              // a ticket-number search: say which ticket of a multi-ticket range matched
-              const hit = qt !== null && e.count > 1 && ticketNumbersOf(e).includes(qt) ? qt : null;
+              const drawn = holdsWinner(d, e);
+              // a ticket-number search: say which ticket of a multi-ticket entry matched
+              const hit = qt !== null && e.count > 1 && e.tickets.includes(qt) ? qt : null;
               return (
                 <a
                   role="listitem"
@@ -238,7 +256,7 @@ export function EntryLedger({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="erow"
-                  aria-label={`${short(e.owner.toBase58())}${mine ? " (you)" : ""}, ${ticketRange(e.firstTicket, e.count)}, ${result}${drawn ? `, holds the winning ticket ${ticketNo(d.winningTicket)}` : ""}. Entry account on Solscan.`}
+                  aria-label={`${short(e.owner.toBase58())}${mine ? " (you)" : ""}, ${describeTickets(d, e)}, ${result}${drawn ? `, holds the winning ticket ${tnoOf(d, d.winningTicket)}` : ""}. Entry account on Solscan.`}
                 >
                   <span className="t">{sameDay(e.createdAt) ? clock(e.createdAt) : shortDate(e.createdAt)}</span>
                   <span className="wcell">
@@ -246,13 +264,13 @@ export function EntryLedger({
                       {short(e.owner.toBase58())}
                       {mine && <span className="you">you</span>}
                     </span>
-                    {/* phones: the Tickets column is hidden, so the range sits under the wallet (a ticket search shows its match) */}
+                    {/* phones: the Tickets column is hidden, so the numbers sit under the wallet (a ticket search shows its match) */}
                     <span className="sub-m">
-                      <Range e={e} hit={hit} />
+                      <Range d={d} e={e} hit={hit} />
                     </span>
                   </span>
                   <span className="tix">
-                    <Range e={e} hit={hit} />
+                    <Range d={d} e={e} hit={hit} />
                   </span>
                   <span className="r">
                     {!e.needsReveal ? (
@@ -271,11 +289,11 @@ export function EntryLedger({
                     ) : (
                       <i className="nw">no win</i>
                     )}
-                    {/* phones: the drawn ticket gets a line of its own, so the wallet and range keep their width */}
+                    {/* phones: the drawn ticket gets a line of its own, so the wallet and numbers keep their width */}
                     {drawn && (
                       <span className="w drawn nw dmark">
                         <span className="dsep"> · </span>
-                        {e.numbers.length ? tno(d.winningTicket) : ticketNo(d.winningTicket)} drawn
+                        {tnoOf(d, d.winningTicket)} drawn
                       </span>
                     )}
                   </span>

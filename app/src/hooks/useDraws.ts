@@ -5,13 +5,13 @@ import { PROGRAM_ID } from "@/lib/config";
 import { fetchAllDraws, fetchConfig, fetchLegacyDraws, type AnyProgram } from "@/lib/chain";
 import type { ConfigView, DrawView, LoadState } from "@/lib/types";
 
-/** The catalogue (every draw's pot, sales and status) is re-read this often while the page is open. */
+/** The catalogue (every draw's sales and status) is re-read this often while the page is open. */
 const CATALOGUE_MS = 60_000;
 
 /**
- * Config + every DrawV3 account, and the legacy v2 draws still on chain. The first read is tried three times
- * (2 s, then 4 s) before the error state; after that the catalogue is re-read once a minute, and a failed
- * re-read keeps what was read (the current draw has its own faster poll and stale note).
+ * Config + every DrawV4 account (with its Schedule), and the v3 draws still on chain. The first read is tried
+ * three times (2 s, then 4 s) before the error state; after that the catalogue is re-read once a minute, and
+ * a failed re-read keeps what was read (the current draw has its own faster poll and stale note).
  */
 export function useDraws(program: AnyProgram, legacy: AnyProgram) {
   const [load, setLoad] = useState<LoadState>({ kind: "loading" });
@@ -47,20 +47,13 @@ export function useDraws(program: AnyProgram, legacy: AnyProgram) {
           }
         }
         const [cfg, all] = got;
-        // history: never blocks the page, and a missing (closed) v2 account is simply not shown
+        // history: never blocks the page, and a closed v3 account is simply not shown
         const old = await fetchLegacyDraws(legacy).catch(() => null);
         if (!alive) return;
         setConfig(cfg);
         setDraws(all);
         if (old) setLegacy(old);
-        setLoad(
-          !cfg
-            ? { kind: "nodraw", reason: "no-config" }
-            : all.length > 0
-              ? { kind: "ready" }
-              : // the config still has its v2 layout: the v3 upgrade hasn't been completed (migrate_config)
-                { kind: "nodraw", reason: cfg.keeper === null ? "upgrading" : "no-draws" }
-        );
+        setLoad(!cfg ? { kind: "nodraw", reason: "no-config" } : all.length > 0 ? { kind: "ready" } : { kind: "nodraw", reason: "no-draws" });
       } catch (e) {
         if (!alive) return;
         // a failed first read shows no numbers at all; a failed re-read keeps the last good one

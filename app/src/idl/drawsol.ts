@@ -8,16 +8,15 @@ export type Drawsol = {
   "address": "FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb",
   "metadata": {
     "name": "drawsol",
-    "version": "3.0.0",
+    "version": "4.0.0",
     "spec": "0.1.0",
-    "description": "DrawSol v3 - pot and headline prize draws with ORAO VRF instant wins"
+    "description": "DrawSol v4 - escrowed end prize, published instant-prize schedule, random ticket numbers via ORAO VRF"
   },
   "instructions": [
     {
       "name": "buyTickets",
       "docs": [
-        "Buys `quantity` tickets as one entry, `use_credits` of them paid with credits.",
-        "Pot draws with instant tiers request the entry's ORAO randomness."
+        "Buys `quantity` (≤ max_per_tx ≤ 1000) tickets as one entry and requests its ORAO randomness."
       ],
       "discriminator": [
         48,
@@ -42,13 +41,13 @@ export type Drawsol = {
                   114,
                   97,
                   119,
-                  51
+                  52
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "drawV3"
+                "account": "drawV4"
               }
             ]
           }
@@ -66,7 +65,7 @@ export type Drawsol = {
                   117,
                   108,
                   116,
-                  51
+                  52
                 ]
               },
               {
@@ -78,6 +77,10 @@ export type Drawsol = {
         },
         {
           "name": "entry",
+          "docs": [
+            "Sized from `quantity` (tickets + prizes vectors). Clamped to MAX_PER_TX so an oversized quantity",
+            "fails with `ExceedsPerTx` in the handler rather than with the allocator's size limit."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
@@ -89,7 +92,7 @@ export type Drawsol = {
                   116,
                   114,
                   121,
-                  51
+                  52
                 ]
               },
               {
@@ -99,7 +102,7 @@ export type Drawsol = {
               {
                 "kind": "account",
                 "path": "draw.entry_count",
-                "account": "drawV3"
+                "account": "drawV4"
               }
             ]
           }
@@ -118,7 +121,7 @@ export type Drawsol = {
                   121,
                   101,
                   114,
-                  51
+                  52
                 ]
               },
               {
@@ -159,7 +162,7 @@ export type Drawsol = {
         {
           "name": "buyer",
           "docs": [
-            "Pays the tickets, the ORAO fee (pot draws) and rent; becomes the entry owner."
+            "Pays the tickets, the ORAO fee and rent; becomes the entry owner."
           ],
           "writable": true,
           "signer": true
@@ -167,15 +170,13 @@ export type Drawsol = {
         {
           "name": "vrfRequest",
           "docs": [
-            "checked in `request_randomness` and created by the ORAO CPI (`init`, so never reused)."
+            "and created by the ORAO CPI (`init`, so never reused)."
           ],
-          "writable": true,
-          "optional": true
+          "writable": true
         },
         {
           "name": "vrfConfig",
           "writable": true,
-          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -255,12 +256,10 @@ export type Drawsol = {
         },
         {
           "name": "vrfTreasury",
-          "writable": true,
-          "optional": true
+          "writable": true
         },
         {
           "name": "vrf",
-          "optional": true,
           "address": "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y"
         },
         {
@@ -271,10 +270,6 @@ export type Drawsol = {
       "args": [
         {
           "name": "quantity",
-          "type": "u16"
-        },
-        {
-          "name": "useCredits",
           "type": "u16"
         },
         {
@@ -291,7 +286,7 @@ export type Drawsol = {
     {
       "name": "cancelDraw",
       "docs": [
-        "Permissionless. Cancels a draw whose randomness never arrived (after the grace period)."
+        "Cancels a draw whose randomness never arrived (anyone, 48 h after draw_at) or a Draft (authority)."
       ],
       "discriminator": [
         105,
@@ -316,16 +311,20 @@ export type Drawsol = {
                   114,
                   97,
                   119,
-                  51
+                  52
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "drawV3"
+                "account": "drawV4"
               }
             ]
           }
+        },
+        {
+          "name": "signer",
+          "signer": true
         }
       ],
       "args": []
@@ -333,7 +332,7 @@ export type Drawsol = {
     {
       "name": "claimFreeEntry",
       "docs": [
-        "One free ticket per wallet, up to `free_cap`. Rolls for instant wins in pot draws."
+        "One free ticket per wallet, up to `free_cap`: a normal ticket in every respect."
       ],
       "discriminator": [
         201,
@@ -358,13 +357,13 @@ export type Drawsol = {
                   114,
                   97,
                   119,
-                  51
+                  52
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "drawV3"
+                "account": "drawV4"
               }
             ]
           }
@@ -382,7 +381,7 @@ export type Drawsol = {
                   116,
                   114,
                   121,
-                  51
+                  52
                 ]
               },
               {
@@ -392,7 +391,7 @@ export type Drawsol = {
               {
                 "kind": "account",
                 "path": "draw.entry_count",
-                "account": "drawV3"
+                "account": "drawV4"
               }
             ]
           }
@@ -411,7 +410,7 @@ export type Drawsol = {
                   121,
                   101,
                   114,
-                  51
+                  52
                 ]
               },
               {
@@ -451,21 +450,16 @@ export type Drawsol = {
         },
         {
           "name": "buyer",
-          "docs": [
-            "The claiming wallet (pays rent and, in pot draws, the ORAO fee; becomes the entry owner)."
-          ],
           "writable": true,
           "signer": true
         },
         {
           "name": "vrfRequest",
-          "writable": true,
-          "optional": true
+          "writable": true
         },
         {
           "name": "vrfConfig",
           "writable": true,
-          "optional": true,
           "pda": {
             "seeds": [
               {
@@ -545,12 +539,10 @@ export type Drawsol = {
         },
         {
           "name": "vrfTreasury",
-          "writable": true,
-          "optional": true
+          "writable": true
         },
         {
           "name": "vrf",
-          "optional": true,
           "address": "VRFzZoJdhFWL8rkvu87LpKM3RbcVezpMEc6X5GVDr7y"
         },
         {
@@ -573,7 +565,7 @@ export type Drawsol = {
     {
       "name": "claimRefund",
       "docs": [
-        "Permissionless. Refunds an entry of a cancelled draw (paid − instant SOL received; credits back)."
+        "Permissionless. Refunds an entry of a cancelled draw (paid − instant prizes received)."
       ],
       "discriminator": [
         15,
@@ -598,13 +590,13 @@ export type Drawsol = {
                   114,
                   97,
                   119,
-                  51
+                  52
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "drawV3"
+                "account": "drawV4"
               }
             ]
           },
@@ -625,7 +617,7 @@ export type Drawsol = {
                   117,
                   108,
                   116,
-                  51
+                  52
                 ]
               },
               {
@@ -648,7 +640,7 @@ export type Drawsol = {
                   116,
                   114,
                   121,
-                  51
+                  52
                 ]
               },
               {
@@ -658,32 +650,7 @@ export type Drawsol = {
               {
                 "kind": "account",
                 "path": "entry.seq",
-                "account": "entryV3"
-              }
-            ]
-          }
-        },
-        {
-          "name": "profile",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
-                  114,
-                  111,
-                  102,
-                  105,
-                  108,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "entry.owner",
-                "account": "entryV3"
+                "account": "entryV4"
               }
             ]
           }
@@ -699,19 +666,20 @@ export type Drawsol = {
       "args": []
     },
     {
-      "name": "createHeadlineDraw",
+      "name": "createDraw",
       "docs": [
-        "Admin only. Headline draw; escrows the prize. Enforces sell-out house share and the floor margin."
+        "Admin or keeper. Creates a Draft draw with its vault, pool header and (zeroed) schedule.",
+        "Validates the SPEC-v4 §1 inequalities."
       ],
       "discriminator": [
-        213,
-        32,
-        22,
-        3,
-        28,
-        221,
-        209,
-        205
+        107,
+        29,
+        230,
+        63,
+        112,
+        148,
+        0,
+        105
       ],
       "accounts": [
         {
@@ -745,7 +713,7 @@ export type Drawsol = {
                   114,
                   97,
                   119,
-                  51
+                  52
                 ]
               },
               {
@@ -769,7 +737,7 @@ export type Drawsol = {
                   117,
                   108,
                   116,
-                  51
+                  52
                 ]
               },
               {
@@ -780,104 +748,48 @@ export type Drawsol = {
           }
         },
         {
-          "name": "admin",
+          "name": "pool",
           "docs": [
-            "Pays rent and escrows the prize."
+            "Header only (`remaining = 0`); `init_pool` grows and fills it."
           ],
           "writable": true,
-          "signer": true,
-          "relations": [
-            "config"
-          ]
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "params",
-          "type": {
-            "defined": {
-              "name": "headlineDrawParams"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "createPotDraw",
-      "docs": [
-        "Admin or keeper. Nightly pot draw; no escrow. Enforces the house/pot/instant split bounds."
-      ],
-      "discriminator": [
-        18,
-        114,
-        222,
-        212,
-        15,
-        39,
-        32,
-        111
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  99,
+                  112,
                   111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "draw",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  114,
-                  97,
-                  119,
-                  51
+                  111,
+                  108
                 ]
               },
               {
                 "kind": "account",
-                "path": "config.next_draw_id",
-                "account": "config"
+                "path": "draw"
               }
             ]
           }
         },
         {
-          "name": "vault",
+          "name": "schedule",
+          "docs": [
+            "Zeroed; full size when `8 + cap ≤ 10 KB`, else grown by `init_pool`."
+          ],
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  118,
-                  97,
+                  115,
+                  99,
+                  104,
+                  101,
+                  100,
                   117,
                   108,
-                  116,
-                  51
+                  101
                 ]
               },
               {
@@ -890,7 +802,7 @@ export type Drawsol = {
         {
           "name": "creator",
           "docs": [
-            "Admin or keeper; pays rent only (no escrow)."
+            "Admin or keeper; pays rent only (the escrow comes from the authority at `open_draw`)."
           ],
           "writable": true,
           "signer": true
@@ -905,7 +817,7 @@ export type Drawsol = {
           "name": "params",
           "type": {
             "defined": {
-              "name": "potDrawParams"
+              "name": "createDrawParams"
             }
           }
         }
@@ -914,7 +826,7 @@ export type Drawsol = {
     {
       "name": "initConfig",
       "docs": [
-        "Fresh deployments: creates the v3 Config. Signer must be the program's upgrade authority."
+        "Fresh deployments: creates the Config. Signer must be the program's upgrade authority."
       ],
       "discriminator": [
         23,
@@ -971,19 +883,143 @@ export type Drawsol = {
       ]
     },
     {
-      "name": "legacyCloseV2",
+      "name": "initPool",
       "docs": [
-        "Admin only. Closes an empty or fully settled v2 draw + vault (raw-byte parse) into the admin."
+        "Admin or keeper. Fills `pool[from..to] = from..to` (sequential chunks of ≤ 2000), growing the account."
       ],
       "discriminator": [
-        137,
-        242,
-        182,
-        192,
-        93,
-        74,
-        120,
-        216
+        116,
+        233,
+        199,
+        204,
+        115,
+        159,
+        171,
+        36
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "draw",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119,
+                  52
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw.id",
+                "account": "drawV4"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "schedule",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  99,
+                  104,
+                  101,
+                  100,
+                  117,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "from",
+          "type": "u32"
+        },
+        {
+          "name": "to",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "legacyCloseV3",
+      "docs": [
+        "Admin only. Closes a v3 draw + vault (raw-byte parse) into the admin: zero entries (escrow back),",
+        "or Settled / Cancelled with nothing owed."
+      ],
+      "discriminator": [
+        187,
+        1,
+        61,
+        187,
+        43,
+        54,
+        55,
+        115
       ],
       "accounts": [
         {
@@ -1007,7 +1043,7 @@ export type Drawsol = {
         {
           "name": "admin",
           "docs": [
-            "Receives every lamport of the v2 draw and vault."
+            "Receives every lamport of the v3 draw and vault."
           ],
           "writable": true,
           "signer": true,
@@ -1026,7 +1062,8 @@ export type Drawsol = {
                   100,
                   114,
                   97,
-                  119
+                  119,
+                  51
                 ]
               },
               {
@@ -1048,7 +1085,8 @@ export type Drawsol = {
                   97,
                   117,
                   108,
-                  116
+                  116,
+                  51
                 ]
               },
               {
@@ -1067,68 +1105,135 @@ export type Drawsol = {
       ]
     },
     {
-      "name": "migrateConfig",
+      "name": "openDraw",
       "docs": [
-        "Admin only. Reallocs the v2 Config into the v3 layout and sets the keeper."
+        "Authority. Draft → Open: pool complete, schedule complete, escrows end prize + schedule total,",
+        "emits the schedule hash."
       ],
       "discriminator": [
-        92,
-        131,
-        58,
-        105,
-        210,
-        154,
-        224,
-        193
+        112,
+        254,
+        220,
+        225,
+        218,
+        132,
+        209,
+        144
       ],
       "accounts": [
         {
-          "name": "config",
-          "docs": [
-            "owner, discriminator and length checked in the handler."
-          ],
+          "name": "draw",
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
+                  100,
+                  114,
+                  97,
+                  119,
+                  52
                 ]
+              },
+              {
+                "kind": "account",
+                "path": "draw.id",
+                "account": "drawV4"
               }
             ]
           }
         },
         {
-          "name": "admin",
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  52
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "schedule",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  99,
+                  104,
+                  101,
+                  100,
+                  117,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
           "docs": [
-            "Must be the admin stored in the v2 Config. Pays the extra rent."
+            "Escrows the prizes."
           ],
           "writable": true,
-          "signer": true
+          "signer": true,
+          "relations": [
+            "draw"
+          ]
         },
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": [
-        {
-          "name": "keeper",
-          "type": "pubkey"
-        }
-      ]
+      "args": []
     },
     {
       "name": "requestDraw",
       "docs": [
-        "At draw_at: keeper/authority first, anyone after the public grace. Requests the grand-draw",
-        "randomness, or cancels (no tickets / headline below min_tickets)."
+        "At draw_at: keeper/authority first, anyone after the public grace. Requests the end-prize",
+        "randomness, or cancels and returns the escrow when nothing was sold."
       ],
       "discriminator": [
         22,
@@ -1171,13 +1276,13 @@ export type Drawsol = {
                   114,
                   97,
                   119,
-                  51
+                  52
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "drawV3"
+                "account": "drawV4"
               }
             ]
           }
@@ -1195,7 +1300,7 @@ export type Drawsol = {
                   117,
                   108,
                   116,
-                  51
+                  52
                 ]
               },
               {
@@ -1220,7 +1325,7 @@ export type Drawsol = {
         {
           "name": "vrfRequest",
           "docs": [
-            "Not needed when the draw is cancelled here (no tickets / headline undersold)."
+            "Not needed when the draw is cancelled here (no tickets)."
           ],
           "writable": true,
           "optional": true
@@ -1336,7 +1441,8 @@ export type Drawsol = {
     {
       "name": "revealEntry",
       "docs": [
-        "Permissionless. Computes a pot entry's instant results and pays them from the instant pool."
+        "Permissionless. Assigns the entry's ticket numbers at random from the pool, looks them up in the",
+        "schedule and pays the instant prizes from the vault to the owner."
       ],
       "discriminator": [
         55,
@@ -1361,13 +1467,13 @@ export type Drawsol = {
                   114,
                   97,
                   119,
-                  51
+                  52
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "drawV3"
+                "account": "drawV4"
               }
             ]
           },
@@ -1388,7 +1494,53 @@ export type Drawsol = {
                   117,
                   108,
                   116,
-                  51
+                  52
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "schedule",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  99,
+                  104,
+                  101,
+                  100,
+                  117,
+                  108,
+                  101
                 ]
               },
               {
@@ -1411,7 +1563,7 @@ export type Drawsol = {
                   116,
                   114,
                   121,
-                  51
+                  52
                 ]
               },
               {
@@ -1421,7 +1573,7 @@ export type Drawsol = {
               {
                 "kind": "account",
                 "path": "entry.seq",
-                "account": "entryV3"
+                "account": "entryV4"
               }
             ]
           }
@@ -1440,7 +1592,7 @@ export type Drawsol = {
                   121,
                   101,
                   114,
-                  51
+                  52
                 ]
               },
               {
@@ -1450,35 +1602,7 @@ export type Drawsol = {
               {
                 "kind": "account",
                 "path": "entry.owner",
-                "account": "entryV3"
-              }
-            ]
-          }
-        },
-        {
-          "name": "profile",
-          "docs": [
-            "Receives credit prizes."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  112,
-                  114,
-                  111,
-                  102,
-                  105,
-                  108,
-                  101
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "entry.owner",
-                "account": "entryV3"
+                "account": "entryV4"
               }
             ]
           }
@@ -1661,9 +1785,110 @@ export type Drawsol = {
       ]
     },
     {
+      "name": "setSchedule",
+      "docs": [
+        "Admin or keeper. Registers winning numbers (≤ 300 per call), each once, per-tier counts enforced."
+      ],
+      "discriminator": [
+        224,
+        44,
+        153,
+        248,
+        237,
+        182,
+        26,
+        154
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "draw",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  114,
+                  97,
+                  119,
+                  52
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw.id",
+                "account": "drawV4"
+              }
+            ]
+          }
+        },
+        {
+          "name": "schedule",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  99,
+                  104,
+                  101,
+                  100,
+                  117,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "draw"
+              }
+            ]
+          }
+        },
+        {
+          "name": "signer",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "entries",
+          "type": {
+            "vec": {
+              "defined": {
+                "name": "scheduleEntry"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "settleDraw",
       "docs": [
-        "Permissionless. Pays the prize to the owner of the entry holding the winning ticket."
+        "Permissionless. Pays the end prize (or the fallback pot) to the owner of the entry holding the",
+        "winning position; returns unused escrow to the authority."
       ],
       "discriminator": [
         175,
@@ -1688,13 +1913,13 @@ export type Drawsol = {
                   114,
                   97,
                   119,
-                  51
+                  52
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "drawV3"
+                "account": "drawV4"
               }
             ]
           }
@@ -1712,7 +1937,7 @@ export type Drawsol = {
                   117,
                   108,
                   116,
-                  51
+                  52
                 ]
               },
               {
@@ -1737,7 +1962,7 @@ export type Drawsol = {
                   116,
                   114,
                   121,
-                  51
+                  52
                 ]
               },
               {
@@ -1747,13 +1972,17 @@ export type Drawsol = {
               {
                 "kind": "account",
                 "path": "winning_entry.seq",
-                "account": "entryV3"
+                "account": "entryV4"
               }
             ]
           }
         },
         {
           "name": "winner",
+          "writable": true
+        },
+        {
+          "name": "authority",
           "writable": true
         }
       ],
@@ -1762,7 +1991,7 @@ export type Drawsol = {
     {
       "name": "withdraw",
       "docs": [
-        "Authority only. House share after settlement; a cancelled headline's escrow."
+        "Authority only. House share (+ released schedule escrow) after settlement; a cancelled draw's escrow."
       ],
       "discriminator": [
         183,
@@ -1787,13 +2016,13 @@ export type Drawsol = {
                   114,
                   97,
                   119,
-                  51
+                  52
                 ]
               },
               {
                 "kind": "account",
                 "path": "draw.id",
-                "account": "drawV3"
+                "account": "drawV4"
               }
             ]
           }
@@ -1811,7 +2040,7 @@ export type Drawsol = {
                   117,
                   108,
                   116,
-                  51
+                  52
                 ]
               },
               {
@@ -1848,29 +2077,29 @@ export type Drawsol = {
       ]
     },
     {
-      "name": "drawV3",
+      "name": "drawV4",
       "discriminator": [
-        206,
+        102,
         90,
-        215,
-        73,
-        142,
-        148,
-        222,
-        180
+        64,
+        115,
+        209,
+        8,
+        242,
+        137
       ]
     },
     {
-      "name": "entryV3",
+      "name": "entryV4",
       "discriminator": [
-        74,
-        167,
-        205,
-        142,
-        221,
-        218,
-        145,
-        92
+        185,
+        87,
+        25,
+        103,
+        30,
+        232,
+        241,
+        205
       ]
     },
     {
@@ -1887,16 +2116,29 @@ export type Drawsol = {
       ]
     },
     {
-      "name": "playerV3",
+      "name": "playerV4",
       "discriminator": [
-        130,
-        220,
-        60,
-        9,
-        70,
-        116,
-        81,
-        47
+        37,
+        134,
+        128,
+        128,
+        26,
+        182,
+        14,
+        27
+      ]
+    },
+    {
+      "name": "pool",
+      "discriminator": [
+        241,
+        154,
+        109,
+        4,
+        17,
+        177,
+        109,
+        188
       ]
     },
     {
@@ -1913,16 +2155,29 @@ export type Drawsol = {
       ]
     },
     {
-      "name": "vaultV3",
+      "name": "schedule",
       "discriminator": [
-        184,
-        9,
-        135,
-        157,
-        3,
-        29,
-        93,
-        211
+        217,
+        243,
+        116,
+        56,
+        73,
+        82,
+        207,
+        51
+      ]
+    },
+    {
+      "name": "vault",
+      "discriminator": [
+        211,
+        8,
+        232,
+        43,
+        2,
+        152,
+        117,
+        119
       ]
     }
   ],
@@ -1951,6 +2206,19 @@ export type Drawsol = {
         202,
         47,
         191
+      ]
+    },
+    {
+      "name": "drawOpened",
+      "discriminator": [
+        115,
+        154,
+        69,
+        194,
+        0,
+        227,
+        121,
+        20
       ]
     },
     {
@@ -2045,6 +2313,19 @@ export type Drawsol = {
       ]
     },
     {
+      "name": "poolInitialised",
+      "discriminator": [
+        141,
+        214,
+        45,
+        117,
+        209,
+        51,
+        224,
+        221
+      ]
+    },
+    {
       "name": "refunded",
       "discriminator": [
         35,
@@ -2055,6 +2336,19 @@ export type Drawsol = {
         123,
         221,
         99
+      ]
+    },
+    {
+      "name": "scheduleSet",
+      "discriminator": [
+        144,
+        221,
+        214,
+        78,
+        222,
+        207,
+        219,
+        253
       ]
     },
     {
@@ -2175,13 +2469,13 @@ export type Drawsol = {
     },
     {
       "code": 6015,
-      "name": "noInstantRoll",
-      "msg": "This entry has no instant roll"
+      "name": "wrongWinningEntry",
+      "msg": "This entry does not hold the winning position"
     },
     {
       "code": 6016,
-      "name": "wrongWinningEntry",
-      "msg": "This entry does not hold the winning ticket"
+      "name": "winnerNotRevealed",
+      "msg": "The winning entry has not been revealed yet"
     },
     {
       "code": 6017,
@@ -2215,46 +2509,106 @@ export type Drawsol = {
     },
     {
       "code": 6023,
-      "name": "insufficientCredits",
-      "msg": "Not enough credits"
-    },
-    {
-      "code": 6024,
       "name": "spendLimitExceeded",
       "msg": "This purchase would exceed your spend limit for the period"
     },
     {
-      "code": 6025,
+      "code": 6024,
       "name": "selfExcluded",
       "msg": "This wallet is self-excluded"
     },
     {
-      "code": 6026,
+      "code": 6025,
       "name": "vaultShortfall",
       "msg": "The vault cannot cover this payment yet; the operator must top it up"
     },
     {
+      "code": 6026,
+      "name": "notLegacyAccount",
+      "msg": "Account is not a legacy account of this program"
+    },
+    {
       "code": 6027,
-      "name": "alreadyMigrated",
-      "msg": "Config is already migrated"
+      "name": "legacyNotClosable",
+      "msg": "The legacy draw still holds liabilities and cannot be closed"
     },
     {
       "code": 6028,
-      "name": "notLegacyAccount",
-      "msg": "Account is not a v2 account of this program"
+      "name": "wrongSideAccount",
+      "msg": "Pool / Schedule account is not the draw's (owner, seeds or discriminator)"
     },
     {
       "code": 6029,
-      "name": "legacyNotClosable",
-      "msg": "The v2 draw still holds liabilities and cannot be closed"
+      "name": "badPoolChunk",
+      "msg": "init_pool chunk must start at the next unfilled number and hold 1..=2000 numbers up to the cap"
+    },
+    {
+      "code": 6030,
+      "name": "poolIncomplete",
+      "msg": "The pool is not fully initialised yet"
+    },
+    {
+      "code": 6031,
+      "name": "badScheduleBatch",
+      "msg": "Schedule batch is empty or larger than 300"
+    },
+    {
+      "code": 6032,
+      "name": "duplicateScheduleTicket",
+      "msg": "This ticket number is already in the schedule"
+    },
+    {
+      "code": 6033,
+      "name": "tierFull",
+      "msg": "This tier already has every winning number registered"
+    },
+    {
+      "code": 6034,
+      "name": "scheduleIncomplete",
+      "msg": "Not every tier has all its winning numbers registered"
+    },
+    {
+      "code": 6035,
+      "name": "poolExhausted",
+      "msg": "The pool is corrupt: no numbers left to assign"
     }
   ],
   "types": [
     {
-      "name": "commonDrawParams",
+      "name": "config",
       "docs": [
-        "Parameters shared by both draw kinds."
+        "seeds = [b\"config\"]",
+        "",
+        "Unchanged since v3 (`admin, keeper, next_draw_id, bump`); devnet's account is already in this layout."
       ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "keeper",
+            "docs": [
+              "Low-trust automation key: may create draws, fill pools/schedules and request draws during the",
+              "public-grace window. It never escrows money and never receives the house share."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "nextDrawId",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "createDrawParams",
       "type": {
         "kind": "struct",
         "fields": [
@@ -2295,6 +2649,35 @@ export type Drawsol = {
             "type": "u16"
           },
           {
+            "name": "potBps",
+            "type": "u16"
+          },
+          {
+            "name": "instantBps",
+            "type": "u16"
+          },
+          {
+            "name": "endPrizeLamports",
+            "type": "u64"
+          },
+          {
+            "name": "minTickets",
+            "type": "u32"
+          },
+          {
+            "name": "tiers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "tierParams"
+                  }
+                },
+                8
+              ]
+            }
+          },
+          {
             "name": "termsHash",
             "type": {
               "array": [
@@ -2307,42 +2690,9 @@ export type Drawsol = {
       }
     },
     {
-      "name": "config",
-      "docs": [
-        "seeds = [b\"config\"]",
-        "",
-        "v3 layout. The v2 layout was `admin, next_draw_id, bump` (8 + 41 bytes, same discriminator);",
-        "`migrate_config` reallocs a v2 Config into this layout."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "admin",
-            "type": "pubkey"
-          },
-          {
-            "name": "keeper",
-            "docs": [
-              "Low-trust automation key: may create pot draws and request draws during the public-grace window."
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "nextDrawId",
-            "type": "u64"
-          },
-          {
-            "name": "bump",
-            "type": "u8"
-          }
-        ]
-      }
-    },
-    {
       "name": "drawCancelled",
       "docs": [
-        "reason: 0 = no tickets, 1 = randomness timeout, 2 = headline undersold (below min_tickets)"
+        "reason: 0 = no tickets, 1 = randomness timeout, 3 = draft cancelled by the authority"
       ],
       "type": {
         "kind": "struct",
@@ -2370,14 +2720,6 @@ export type Drawsol = {
           {
             "name": "id",
             "type": "u64"
-          },
-          {
-            "name": "kind",
-            "type": {
-              "defined": {
-                "name": "drawKind"
-              }
-            }
           },
           {
             "name": "creator",
@@ -2412,29 +2754,47 @@ export type Drawsol = {
             "type": "u16"
           },
           {
-            "name": "prizeLamports",
-            "docs": [
-              "headline: escrowed prize; pot: 0"
-            ],
+            "name": "endPrizeLamports",
             "type": "u64"
           },
           {
             "name": "minTickets",
             "type": "u32"
+          },
+          {
+            "name": "scheduleTotalLamports",
+            "type": "u64"
           }
         ]
       }
     },
     {
-      "name": "drawKind",
+      "name": "drawOpened",
       "type": {
-        "kind": "enum",
-        "variants": [
+        "kind": "struct",
+        "fields": [
           {
-            "name": "pot"
+            "name": "draw",
+            "type": "pubkey"
           },
           {
-            "name": "headline"
+            "name": "scheduleHash",
+            "docs": [
+              "sha256 of the `ticket_cap` schedule bytes (tier index + 1 per number, 0 = no prize) at opening"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "escrowLamports",
+            "docs": [
+              "end prize + schedule total, escrowed by the authority"
+            ],
+            "type": "u64"
           }
         ]
       }
@@ -2469,6 +2829,10 @@ export type Drawsol = {
             "type": "pubkey"
           },
           {
+            "name": "winningPos",
+            "type": "u32"
+          },
+          {
             "name": "winningTicket",
             "type": "u32"
           },
@@ -2481,8 +2845,15 @@ export type Drawsol = {
             "type": "pubkey"
           },
           {
-            "name": "prize",
+            "name": "endPrizePaid",
             "type": "u64"
+          },
+          {
+            "name": "fallback",
+            "docs": [
+              "true when `paid_tickets < min_tickets` and the fallback pot was paid instead of the end prize"
+            ],
+            "type": "bool"
           }
         ]
       }
@@ -2492,6 +2863,9 @@ export type Drawsol = {
       "type": {
         "kind": "enum",
         "variants": [
+          {
+            "name": "draft"
+          },
           {
             "name": "open"
           },
@@ -2508,9 +2882,9 @@ export type Drawsol = {
       }
     },
     {
-      "name": "drawV3",
+      "name": "drawV4",
       "docs": [
-        "seeds = [b\"draw3\", id.to_le_bytes()]"
+        "seeds = [b\"draw4\", id.to_le_bytes()]"
       ],
       "type": {
         "kind": "struct",
@@ -2522,17 +2896,9 @@ export type Drawsol = {
           {
             "name": "authority",
             "docs": [
-              "config.admin at creation; receives the house share / returned escrow"
+              "config.admin at creation; escrows the prizes at `open_draw`, receives the house share / returned escrow"
             ],
             "type": "pubkey"
-          },
-          {
-            "name": "kind",
-            "type": {
-              "defined": {
-                "name": "drawKind"
-              }
-            }
           },
           {
             "name": "status",
@@ -2549,7 +2915,7 @@ export type Drawsol = {
           {
             "name": "ticketCap",
             "docs": [
-              "paid tickets (free and credit tickets never count)"
+              "ticket numbers are 0..ticket_cap; every ticket (paid or free) takes one number, so this caps all tickets"
             ],
             "type": "u32"
           },
@@ -2603,42 +2969,62 @@ export type Drawsol = {
             "type": "u16"
           },
           {
-            "name": "prizeLamports",
+            "name": "endPrizeLamports",
             "docs": [
-              "headline: fixed escrow; pot: 0 until settled (then the prize actually computed)"
+              "fixed end prize, escrowed at open; paid in full when paid_tickets >= min_tickets"
             ],
             "type": "u64"
           },
           {
             "name": "minTickets",
-            "docs": [
-              "headline only"
-            ],
             "type": "u32"
           },
           {
-            "name": "floorMarginBps",
-            "docs": [
-              "headline only"
-            ],
-            "type": "u16"
+            "name": "tiers",
+            "type": {
+              "array": [
+                {
+                  "defined": {
+                    "name": "tier"
+                  }
+                },
+                8
+              ]
+            }
           },
           {
-            "name": "potLamports",
+            "name": "scheduleTotalLamports",
             "docs": [
-              "pot draws: accumulated pot share"
+              "Σ tiers.amount × count — escrowed at open"
             ],
             "type": "u64"
           },
           {
-            "name": "instantPoolLamports",
+            "name": "scheduleSet",
             "docs": [
-              "pot draws: current instant pool balance"
+              "winning numbers registered so far (== Σ tiers.count once Open)"
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "instantsPaid",
+            "docs": [
+              "instant prizes paid so far"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "revenue",
+            "docs": [
+              "every lamport paid for tickets"
             ],
             "type": "u64"
           },
           {
             "name": "houseLamports",
+            "docs": [
+              "fixed at settle: revenue − fallback pot (if paid); withdrawable after Settled"
+            ],
             "type": "u64"
           },
           {
@@ -2646,32 +3032,8 @@ export type Drawsol = {
             "type": "u64"
           },
           {
-            "name": "revenueLamports",
-            "docs": [
-              "every lamport paid for tickets"
-            ],
-            "type": "u64"
-          },
-          {
             "name": "refundedLamports",
             "type": "u64"
-          },
-          {
-            "name": "iwDenominator",
-            "type": "u32"
-          },
-          {
-            "name": "iwTiers",
-            "type": {
-              "array": [
-                {
-                  "defined": {
-                    "name": "iwTierV3"
-                  }
-                },
-                4
-              ]
-            }
           },
           {
             "name": "paidTickets",
@@ -2682,25 +3044,21 @@ export type Drawsol = {
             "type": "u32"
           },
           {
-            "name": "creditTickets",
+            "name": "assigned",
+            "docs": [
+              "tickets that have a number (revealed)"
+            ],
             "type": "u32"
           },
           {
-            "name": "nextTicket",
+            "name": "nextPos",
             "docs": [
-              "ticket numbers are 0..next_ticket (all kinds)"
+              "positions handed out: every ticket (paid or free) gets the next position at purchase"
             ],
             "type": "u32"
           },
           {
             "name": "entryCount",
-            "type": "u32"
-          },
-          {
-            "name": "rolledEntries",
-            "docs": [
-              "entries that need a reveal (have an ORAO request)"
-            ],
             "type": "u32"
           },
           {
@@ -2730,6 +3088,10 @@ export type Drawsol = {
             }
           },
           {
+            "name": "winningPos",
+            "type": "u32"
+          },
+          {
             "name": "winningTicket",
             "type": "u32"
           },
@@ -2742,7 +3104,10 @@ export type Drawsol = {
             "type": "pubkey"
           },
           {
-            "name": "prizePaidLamports",
+            "name": "endPrizePaid",
+            "docs": [
+              "what the winner actually received (end prize, or the fallback pot)"
+            ],
             "type": "u64"
           },
           {
@@ -2752,7 +3117,21 @@ export type Drawsol = {
           {
             "name": "prizePaid",
             "docs": [
-              "prize disbursed: to the winner (Settled) or the escrow back to the authority (Cancelled headline)"
+              "the prize was disbursed (to the winner, or the fallback pot was paid)"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "escrowReturned",
+            "docs": [
+              "the end-prize escrow has left the vault (paid to the winner, or returned to the authority)"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "instantEscrowReturned",
+            "docs": [
+              "the unwon part of the schedule escrow (schedule_total − instants_paid) was returned to the authority"
             ],
             "type": "bool"
           },
@@ -2771,6 +3150,14 @@ export type Drawsol = {
           },
           {
             "name": "vaultBump",
+            "type": "u8"
+          },
+          {
+            "name": "poolBump",
+            "type": "u8"
+          },
+          {
+            "name": "scheduleBump",
             "type": "u8"
           }
         ]
@@ -2794,37 +3181,37 @@ export type Drawsol = {
             "type": "pubkey"
           },
           {
-            "name": "firstTicket",
+            "name": "seq",
             "type": "u32"
           },
           {
-            "name": "count",
-            "type": "u16"
-          },
-          {
-            "name": "tiers",
+            "name": "tickets",
             "type": {
-              "array": [
-                "u8",
-                25
-              ]
+              "vec": "u32"
             }
           },
           {
-            "name": "solPaid",
-            "type": "u64"
+            "name": "prizes",
+            "docs": [
+              "per ticket: 0 = no prize, t+1 = tier t"
+            ],
+            "type": "bytes"
           },
           {
-            "name": "creditsWon",
-            "type": "u32"
+            "name": "paid",
+            "type": "u64"
           }
         ]
       }
     },
     {
-      "name": "entryV3",
+      "name": "entryV4",
       "docs": [
-        "seeds = [b\"entry3\", draw.key(), seq.to_le_bytes()] where seq = draw.entry_count at creation."
+        "seeds = [b\"entry4\", draw.key(), seq.to_le_bytes()] where seq = draw.entry_count at creation.",
+        "Space is sized from `count` at purchase: `EntryV4::space(count)`.",
+        "",
+        "Fixed-size fields come first (memcmp-friendly offsets: draw @8, owner @40, seq @72, first_pos @76,",
+        "count @80, is_free @82, ...); the two vectors are at the end."
       ],
       "type": {
         "kind": "struct",
@@ -2842,22 +3229,14 @@ export type Drawsol = {
             "type": "u32"
           },
           {
-            "name": "firstTicket",
+            "name": "firstPos",
+            "docs": [
+              "positions first_pos .. first_pos + count belong to this entry (the end-prize draw picks a position)"
+            ],
             "type": "u32"
           },
           {
             "name": "count",
-            "docs": [
-              "paid + credit (+1 for a free entry)"
-            ],
-            "type": "u16"
-          },
-          {
-            "name": "paidCount",
-            "type": "u16"
-          },
-          {
-            "name": "creditCount",
             "type": "u16"
           },
           {
@@ -2873,16 +3252,9 @@ export type Drawsol = {
             "type": "i64"
           },
           {
-            "name": "poolSnapshot",
-            "docs": [
-              "pot draws: `instant_pool_lamports` right after this purchase's contribution"
-            ],
-            "type": "u64"
-          },
-          {
             "name": "vrfRequest",
             "docs": [
-              "ORAO randomness request PDA (default when the entry has no roll)"
+              "ORAO randomness request PDA for this entry's ticket assignment"
             ],
             "type": "pubkey"
           },
@@ -2896,35 +3268,15 @@ export type Drawsol = {
             }
           },
           {
-            "name": "needsReveal",
-            "type": "bool"
-          },
-          {
             "name": "revealed",
             "type": "bool"
           },
           {
-            "name": "tiers",
+            "name": "instantPaid",
             "docs": [
-              "per ticket: 0 = no win, 1..=4 = tier index + 1"
-            ],
-            "type": {
-              "array": [
-                "u8",
-                25
-              ]
-            }
-          },
-          {
-            "name": "solPaid",
-            "docs": [
-              "instant SOL actually paid"
+              "instant prizes paid to the owner at reveal"
             ],
             "type": "u64"
-          },
-          {
-            "name": "creditsWon",
-            "type": "u32"
           },
           {
             "name": "refunded",
@@ -2933,6 +3285,22 @@ export type Drawsol = {
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "tickets",
+            "docs": [
+              "ticket numbers, len == count once revealed (empty before)"
+            ],
+            "type": {
+              "vec": "u32"
+            }
+          },
+          {
+            "name": "prizes",
+            "docs": [
+              "per ticket: 0 = no prize, t + 1 = tier t (len == count once revealed)"
+            ],
+            "type": "bytes"
           }
         ]
       }
@@ -2955,67 +3323,11 @@ export type Drawsol = {
             "type": "pubkey"
           },
           {
-            "name": "ticket",
-            "type": "u32"
-          }
-        ]
-      }
-    },
-    {
-      "name": "headlineDrawParams",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "common",
-            "type": {
-              "defined": {
-                "name": "commonDrawParams"
-              }
-            }
-          },
-          {
-            "name": "prizeLamports",
-            "type": "u64"
-          },
-          {
-            "name": "minTickets",
+            "name": "seq",
             "type": "u32"
           },
           {
-            "name": "floorMarginBps",
-            "type": "u16"
-          }
-        ]
-      }
-    },
-    {
-      "name": "iwTierV3",
-      "docs": [
-        "One instant-win tier. Unused = all zero."
-      ],
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "odds",
-            "docs": [
-              "winning outcomes out of `iw_denominator`"
-            ],
-            "type": "u32"
-          },
-          {
-            "name": "kind",
-            "docs": [
-              "0 none, 1 sol_share, 2 credits"
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "value",
-            "docs": [
-              "sol_share: bps of the entry's pool snapshot; credits: free-ticket credits"
-            ],
+            "name": "pos",
             "type": "u32"
           }
         ]
@@ -3169,9 +3481,9 @@ export type Drawsol = {
       }
     },
     {
-      "name": "playerV3",
+      "name": "playerV4",
       "docs": [
-        "seeds = [b\"player3\", draw.key(), wallet]"
+        "seeds = [b\"player4\", draw.key(), wallet]"
       ],
       "type": {
         "kind": "struct",
@@ -3187,7 +3499,7 @@ export type Drawsol = {
           {
             "name": "tickets",
             "docs": [
-              "all kinds (paid + credit + free)"
+              "all kinds (paid + free)"
             ],
             "type": "u32"
           },
@@ -3199,12 +3511,11 @@ export type Drawsol = {
             "type": "u64"
           },
           {
-            "name": "wonSol",
+            "name": "wonLamports",
+            "docs": [
+              "instant prizes received"
+            ],
             "type": "u64"
-          },
-          {
-            "name": "wonCredits",
-            "type": "u32"
           },
           {
             "name": "freeClaimed",
@@ -3218,45 +3529,33 @@ export type Drawsol = {
       }
     },
     {
-      "name": "potDrawParams",
+      "name": "pool",
+      "docs": [
+        "seeds = [b\"pool\", draw.key()]. Raw layout after the discriminator: `remaining: u32` then",
+        "`u32[ticket_cap]` ticket numbers. Filled 0..cap by `init_pool`; `reveal_entry` swap-removes from",
+        "`[..remaining]`. Accessed by raw bytes (never deserialised) — this type only names the discriminator."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": []
+      }
+    },
+    {
+      "name": "poolInitialised",
       "type": {
         "kind": "struct",
         "fields": [
           {
-            "name": "common",
-            "type": {
-              "defined": {
-                "name": "commonDrawParams"
-              }
-            }
+            "name": "draw",
+            "type": "pubkey"
           },
           {
-            "name": "potBps",
-            "type": "u16"
-          },
-          {
-            "name": "instantBps",
-            "type": "u16"
-          },
-          {
-            "name": "iwDenominator",
-            "docs": [
-              "0 = no instant wins (all tiers must then be unused)"
-            ],
+            "name": "from",
             "type": "u32"
           },
           {
-            "name": "iwTiers",
-            "type": {
-              "array": [
-                {
-                  "defined": {
-                    "name": "iwTierV3"
-                  }
-                },
-                4
-              ]
-            }
+            "name": "to",
+            "type": "u32"
           }
         ]
       }
@@ -3264,7 +3563,7 @@ export type Drawsol = {
     {
       "name": "profile",
       "docs": [
-        "seeds = [b\"profile\", wallet]. Global across draws."
+        "seeds = [b\"profile\", wallet]. Global across draws. Unchanged since v3 (SPEC-v3 §2.6)."
       ],
       "type": {
         "kind": "struct",
@@ -3276,7 +3575,7 @@ export type Drawsol = {
           {
             "name": "credits",
             "docs": [
-              "free-ticket credits (won as instant prizes, spent with `use_credits`)"
+              "v3 free-ticket credits; kept for layout compatibility, unused in v4 (no credit tiers)"
             ],
             "type": "u32"
           },
@@ -3337,9 +3636,57 @@ export type Drawsol = {
           {
             "name": "amount",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "schedule",
+      "docs": [
+        "seeds = [b\"schedule\", draw.key()]. Raw layout after the discriminator: `u8[ticket_cap]`,",
+        "`0` = no prize, `1..=8` = tier index + 1, bit 7 = that number's prize has been won."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": []
+      }
+    },
+    {
+      "name": "scheduleEntry",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ticket",
+            "docs": [
+              "winning ticket number, < ticket_cap"
+            ],
+            "type": "u32"
           },
           {
-            "name": "credits",
+            "name": "tier",
+            "docs": [
+              "tier index 0..8 (stored in the schedule as tier + 1)"
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "scheduleSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "draw",
+            "type": "pubkey"
+          },
+          {
+            "name": "scheduleSet",
+            "docs": [
+              "winning numbers registered so far"
+            ],
             "type": "u32"
           }
         ]
@@ -3383,7 +3730,7 @@ export type Drawsol = {
             "type": "u32"
           },
           {
-            "name": "firstTicket",
+            "name": "firstPos",
             "type": "u32"
           },
           {
@@ -3391,35 +3738,81 @@ export type Drawsol = {
             "type": "u16"
           },
           {
-            "name": "paidCount",
-            "type": "u16"
-          },
-          {
-            "name": "creditCount",
-            "type": "u16"
-          },
-          {
             "name": "paidLamports",
             "type": "u64"
           },
           {
-            "name": "potLamports",
-            "docs": [
-              "pot draws: the draw's pot / instant pool after this purchase"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "instantPoolLamports",
+            "name": "revenueLamports",
             "type": "u64"
           }
         ]
       }
     },
     {
-      "name": "vaultV3",
+      "name": "tier",
       "docs": [
-        "seeds = [b\"vault3\", draw.key()]. Program-owned, no fields: its lamports are everything the draw holds.",
+        "One instant-prize tier. Unused = all zero."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "prize per winning number, lamports"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "count",
+            "docs": [
+              "winning numbers in the schedule"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "set",
+            "docs": [
+              "winning numbers registered so far by `set_schedule` (== count once the draw is Open)"
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "won",
+            "docs": [
+              "winning numbers assigned (and paid) so far"
+            ],
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tierParams",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "prize per winning number, lamports (0 = unused tier)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "count",
+            "docs": [
+              "winning numbers of this tier"
+            ],
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "vault",
+      "docs": [
+        "seeds = [b\"vault4\", draw.key()]. Program-owned, no fields: its lamports are everything the draw holds.",
         "Debited directly by the program; it always stays rent-exempt."
       ],
       "type": {

@@ -4,14 +4,14 @@ import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
 import { useDrawSol } from "@/hooks/context";
 import { useOraoRead } from "@/hooks/useOraoRead";
-import { anyoneCanRun, cancelReason, endPrize, endPrizeLocked, grandPrize, headlineHouseBps, isDefaultKey, pct, phaseOf, publicFrom, scheduleTotals, wonNumbers, type Phase } from "@/lib/derive";
-import { drawPda, vaultPda } from "@/lib/chain";
+import { anyoneCanRun, cancelReason, endPrize, endPrizeLocked, grandPrize, headlineHouseBps, isDefaultKey, pct, phaseOf, publicFrom, scheduleTotals, type Phase } from "@/lib/derive";
+import { drawPda, legacyVaultPda, poolPda, schedulePda, vaultPda } from "@/lib/chain";
 import { toHex } from "@/lib/fairness";
-import { shortDate, sol, ticketNo, utcLabel } from "@/lib/format";
+import { shortDate, sol, utcLabel } from "@/lib/format";
 import type { DrawView, EntryView } from "@/lib/types";
 import { Addr, Busy, Pill, ProofLink, Section } from "./bits";
 import { EntryLedger } from "./EntryLedger";
-import { drawName, kindName, n, plural, prizeFig, tnoOf } from "./fmt";
+import { drawName, kindName, n, plural, prizeFig, prizeSol, solRound, tnoOf } from "./fmt";
 import { Meter } from "./Hero";
 import { Recompute, SettleTxLine, useSettleTx } from "./Recompute";
 
@@ -30,10 +30,10 @@ const STATUS: Record<Phase, string> = {
  * a 404; no number lists every draw.
  */
 export function DrawRecord({ raw }: { raw: string | null }) {
-  const { load, draws: v3, legacyDraws, config, refresh, now } = useDrawSol();
-  const draws = [...v3, ...legacyDraws];
+  const { load, draws: v4, legacyDraws, config, refresh, now } = useDrawSol();
+  const draws = [...v4, ...legacyDraws];
   const k = raw !== null && /^\d{1,9}$/.test(raw.trim()) ? Number(raw.trim()) : null;
-  const ok = load.kind === "ready" || (load.kind === "nodraw" && (load.reason === "no-draws" || load.reason === "upgrading"));
+  const ok = load.kind === "ready" || (load.kind === "nodraw" && load.reason === "no-draws");
   const found = ok && k !== null ? draws.find((x) => x.id === k) : undefined;
   const docTitle = !ok
     ? null
@@ -85,13 +85,14 @@ export function DrawRecord({ raw }: { raw: string | null }) {
       lead={
         k !== null ? (
           <>
-            Draw № {k} doesn’t exist on-chain.{" "}
+            Draw № {k} has no open account on-chain.{" "}
             {next !== null ? (
               next === 0 ? (
                 <>The program hasn’t opened a draw yet.</>
               ) : (
                 <>
-                  The program has handed out {next} draw {plural(next, "number", "numbers")} so far, № 0{next > 1 ? <> to № {next - 1}</> : null}.
+                  The program has handed out {next} draw {plural(next, "number", "numbers")} so far, № 0{next > 1 ? <> to № {next - 1}</> : null}; closed draws are gone
+                  from the chain.
                 </>
               )
             ) : null}{" "}
@@ -126,7 +127,7 @@ function DrawIndex({ draws, next }: { draws: DrawView[]; next: number | null }) 
               <li key={`gap-${r.id}`} className="row c-3">
                 <div className="row-main">
                   <b>Draw № {r.id}</b>
-                  <span className="row-what">no account on devnet (closed or never created)</span>
+                  <span className="row-what">no open account on devnet (closed, a draft, or never created)</span>
                 </div>
               </li>
             );
@@ -139,7 +140,7 @@ function DrawIndex({ draws, next }: { draws: DrawView[]; next: number | null }) 
                   <Link className="rowlink" href={`/draw/?n=${d.id}`}>
                     Draw № {d.id}
                   </Link>{" "}
-                  <span className="c-2">{kindName(d.kind)}</span>
+                  <span className="c-2">{kindName(d)}</span>
                 </b>
                 <span className="row-what">
                   {ph === "settled" ? (
@@ -175,7 +176,7 @@ function Row({ k, children, className = "" }: { k: ReactNode; children: ReactNod
 }
 
 function Record({ d }: { d: DrawView }) {
-  const { now, current, entries: curEntries, entriesState: curState, fetchDrawEntries, wallet } = useDrawSol();
+  const { now, current, entries: curEntries, entriesState: curState, fetchDrawEntries, wallet, poolRemaining } = useDrawSol();
   const isCurrent = !!current && current.address.equals(d.address);
   const [own, setOwn] = useState<{ entries: EntryView[]; state: "loading" | "error" | "ready" }>({ entries: [], state: "loading" });
   const [nonce, setNonce] = useState(0);
@@ -200,29 +201,30 @@ function Record({ d }: { d: DrawView }) {
   const tx = useSettleTx(d);
   const { o: orao, retry: retryOrao } = useOraoRead(isDefaultKey(d.drawVrfRequest) ? null : d.drawVrfRequest, { again: d.status });
   const closed = ph !== "selling";
-  const soldOut = d.paidTickets >= d.ticketCap;
+  const soldOut = d.nextPos >= d.ticketCap;
   const prize = `${prizeFig(grandPrize(d))} SOL`;
   const hex = orao.kind === "fulfilled" ? toHex(orao.bytes) : "";
   const matches = orao.kind === "fulfilled" && settled ? toHex(d.randomness) === hex : null;
-  const pot = d.kind === "pot";
+  const legacyPot = d.legacy === "pot";
+  const legacyHeadline = d.legacy === "headline";
   const why = ph === "cancelled" ? cancelReason(d) : null;
-  const instantSol = state === "ready" ? entries.reduce((x, e) => x + e.solPaid, BigInt(0)) : null;
+  const instantSol = state === "ready" ? entries.reduce((x, e) => x + e.instantPaid, BigInt(0)) : null;
   const mine = !!wallet && settled && d.winner.equals(wallet.address);
+  const vault = d.legacy ? legacyVaultPda(d.address) : vaultPda(d.address);
 
   const instants = scheduleTotals(d);
-  const won = wonNumbers(d, entries);
   const lead: ReactNode = settled ? (
     <>
       Settled <span className="nw">{utcLabel(d.settledAt)}</span>. Ticket <b className="tab">{tnoOf(d, d.winningTicket)}</b> won <span className="nw">{prize}</span>. Every
       figure here is read from the draw account and its entries on devnet.
     </>
   ) : ph === "selling" ? (
-    d.guaranteed ? (
+    d.legacy === null ? (
       <>
-        Draws <span className="nw">{utcLabel(d.drawAt)}</span>, guaranteed: the escrowed {prizeFig(d.prizeLamports)} SOL once {n(d.minTickets)} tickets sell, else {d.potBps / 100}% of
-        sales. Every figure here is read from the draw account and its entries on devnet.
+        Draws <span className="nw">{utcLabel(d.drawAt)}</span>, guaranteed: the escrowed {prizeFig(d.endPrizeLamports)} SOL once {n(d.minTickets)} tickets sell, else{" "}
+        {d.potBps / 100}% of sales. Every figure here is read from the draw account, its schedule and its entries on devnet.
       </>
-    ) : d.kind === "headline" ? (
+    ) : legacyHeadline ? (
       <>
         Draws <span className="nw">{utcLabel(d.drawAt)}</span> once {n(d.minTickets)} tickets sell; otherwise everyone is refunded in full. Every figure here is read
         from the draw account and its entries on devnet.
@@ -241,7 +243,7 @@ function Record({ d }: { d: DrawView }) {
         refunded in full.
       </>
     ) : (
-      <>Cancelled: the randomness never arrived within 48 h of the draw time. Every paid ticket can be refunded.</>
+      <>Cancelled: the randomness never arrived within 48 h of the draw time. Every paid ticket can be refunded, net of instant prizes already paid.</>
     )
   ) : ph === "drawing" ? (
     <>Randomness has been requested from ORAO. Anyone can settle it once it lands.</>
@@ -252,15 +254,15 @@ function Record({ d }: { d: DrawView }) {
   ) : (
     <>The draw time has passed{anyoneCanRun(d, now) ? ", and anyone can run it now" : "; the operator’s keeper runs it first"}.</>
   );
-  const atCap = d.kind === "headline" ? headlineHouseBps(d, d.ticketCap) : null;
-  const atMin = d.kind === "headline" ? headlineHouseBps(d, d.minTickets) : null;
+  const atCap = legacyHeadline ? headlineHouseBps(d, d.ticketCap) : null;
+  const atMin = legacyHeadline ? headlineHouseBps(d, d.minTickets) : null;
 
   return (
     <>
       <section className="sec rec-head" id="draw" aria-labelledby="draw-h">
         <p className="badge-row">
           <Pill tone={ph === "selling" ? "accent" : settled ? "dark" : ph === "cancelled" ? "neutral" : "warn"}>{STATUS[ph].split(",")[0]}</Pill>
-          <span className="c-2">{d.kind === "v2" ? "grand draw, DrawSol v2" : kindName(d.kind)}</span>
+          <span className="c-2">{kindName(d)}</span>
         </p>
         <h1 className="t-h1" id="draw-h">
           {drawName(d)}
@@ -288,7 +290,9 @@ function Record({ d }: { d: DrawView }) {
             </div>
             <div>
               <dt>Out of</dt>
-              <dd className="tab">{n(d.nextTicket)} tickets</dd>
+              <dd className="tab">
+                {n(d.nextPos)} tickets{d.randomNumbers ? ` · position ${n(d.winningPos)}` : ""}
+              </dd>
             </div>
           </dl>
           <p className="winner-links">
@@ -302,48 +306,48 @@ function Record({ d }: { d: DrawView }) {
           <h2 className="t-h3">The record</h2>
           <dl className="record">
             <Row k="Status">{STATUS[ph]}</Row>
-            {pot ? (
+            {legacyPot ? (
               <>
-                <Row k={settled ? "Grand prize, the pot" : "The pot"}>{settled ? `${prize}, paid` : `${sol(d.potLamports, 2, 4)} SOL`}</Row>
-                {!settled && ph !== "cancelled" && <Row k="Instant pool">{sol(d.instantPoolLamports, 2, 4)} SOL, rolls into the pot if unwon</Row>}
+                <Row k={settled ? "Grand prize, the pot" : "The pot"}>{settled ? `${prize}, paid` : `${sol(d.endPrizeLamports, 2, 4)} SOL`}</Row>
                 <Row k="Split of every paid ticket">
                   {pct(d.houseBps)} house · {pct(d.potBps)} pot · {pct(d.instantBps)} instant wins
                 </Row>
-                <Row k="House share so far">{sol(d.houseLamports, 2, 4)} SOL</Row>
+                <Row k="House share">{sol(d.houseLamports, 2, 4)} SOL</Row>
+              </>
+            ) : legacyHeadline ? (
+              <>
+                <Row k="Grand prize">{settled ? `${prize}, paid` : ph === "cancelled" ? `${prize}, returned to the operator` : `${prize}, escrowed`}</Row>
+                <Row k="Minimum to draw">
+                  {n(d.minTickets)} paid tickets{d.paidTickets >= d.minTickets ? ", reached" : `, ${n(d.minTickets - d.paidTickets)} to go`}
+                </Row>
+                {atCap !== null && atMin !== null && (
+                  <Row k="House share">
+                    {pct(atCap)} at sell-out, {pct(atMin)} at the minimum
+                  </Row>
+                )}
               </>
             ) : (
               <>
-                {d.guaranteed ? (
-                  <>
-                    <Row k={settled ? "End prize" : "End prize right now"}>
-                      {settled
-                        ? `${prize}, paid${d.paidTickets >= d.minTickets ? " (the escrowed prize)" : ` (${d.potBps / 100}% of sales, under the minimum)`}`
-                        : `${prizeFig(endPrize(d))} SOL${endPrizeLocked(d) ? ", the escrowed prize, locked in" : `, ${d.potBps / 100}% of sales so far`}`}
-                    </Row>
-                    <Row k="Escrowed prize">
-                      {prizeFig(d.prizeLamports)} SOL, paid in full once {n(d.minTickets)} tickets sell{d.paidTickets >= d.minTickets ? " (reached)" : ` (${n(d.minTickets - d.paidTickets)} to go)`}
-                    </Row>
-                    {instants.count > 0 && (
-                      <Row k="Instant prizes">
-                        {n(instants.count)} published numbers, {state === "ready" ? `${won.size} won so far` : "…"} · {d.schedule.map((t) => `${prizeFig(t.lamports)} SOL ×${t.numbers.length}`).join(", ")}
-                      </Row>
-                    )}
-                  </>
-                ) : (
-                  <Row k="Grand prize">{settled ? `${prize}, paid` : ph === "cancelled" ? `${prize}, returned to the operator` : `${prize}, escrowed`}</Row>
-                )}
-                {d.kind === "headline" && !d.guaranteed && (
-                  <>
-                    <Row k="Minimum to draw">
-                      {n(d.minTickets)} paid tickets{d.paidTickets >= d.minTickets ? ", reached" : `, ${n(d.minTickets - d.paidTickets)} to go`}
-                    </Row>
-                    {atCap !== null && atMin !== null && (
-                      <Row k="House share">
-                        {pct(atCap)} at sell-out, {pct(atMin)} at the minimum
-                      </Row>
-                    )}
-                  </>
-                )}
+                <Row k={settled ? "End prize" : "End prize right now"}>
+                  {settled
+                    ? `${prize}, paid${d.paidTickets >= d.minTickets ? " (the escrowed prize)" : ` (${d.potBps / 100}% of sales, under the minimum)`}`
+                    : `${prizeFig(endPrize(d))} SOL${endPrizeLocked(d) ? ", the escrowed prize, locked in" : `, ${d.potBps / 100}% of sales so far`}`}
+                </Row>
+                <Row k="Escrowed prize">
+                  {prizeFig(d.endPrizeLamports)} SOL, paid in full once {n(d.minTickets)} paid tickets sell
+                  {d.paidTickets >= d.minTickets ? " (reached)" : ` (${n(d.minTickets - d.paidTickets)} to go)`}
+                  {settled && d.escrowReturned ? "; returned to the operator at settlement" : ""}
+                </Row>
+                <Row k="Instant prizes">
+                  {n(instants.count)} published numbers, {solRound(d.scheduleTotalLamports, 3, 2)} SOL escrowed · {instants.wonCount} won so far, {prizeSol(d.instantsPaid)} SOL paid ·{" "}
+                  {d.schedule.map((t) => `${prizeSol(t.lamports)} SOL ×${t.numbers.length}`).join(", ")} ·{" "}
+                  <ProofLink account={schedulePda(d.address)}>schedule account</ProofLink>
+                  {settled && d.instantEscrowReturned ? " · unwon escrow returned" : ""}
+                </Row>
+                <Row k="Split of every paid ticket">
+                  {pct(d.houseBps)} house · {pct(d.potBps)} end prize / fallback pot · {pct(d.instantBps)} instant prizes
+                </Row>
+                {settled && <Row k="House share">{sol(d.houseLamports, 2, 4)} SOL, fixed at settlement</Row>}
               </>
             )}
             <Row k="Opened">{utcLabel(d.createdAt)}</Row>
@@ -351,17 +355,20 @@ function Record({ d }: { d: DrawView }) {
               {utcLabel(d.closesAt)}
               {closed && soldOut ? ", sold out" : ""}
             </Row>
-            {d.kind !== "v2" && (
-              <Row k="Draw time">
-                {utcLabel(d.drawAt)}
-                {d.publicGraceSecs > 0 ? `; anyone may run it from ${utcLabel(publicFrom(d))}` : ""}
-              </Row>
-            )}
+            <Row k="Draw time">
+              {utcLabel(d.drawAt)}
+              {d.publicGraceSecs > 0 ? `; anyone may run it from ${utcLabel(publicFrom(d))}` : ""}
+            </Row>
             <Row k={closed ? "Tickets at close" : "Tickets so far"}>
               {n(d.paidTickets)} of {n(d.ticketCap)} sold
-              {d.freeCap > 0 ? `, ${d.freeTickets} of ${d.freeCap} free ${plural(d.freeCap, "entry", "entries")}` : ""}
-              {d.creditTickets > 0 ? `, ${d.creditTickets} on credits` : ""} · {n(d.nextTicket)} in the draw
+              {d.freeCap > 0 ? `, ${d.freeTickets} of ${d.freeCap} free ${plural(d.freeCap, "entry", "entries")}` : ""} · {n(d.nextPos)} in the draw
             </Row>
+            {d.randomNumbers && (
+              <Row k="Ticket numbers">
+                {n(d.assigned)} of {n(d.nextPos)} assigned by reveal
+                {isCurrent && poolRemaining !== null ? ` · ${n(poolRemaining)} still in the pool` : ""} · <ProofLink account={poolPda(d.address)}>pool account</ProofLink>
+              </Row>
+            )}
             <Row k="Ticket price">{sol(d.ticketPrice, 2, 5)} SOL</Row>
             <Row k="Paid for tickets">
               {sol(d.revenueLamports, 2, 4)} SOL{d.refundedLamports > BigInt(0) ? `, ${sol(d.refundedLamports, 2, 4)} refunded` : ""}
@@ -401,14 +408,12 @@ function Record({ d }: { d: DrawView }) {
                 <SettleTxLine tx={tx} label="Settle transaction" />
               </Row>
             )}
-            {(pot || d.kind === "v2") && (
-              <Row k="Instant SOL paid">{d.legacyIwPaid !== undefined ? `${sol(d.legacyIwPaid, 2, 4)} SOL` : instantSol === null ? "…" : `${sol(instantSol, 2, 4)} SOL`}</Row>
-            )}
+            {legacyPot && <Row k="Instant SOL paid">{instantSol === null ? "…" : `${prizeSol(instantSol)} SOL`}</Row>}
             <Row k="Draw account">
               <ProofLink account={d.address}>{d.address.toBase58().slice(0, 4)}… on Solscan</ProofLink>
             </Row>
             <Row k="Vault">
-              <ProofLink account={vaultPda(d.address)}>{vaultPda(d.address).toBase58().slice(0, 4)}… on Solscan</ProofLink>
+              <ProofLink account={vault}>{vault.toBase58().slice(0, 4)}… on Solscan</ProofLink>
             </Row>
           </dl>
         </div>
@@ -416,7 +421,7 @@ function Record({ d }: { d: DrawView }) {
           {ph === "selling" && (
             <div className="card pad">
               <Meter d={d} />
-              {d.kind === "headline" && (
+              {d.legacy === null && (
                 <p className="msg-act">
                   <Link className="btn btn-primary" href="/#entry">
                     Enter Draw № {d.id}
@@ -425,12 +430,12 @@ function Record({ d }: { d: DrawView }) {
               )}
             </div>
           )}
-          {(ph === "closed" || ph === "due" || ph === "drawing" || ph === "cancelled") && d.nextTicket > 0 && (
+          {(ph === "closed" || ph === "due" || ph === "drawing" || ph === "cancelled") && d.nextPos > 0 && (
             <div className="card pad">
               <Meter d={d} />
             </div>
           )}
-          {settled && <Recompute d={d} />}
+          {settled && <Recompute d={d} entries={entries} entriesState={state} />}
         </div>
       </div>
 

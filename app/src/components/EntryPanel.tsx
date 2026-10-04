@@ -2,9 +2,9 @@
 
 import { useId, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { useActions, useDrawSol } from "@/hooks/context";
+import { entryRentFor, useActions, useDrawSol } from "@/hooks/context";
 import { limitsOf, remaining, walletAllowance, type Limits } from "@/lib/derive";
-import { shortDate, sol, ticketNo, utcLabel } from "@/lib/format";
+import { shortDate, sol, utcLabel } from "@/lib/format";
 import { AIRDROP_LAMPORTS, FAUCET_URL, LOW_BALANCE_LAMPORTS, SOLFAUCET_URL } from "@/lib/config";
 import type { DrawView, EntryView } from "@/lib/types";
 import { Busy, ErrorNote, Minus, Plus, ProofLink, inFlight, phaseLabel } from "./bits";
@@ -12,13 +12,13 @@ import { useBuy, type BuyMode } from "./BuyContext";
 import { AdultRow } from "./Sheet";
 import { FeeLine, useFees } from "./Fee";
 import { Meter } from "./Hero";
-import { n, plural, solRound, usd } from "./fmt";
+import { n, plural, solRound, tno, usd } from "./fmt";
 
 const AIRDROP_SOL = sol(BigInt(AIRDROP_LAMPORTS), 0, 2);
 const PRESETS = [1, 5, 10, 25, 50, 100, 250, 500];
 
 /** What one entry gets back from claim_refund: what it paid less any instant SOL it already won. */
-export const refundOf = (e: EntryView) => (e.paidLamports > e.solPaid ? e.paidLamports - e.solPaid : BigInt(0));
+export const refundOf = (e: EntryView) => (e.paidLamports > e.instantPaid ? e.paidLamports - e.instantPaid : BigInt(0));
 
 /** Which buy button the panel and the bar show, in priority order. */
 export function useBuyButton() {
@@ -27,7 +27,7 @@ export function useBuyButton() {
   const { paidPart } = useBuy();
   const fees = useFees();
   if (!d) return null;
-  const allowance = walletAllowance(d, player, 0);
+  const allowance = walletAllowance(d, player);
   const subtotal = d.ticketPrice * BigInt(paidPart);
   const lim = limitsOf(wallet ? profile : null, now);
   if (!wallet) return { kind: "connect" as const, subtotal };
@@ -37,7 +37,7 @@ export function useBuyButton() {
   if (wallet.balance !== null && wallet.balance < subtotal + (fees ?? BigInt(0)))
     return { kind: "low" as const, subtotal, balance: wallet.balance, need: fees !== null ? subtotal + fees : null };
   if (disabledReason) return { kind: "disabled" as const, subtotal, reason: disabledReason };
-  if (remaining(d) === 0) return { kind: "disabled" as const, subtotal, reason: "Every paid ticket has sold." };
+  if (remaining(d) === 0) return { kind: "disabled" as const, subtotal, reason: "Every ticket has sold." };
   return { kind: "buy" as const, subtotal };
 }
 
@@ -57,7 +57,7 @@ export function useLowBalance() {
 /** "Enter now · $5.00" / "Enter now · 0.0419 SOL" */
 export function enterLabel(subtotal: bigint, price: number | null, short = false) {
   const u = usd(subtotal, price);
-  const amount = u ?? `${sol(subtotal, 2, 4)} SOL`;
+  const amount = u ?? `${sol(subtotal, 2, 5)} SOL`;
   return short ? `Enter now` : `Enter now · ${amount}`;
 }
 
@@ -246,10 +246,10 @@ function Picker({ d }: { d: DrawView }) {
               {total ? (
                 <>
                   <b className="c-accent">{total}</b>
-                  <span className="total-sol nw">{sol(subtotal, 2, 4)} SOL</span>
+                  <span className="total-sol nw">{sol(subtotal, 2, 5)} SOL</span>
                 </>
               ) : (
-                <b className="c-accent nw">{sol(subtotal, 2, 4)} SOL</b>
+                <b className="c-accent nw">{sol(subtotal, 2, 5)} SOL</b>
               )}
             </p>
           </div>
@@ -265,13 +265,7 @@ function Picker({ d }: { d: DrawView }) {
             </button>
           )}
           <p className="under">
-            {d.guaranteed ? (
-              <>
-                Drawn {utcLabel(d.drawAt)}, guaranteed. The full end prize once {n(d.minTickets)} tickets sell; below that, {d.potBps / 100}% of ticket sales. No refunds.
-              </>
-            ) : (
-              <>Drawn at the deadline once {n(d.minTickets)} tickets sell, otherwise everyone is refunded in full.</>
-            )}
+            Drawn {utcLabel(d.drawAt)}, guaranteed. The full end prize once {n(d.minTickets)} tickets sell; below that, {d.potBps / 100}% of ticket sales. No refunds.
           </p>
           <p className="free-link">
             <button type="button" className="tbtn" onClick={showFree}>
@@ -383,9 +377,10 @@ function FreeEntry({ d }: { d: DrawView }) {
   const fp = phase.free;
   const busy = inFlight(fp);
   const ageOk = adultRemembered || adult;
+  const entryRent = entryRentFor(costs, 1);
   const rent =
-    costs.entryRent !== null && read && profileState === "ready" && (player || costs.playerRent !== null) && (profile || costs.profileRent !== null)
-      ? costs.entryRent + (player ? BigInt(0) : costs.playerRent ?? BigInt(0)) + (profile ? BigInt(0) : costs.profileRent ?? BigInt(0))
+    entryRent !== null && read && profileState === "ready" && (player || costs.playerRent !== null) && (profile || costs.profileRent !== null)
+      ? entryRent + (player ? BigInt(0) : costs.playerRent ?? BigInt(0)) + (profile ? BigInt(0) : costs.profileRent ?? BigInt(0))
       : null;
 
   const claim = () => {
@@ -399,9 +394,18 @@ function FreeEntry({ d }: { d: DrawView }) {
     action = (
       <p className="free-done">
         {mine ? (
-          <>
-            Your free entry is ticket <b className="nw tab">{ticketNo(mine.firstTicket)}</b>, in the draw with every other ticket.
-          </>
+          mine.revealed ? (
+            <>
+              Your free entry is ticket <b className="nw tab">{tno(mine.tickets[0])}</b>, in the draw with every other ticket.
+            </>
+          ) : (
+            <>
+              Your free entry is in; its number is assigned when it is revealed.{" "}
+              <a className="tbtn" href="#my-tickets">
+                Reveal it
+              </a>
+            </>
+          )
         ) : (
           <>This wallet has claimed its free entry for Draw № {d.id}.</>
         )}
@@ -458,7 +462,7 @@ function FreeEntry({ d }: { d: DrawView }) {
         </div>
         <div>
           <dt>This wallet</dt>
-          <dd>{!wallet ? <span className="c-3">connect to check</span> : !read ? <span className="c-3">{myState === "error" ? "can’t read" : "…"}</span> : claimed ? <>Claimed{mine ? `: ${ticketNo(mine.firstTicket)}` : ""}</> : "Not claimed"}</dd>
+          <dd>{!wallet ? <span className="c-3">connect to check</span> : !read ? <span className="c-3">{myState === "error" ? "can’t read" : "…"}</span> : claimed ? <>Claimed{mine?.revealed ? `: ${tno(mine.tickets[0])}` : ""}</> : "Not claimed"}</dd>
         </div>
       </dl>
       <p className="helper">

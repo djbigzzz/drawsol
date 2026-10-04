@@ -18,7 +18,7 @@ const nextConfig = {
   webpack: (config) => {
     // the generated IDL ships without its developer `docs` (the file itself is never edited)
     config.module.rules.push({
-      test: /[\\/]idl[\\/]drawsol(-v2)?\.json$/,
+      test: /[\\/]idl[\\/]drawsol(-v3)?\.json$/,
       use: [{ loader: require('path').resolve(__dirname, 'scripts/strip-idl-docs.cjs') }],
     });
     config.resolve.fallback = {

@@ -34,7 +34,7 @@ export function MobileBar() {
   const seen = useEnterVisible();
   if (!d || !barMode || !bb || mode !== "buy" || phaseOf(d, now) !== "selling") return null;
   const subtotal = d.ticketPrice * BigInt(qty);
-  const total = usd(subtotal, solUsd) ?? `${sol(subtotal, 2, 4)} SOL`;
+  const total = usd(subtotal, solUsd) ?? `${sol(subtotal, 2, 5)} SOL`;
   const hidden = step !== "pick" || seen;
   const ap = phase.airdrop;
   return (

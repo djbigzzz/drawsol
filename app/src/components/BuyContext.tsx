@@ -6,11 +6,12 @@ import { useActions, useDrawSol } from "@/hooks/context";
 import { limitsOf, remaining, walletAllowance } from "@/lib/derive";
 
 export type BuyMode = "buy" | "free";
-export type Step = "pick" | "confirm" | "done";
+export type Step = "pick" | "confirm";
 
 /**
  * UI state only (not data): the one quantity shared by the entry panel and the mobile bar, which tab is open
- * ("Paid tickets" or "Free entry"), the pick → confirm → done sheet, and the remembered 18+ acknowledgement.
+ * ("Paid tickets" or "Free entry"), the pick → confirm sheet (the reveal sheet takes over after paying), and
+ * the remembered 18+ acknowledgement.
  */
 export interface BuyState {
   qty: number;
@@ -26,7 +27,7 @@ export interface BuyState {
   showFree: () => void;
   step: Step;
   openConfirm: () => void;
-  /** close the sheet (back to the panel); after a success it also clears the success state */
+  /** close the sheet (back to the panel) */
   closeSheet: () => void;
   /** connect first, then continue to the confirm step */
   connectThenConfirm: () => void;
@@ -79,7 +80,7 @@ export interface BuyInit {
 
 export function BuyProvider({ children, init }: { children: ReactNode; init?: BuyInit }) {
   const { current: d, wallet, player, profile, now } = useDrawSol();
-  const { done, clearDone, lastSig, session } = useActions();
+  const { lastSig, session } = useActions();
   const { setVisible } = useWalletModal();
   const mobile = useIsMobile();
   const barMode = useIsMobile(BAR_QUERY);
@@ -93,7 +94,7 @@ export function BuyProvider({ children, init }: { children: ReactNode; init?: Bu
   const lim = limitsOf(wallet ? profile : null, now);
   // the most one purchase can hold: the per-purchase and per-wallet caps, the paid tickets left, and (with a
   // play limit) the paid tickets the limit still allows. Free-ticket credits are not spent from this page.
-  let maxQ = d ? (wallet ? walletAllowance(d, player, 0).max : Math.min(d.maxPerTx, remaining(d))) : 0;
+  let maxQ = d ? (wallet ? walletAllowance(d, player).max : Math.min(d.maxPerTx, remaining(d))) : 0;
   if (d && lim.headroom !== null && d.ticketPrice > BigInt(0)) maxQ = Math.min(maxQ, Number(lim.headroom / d.ticketPrice));
 
   useEffect(() => setAdult(readAdult()), []);
@@ -130,9 +131,8 @@ export function BuyProvider({ children, init }: { children: ReactNode; init?: Bu
   const openConfirm = useCallback(() => setStep("confirm"), []);
   const closeSheet = useCallback(() => {
     setStep("pick");
-    if (done) clearDone();
     requestAnimationFrame(() => document.getElementById("enter-btn")?.focus({ preventScroll: true }));
-  }, [done, clearDone]);
+  }, []);
 
   const connectThenConfirm = useCallback(() => {
     pending.current = true;
@@ -147,17 +147,13 @@ export function BuyProvider({ children, init }: { children: ReactNode; init?: Bu
     }
   }, [wallet]);
 
-  // a purchase or free entry has confirmed: the sheet shows the success state
-  useEffect(() => {
-    if (done) setStep("done");
-  }, [done]);
-  // a reveal session has opened (draws with instant prizes): the confirm sheet gives way to the reveal
+  // a reveal session has opened (every purchase and free entry rolls): the confirm sheet gives way to the reveal
   useEffect(() => {
     if (session) setStep("pick");
   }, [session]);
   useEffect(() => {
-    if (lastSig.free && !done) setStep("pick");
-  }, [lastSig.free, done]);
+    if (lastSig.free) setStep("pick");
+  }, [lastSig.free]);
 
   const rememberAdult = useCallback(() => {
     try {
