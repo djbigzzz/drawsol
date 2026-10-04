@@ -157,13 +157,24 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 
 /* ---------- hero ---------- */
 .hero { display: grid; grid-template-columns: minmax(0, 1fr); box-shadow: var(--shadow-card); border-radius: var(--r4); overflow: hidden; }
-.hero-prize { padding: 24px 20px 20px; background: var(--surface); display: flex; flex-direction: column; gap: 16px; }
-.hero-panel { padding: 20px; border-top: 1px solid var(--line); }
-@media (min-width: 761px) { .hero-prize { padding: 32px; } .hero-panel { padding: 28px 32px; } }
+.hero-prize { --px: 20px; --pb: 20px; padding: 24px var(--px) var(--pb); background: var(--surface); display: flex; flex-direction: column; gap: 16px; }
+.hero-panel { --pp: 20px; padding: var(--pp); border-top: 1px solid var(--line); }
+@media (min-width: 761px) { .hero-prize { --px: 32px; --pb: 32px; padding: 32px var(--px) var(--pb); } .hero-panel { --pp: 32px; padding: 28px var(--pp); } }
 @media (min-width: 1024px) {
   .hero { grid-template-columns: minmax(0, 1.15fr) minmax(400px, 480px); }
-  .hero-prize { padding: 40px 40px 32px; gap: 20px; }
-  .hero-panel { padding: 32px; border-top: 0; border-left: 1px solid var(--line); }
+  .hero-prize { --px: 40px; --pb: 32px; padding: 40px var(--px) var(--pb); gap: 20px; }
+  .hero-panel { --pp: 32px; padding: var(--pp); border-top: 0; border-left: 1px solid var(--line); }
+}
+/* the prize artwork (public/art, white background): on the grey block through multiply, so it has no edges.
+   Phones: a 220px band under the lock line, bleeding to the block's sides. Desktop: last in the column, it
+   takes whatever height the entry panel leaves and sits on the card's bottom edge. The image is scaled so
+   its subject (the $500 and the money, the middle 56% of its height) fills the band; the confetti is cropped. */
+.hero-art { position: relative; overflow: hidden; height: 220px; margin: -4px calc(-1 * var(--px)) 0; flex: none; }
+.hero-art img { position: absolute; left: 50%; top: 50%; width: auto; height: 172%; max-width: none; transform: translate(-50%, -56%); mix-blend-mode: multiply; }
+@media (min-width: 761px) { .hero-art { height: 260px; } }
+@media (min-width: 1024px) {
+  .hero-art { order: 99; height: auto; flex: 1 1 220px; min-height: 220px; margin: -8px calc(-1 * var(--px)) calc(-1 * var(--pb)); }
+  .hero-art img { height: 180%; transform: translate(-50%, -57%); }
 }
 .hero-sub { font-size: 15px; line-height: 1.5; color: var(--navy-2); max-width: 36em; text-wrap: pretty; }
 .hero-sub b { color: var(--navy); }
@@ -218,7 +229,16 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .steps li.now { color: var(--navy); }
 .steps li.now .mk { background: var(--navy); color: #fff; }
 .steps li.now .mk .busy { margin: 0; width: 12px; height: 12px; }
-.winner { display: grid; gap: 12px; }
+.winner { display: grid; gap: 12px; position: relative; }
+/* the settled card's backdrop: the confetti ring, faint, its clear middle behind the winning ticket, fading out
+   above the facts so no text sits on it; clipped by the panel */
+.ph-settled .hero-panel { position: relative; overflow: hidden; }
+.winner > :not(.winner-bg) { position: relative; }
+.winner-bg {
+  position: absolute; z-index: 0; top: calc(-1 * var(--pp)); left: -46%; width: 150%; height: 230px; max-width: none; object-fit: cover; object-position: 50% 22%;
+  opacity: .5; pointer-events: none; user-select: none;
+  -webkit-mask-image: linear-gradient(#000 45%, transparent 100%); mask-image: linear-gradient(#000 45%, transparent 100%);
+}
 .winner-eyebrow, .wc-eyebrow, .pe-eyebrow { font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--navy-3); }
 .winner-ticket { font-size: 56px; line-height: 1; font-weight: 800; letter-spacing: -.03em; color: var(--accent); }
 .winner-facts { display: grid; gap: 10px; padding: 14px 16px; border-radius: var(--r2); background: var(--surface); }
@@ -285,10 +305,10 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 /* ---------- sheets ---------- */
 .scrim { position: fixed; inset: 0; z-index: 110; background: rgba(11,18,32,.5); animation: fade .2s both; }
 @keyframes fade { from { opacity: 0; } }
-.sheet { position: fixed; z-index: 120; left: 0; right: 0; bottom: 0; background: #fff; border-radius: var(--r4) var(--r4) 0 0; box-shadow: var(--shadow-sheet); max-height: calc(100dvh - var(--devbar-h) - 8px); overflow: auto; overscroll-behavior: contain; padding: 20px var(--gutter) calc(20px + env(safe-area-inset-bottom)); animation: rise .28s var(--ease) both; }
+.sheet { --sp-t: 20px; --sp-x: var(--gutter); position: fixed; z-index: 120; left: 0; right: 0; bottom: 0; background: #fff; border-radius: var(--r4) var(--r4) 0 0; box-shadow: var(--shadow-sheet); max-height: calc(100dvh - var(--devbar-h) - 8px); overflow: auto; overscroll-behavior: contain; padding: var(--sp-t) var(--sp-x) calc(20px + env(safe-area-inset-bottom)); animation: rise .28s var(--ease) both; }
 @keyframes rise { from { transform: translateY(24px); opacity: 0; } }
 @media (min-width: 761px) {
-  .sheet { left: 50%; right: auto; bottom: auto; top: 50%; transform: translate(-50%, -50%); width: min(480px, calc(100vw - 48px)); border-radius: var(--r4); padding: 28px; max-height: calc(100dvh - 48px); animation: pop .22s var(--ease) both; }
+  .sheet { --sp-t: 28px; --sp-x: 28px; left: 50%; right: auto; bottom: auto; top: 50%; transform: translate(-50%, -50%); width: min(480px, calc(100vw - 48px)); border-radius: var(--r4); padding: var(--sp-t) var(--sp-x) 28px; max-height: calc(100dvh - 48px); animation: pop .22s var(--ease) both; }
   .sheet.sheet-wide { width: min(640px, calc(100vw - 48px)); }
   @keyframes pop { from { transform: translate(-50%, -50%) scale(.97); opacity: 0; } }
 }
@@ -317,6 +337,15 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .rchip.win { background: var(--accent-tint); border-color: var(--accent-line); color: var(--accent); }
 .rchip.win b { color: var(--accent); }
 .rchip.more { align-items: center; justify-items: center; color: var(--navy-2); }
+/* the win: the head becomes a full-width band of confetti (public/art, white on white) with "You won $10" in
+   the ring's clear middle; the Close link keeps its corner. Nothing else is placed on the image. */
+.rv-hero { position: relative; overflow: hidden; margin: calc(-1 * var(--sp-t)) calc(-1 * var(--sp-x)) 0; min-height: 168px; padding: 24px var(--sp-x) 12px; display: grid; align-content: center; justify-items: center; text-align: center; }
+.rv-confetti { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%; pointer-events: none; user-select: none; }
+.reveal .rv-hero .t-h3 { position: relative; display: grid; justify-items: center; gap: 6px; }
+.rv-eyebrow { font-size: 13px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--navy-2); }
+.rv-amt { font-size: 48px; line-height: 1; font-weight: 800; letter-spacing: -.03em; color: var(--accent); }
+.rv-hero .tbtn { position: absolute; top: 20px; right: calc(var(--sp-x) + 8px); margin: 0; }
+@media (min-width: 761px) { .rv-hero { min-height: 200px; } .rv-amt { font-size: 56px; } }
 .rv-sum { display: grid; gap: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
 .rv-won { display: flex; gap: 12px; align-items: center; font-size: 15px; color: var(--navy-2); }
 .rv-won b { color: var(--navy); }
@@ -363,6 +392,13 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fo
 .toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; cursor: pointer; min-height: 44px; }
 .toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
 .instant-how { font-size: 14px; line-height: 1.55; color: var(--navy-2); max-width: 60em; text-wrap: pretty; }
+/* the illustration beside the intro (public/art, white on white): floated right, the text runs beside it; the
+   wrapper crops the file's white margins (its subject is the middle ~65% either way) */
+.instant-intro { max-width: calc(60em * 14 / 16 + 200px); font-size: 14px; }
+.instant-intro::after { content: ""; display: block; clear: both; }
+.instant-art { float: right; width: 112px; height: 112px; margin: -8px 0 8px 16px; position: relative; overflow: hidden; }
+.instant-art img { position: absolute; left: 50%; top: 50%; width: 150%; height: auto; max-width: none; transform: translate(-50%, -50%); }
+@media (min-width: 761px) { .instant-art { width: 168px; height: 168px; margin: -16px 0 8px 32px; } }
 .tiers { display: grid; gap: 8px; }
 .tier { border: 1px solid var(--line); border-radius: var(--r3); background: #fff; }
 .tier summary { list-style: none; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px 16px; padding: 14px 16px; cursor: pointer; min-height: 56px; }

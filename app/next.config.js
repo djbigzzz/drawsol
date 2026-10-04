@@ -1,3 +1,7 @@
+// The site lives under /drawsol (GitHub Pages). Next prefixes its own routes and assets with it, but not a
+// plain <img src> or url(), so the same value is exposed to the app (lib/config.ts `art()`).
+const basePath = '/drawsol';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'export',
@@ -7,8 +11,9 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_FIXTURES: process.env.NEXT_PUBLIC_FIXTURES === '1' ? '1' : '0',
     NEXT_PUBLIC_RPC_URL: process.env.NEXT_PUBLIC_RPC_URL || 'https://api.devnet.solana.com',
+    NEXT_PUBLIC_BASE_PATH: basePath,
   },
-  basePath: '/drawsol',
+  basePath,
   // every route is a folder with its own index.html (draw/index.html), so /drawsol/draw/?n=0 resolves on
   // GitHub Pages and any static host; /drawsol/draw redirects to it
   trailingSlash: true,

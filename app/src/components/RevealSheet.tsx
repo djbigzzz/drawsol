@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useActions, useDrawSol } from "@/hooks/context";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { art } from "@/lib/config";
 import { sol, utcLabel } from "@/lib/format";
 import { Busy, Check, ErrorNote, ProofLink } from "./bits";
 import { useBuy } from "./BuyContext";
@@ -82,6 +83,9 @@ export function RevealSheet() {
   const wins = tickets.map((_, i) => winOf(i)).filter((x) => x > BigInt(0));
   const paid = s.instantPaid ?? BigInt(0);
   const allShown = shown >= s.count;
+  // every ticket is shown and at least one won: the head becomes the celebration, the total in the clear middle
+  const won = s.stage === "revealed" && allShown && wins.length > 0;
+  const paidLabel = usdPrize(paid, solUsd) ?? `${prizeSol(paid)} SOL`;
   const title =
     s.stage === "confirming"
       ? "Confirming your purchase…"
@@ -94,7 +98,7 @@ export function RevealSheet() {
             : !allShown
               ? "Your tickets"
               : wins.length
-                ? `You won ${usdPrize(paid, solUsd) ?? `${prizeSol(paid)} SOL`}`
+                ? `You won ${paidLabel}`
                 : "No instant win this time";
 
   return (
@@ -102,10 +106,18 @@ export function RevealSheet() {
       <div className="scrim" onClick={finished ? closeSession : undefined} aria-hidden="true" />
       <div className="sheet sheet-wide" role="dialog" aria-modal="true" aria-labelledby="reveal-h" ref={ref}>
         <div className="sheet-in reveal">
-          <div className="sheet-head">
+          <div className={`sheet-head ${won ? "rv-hero" : ""}`}>
+            {won && <img className="rv-confetti" src={art("confetti.png")} alt="" aria-hidden="true" width={1600} height={900} decoding="async" />}
             <h2 className="t-h3" id="reveal-h" tabIndex={-1} aria-live="polite">
               {(s.stage === "confirming" || s.stage === "vrf" || s.stage === "revealing") && <Busy />}
-              {title}
+              {won ? (
+                <>
+                  <span className="rv-eyebrow">You won</span>
+                  <span className="rv-amt tab">{paidLabel}</span>
+                </>
+              ) : (
+                title
+              )}
             </h2>
             {finished && (
               <button type="button" className="tbtn" onClick={closeSession}>

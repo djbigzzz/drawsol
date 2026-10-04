@@ -8,7 +8,7 @@ import { campaignOf, usdWhole } from "@/lib/campaigns";
 import { winningPosition } from "@/lib/fairness";
 import { clock, sol, utcLabel } from "@/lib/format";
 import { vaultPda } from "@/lib/chain";
-import { CANCEL_GRACE_SECS } from "@/lib/config";
+import { CANCEL_GRACE_SECS, art } from "@/lib/config";
 import type { DrawView } from "@/lib/types";
 import { Addr, Busy, Check, ErrorNote, Pill, ProofLink, inFlight, phaseLabel } from "./bits";
 import { EntryPanel, refundOf } from "./EntryPanel";
@@ -60,6 +60,10 @@ function PrizeBlock({ d, ph }: { d: DrawView; ph: Phase }) {
   const price = usd(d.ticketPrice, solUsd);
   const local = useLocal(d.drawAt);
   const soldOut = d.nextPos >= d.ticketCap;
+  // the headline is the campaign's nominal figure unless a guaranteed draw settled under its minimum
+  const nominal = !!camp && !(ph === "settled" && d.guaranteed && d.paidTickets < d.minTickets);
+  // the artwork was drawn for that figure, so it goes with the headline, never with a cancelled draw
+  const artwork = nominal && ph !== "cancelled" ? camp!.art : undefined;
   return (
     <div className="hero-prize">
       <p className="badge-row">
@@ -67,7 +71,7 @@ function PrizeBlock({ d, ph }: { d: DrawView; ph: Phase }) {
         <Pill tone={tone}>{ph === "closed" && soldOut ? "Sold out" : label}</Pill>
       </p>
       <h1 className="t-win" id="hero-h">
-        {camp && !(ph === "settled" && d.guaranteed && d.paidTickets < d.minTickets) ? (
+        {nominal ? (
           <>
             <span className="win-verb">{ph === "settled" ? "Won" : "Win"}</span> {usdWhole(camp.usd)} <span className="win-what">cash</span>
           </>
@@ -124,6 +128,12 @@ function PrizeBlock({ d, ph }: { d: DrawView; ph: Phase }) {
           </>
         )}
       </p>
+
+      {artwork && (
+        <figure className="hero-art">
+          <img src={art(artwork.file)} alt={artwork.alt} width={1600} height={1341} decoding="async" />
+        </figure>
+      )}
 
       <dl className="hero-facts">
         <div>
@@ -468,6 +478,7 @@ function WinnerPanel({ d }: { d: DrawView }) {
   const notMine = !!wallet && myState === "ready" && !mine;
   return (
     <div className="panel winner">
+      <img className="winner-bg" src={art("confetti.png")} alt="" aria-hidden="true" width={1600} height={900} decoding="async" />
       <p className="winner-eyebrow">Winning ticket</p>
       <p className="winner-ticket tab">{tnoOf(d, d.winningTicket)}</p>
       <dl className="winner-facts">

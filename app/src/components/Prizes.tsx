@@ -6,6 +6,7 @@ import { endPrize, endPrizeLocked, scheduleTotals, wonNumbers } from "@/lib/deri
 import { campaignOf, usdWhole } from "@/lib/campaigns";
 import { sol, utcLabel } from "@/lib/format";
 import { vaultPda } from "@/lib/chain";
+import { art } from "@/lib/config";
 import type { DrawView } from "@/lib/types";
 import { Addr, ProofLink, Section } from "./bits";
 import { n, plural, prizeFig, prizeSol, solRound, tno, usd, usdPrize } from "./fmt";
@@ -103,11 +104,16 @@ export function Prizes({ d }: { d: DrawView }) {
               <span>Hide already won prizes</span>
             </label>
           </div>
-          <p className="instant-how">
-            Winning numbers were published on-chain before sales opened and can’t change. Your ticket numbers are assigned at random by ORAO when you reveal,
-            about 2 s after paying, so nobody can pick a known winning number. A match is paid in the reveal transaction. A number is marked won from the
-            schedule account itself; the wallet beside it comes from the entry that holds it.
-          </p>
+          <div className="instant-intro">
+            <span className="instant-art">
+              <img src={art("instant-prizes.png")} alt="A blue ticket card with a green check, on a pile of gold coins and banknotes" width={1200} height={1500} loading="lazy" decoding="async" />
+            </span>
+            <p className="instant-how">
+              Winning numbers were published on-chain before sales opened and can’t change. Your ticket numbers are assigned at random by ORAO when you reveal,
+              about 2 s after paying, so nobody can pick a known winning number. A match is paid in the reveal transaction. A number is marked won from the
+              schedule account itself; the wallet beside it comes from the entry that holds it.
+            </p>
+          </div>
           <div className="tiers">
             {d.schedule.map((tier, i) => {
               const left = tier.numbers.filter((t) => !won.has(t));

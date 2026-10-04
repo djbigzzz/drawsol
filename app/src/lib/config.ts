@@ -10,6 +10,14 @@ export const FIXTURES = process.env.NEXT_PUBLIC_FIXTURES === "1";
 export const RPC_URL =
   process.env.NEXT_PUBLIC_RPC_URL || "https://api.devnet.solana.com";
 
+/**
+ * The site's base path ("/drawsol"), from next.config.js. Next prefixes its own routes and bundles with it
+ * but leaves a plain <img src> alone, so every static file under public/ is referenced through here.
+ */
+export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+/** `art("prize-500.png")` → "/drawsol/art/prize-500.png": a generated graphic in public/art. */
+export const art = (file: string) => `${BASE_PATH}/art/${file}`;
+
 export const PROGRAM_ID = new PublicKey(
   "FwM598mwYfusUtpuN66f8bteTTubL9SJJ5RuPiVonuUb"
 );
