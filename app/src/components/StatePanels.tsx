@@ -8,7 +8,7 @@ import { utcHhmm } from "./fmt";
 /** Loading: the card's shape with no numbers and no shimmer, just the shape and one line. */
 export function HeroSkeleton() {
   return (
-    <section className="hero card hero-skel" aria-busy="true" aria-label="Loading the draw from devnet">
+    <section className="hero hero-skel" aria-busy="true" aria-label="Loading the draw from devnet">
       <div className="hero-prize">
         <div className="skel sk-pill" />
         <div className="skel sk-h1" />

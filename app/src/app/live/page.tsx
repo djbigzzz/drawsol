@@ -16,16 +16,18 @@ export default function LivePage() {
   return (
     <DataRoot>
       <DevnetBar />
-      <header className="page mast">
-        <Wordmark away />
-        <div className="mast-r">
-          <nav className="nav" aria-label="Sections">
-            <Link href="/">The draw</Link>
-            <Link href="/draw/">Every draw</Link>
-          </nav>
-          <WalletButton away />
-        </div>
-      </header>
+      <div className="mast-band">
+        <header className="page mast">
+          <Wordmark away />
+          <div className="mast-r">
+            <nav className="nav" aria-label="Sections">
+              <Link href="/">The draw</Link>
+              <Link href="/draw/">Every draw</Link>
+            </nav>
+            <WalletButton away />
+          </div>
+        </header>
+      </div>
       <main id="top" className="page main live-page">
         <Suspense fallback={null}>
           <FromQuery />

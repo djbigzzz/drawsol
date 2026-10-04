@@ -22,7 +22,7 @@ export function DevnetBar() {
 
 /** The logo (components/Logo.tsx) as the home link. */
 export function Wordmark({ away = false }: { away?: boolean }) {
-  const inner = <Logo size={30} />;
+  const inner = <Logo size={30} variant="inverse" />;
   return away ? (
     <Link href="/" className="brand" aria-label="DrawSol, home">
       {inner}
@@ -34,28 +34,30 @@ export function Wordmark({ away = false }: { away?: boolean }) {
   );
 }
 
-/** `away`: on a page of its own (/draw, /live), the links lead back home. */
+/** `away`: on a page of its own (/draw, /live), the links lead back home. The bar is the navy-to-blue band. */
 export function Header({ away = false }: { away?: boolean }) {
   return (
-    <header className="page mast">
-      <Wordmark away={away} />
-      <div className="mast-r">
-        <nav className="nav" aria-label="Sections">
-          {away ? (
-            <>
-              <Link href="/">The draw</Link>
-              <Link href="/#winners">Winners</Link>
-              <Link href="/#how">How it works</Link>
-            </>
-          ) : (
-            <>
-              <a href="#winners">Winners</a>
-              <a href="#how">How it works</a>
-            </>
-          )}
-        </nav>
-        <WalletButton away={away} />
-      </div>
-    </header>
+    <div className="mast-band">
+      <header className="page mast">
+        <Wordmark away={away} />
+        <div className="mast-r">
+          <nav className="nav" aria-label="Sections">
+            {away ? (
+              <>
+                <Link href="/">The draw</Link>
+                <Link href="/#winners">Winners</Link>
+                <Link href="/#how">How it works</Link>
+              </>
+            ) : (
+              <>
+                <a href="#winners">Winners</a>
+                <a href="#how">How it works</a>
+              </>
+            )}
+          </nav>
+          <WalletButton away={away} />
+        </div>
+      </header>
+    </div>
   );
 }

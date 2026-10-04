@@ -74,7 +74,7 @@ export function Winners() {
                     </span>
                   </div>
                   <div className="row-side">
-                    <span className="pill pill-accent">Won {usdPrize(e.instantPaid, solUsd) ?? `${prizeSol(e.instantPaid)} SOL`}</span>
+                    <span className="pill pill-win">Won {usdPrize(e.instantPaid, solUsd) ?? `${prizeSol(e.instantPaid)} SOL`}</span>
                     <ProofLink account={e.address} className="row-proof">
                       Entry
                     </ProofLink>

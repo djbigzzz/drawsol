@@ -187,7 +187,7 @@ function Stage({ d, stage, shown, pos, winning, now }: { d: DrawView; stage: Sta
           ) : stage === "cancelled" ? (
             <p className="live-num c-3">{n(d.paidTickets)} sold</p>
           ) : (
-            <p className={`live-num tab ${stage === "rolling" ? "" : "c-accent"}`} aria-label={stage === "rolling" ? undefined : `Winning ticket ${figure}`}>
+            <p className={`live-num tab ${stage === "rolling" ? "" : "c-win"}`} aria-label={stage === "rolling" ? undefined : `Winning ticket ${figure}`}>
               {stage === "rolling" && shown === null ? "#·,···" : figure}
             </p>
           )}

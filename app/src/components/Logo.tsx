@@ -33,11 +33,12 @@ export function LogoMark({ size = 28, className = "" }: { size?: number; classNa
 
 /**
  * Mark and wordmark together. `size` is the mark's height; the wordmark is set at 0.68× that, which matches
- * the cap height of the ticket.
+ * the cap height of the ticket. `variant="inverse"` sets the wordmark in white for the navy header and footer;
+ * the purple mark is the same on both.
  */
-export function Logo({ size = 28, className = "" }: { size?: number; className?: string }) {
+export function Logo({ size = 28, className = "", variant = "default" }: { size?: number; className?: string; variant?: "default" | "inverse" }) {
   return (
-    <span className={`logo ${className}`} style={{ fontSize: Math.round(size * 0.68) }}>
+    <span className={`logo ${variant === "inverse" ? "logo-inverse" : ""} ${className}`} style={{ fontSize: Math.round(size * 0.68) }}>
       <LogoMark size={size} />
       <span className="logo-word">DrawSol</span>
     </span>

@@ -13,6 +13,7 @@ import { BarSpacer, MobileBar } from "@/components/MobileBar";
 import { MyTickets } from "@/components/MyTickets";
 import { Winners } from "@/components/Winners";
 import { HowItWorks, Rules, TrustStrip } from "@/components/Sections";
+import { StatsStrip } from "@/components/StatsStrip";
 import { PlaySafe } from "@/components/PlaySafe";
 import { Footer } from "@/components/Footer";
 import { HeroSkeleton, NoDraw, RpcError, StaleNote } from "@/components/StatePanels";
@@ -65,23 +66,35 @@ function Shell() {
 
 function Page() {
   const { load, current } = useDrawSol();
+  const ready = load.kind === "ready" && !!current;
   return (
-    <main id="top" className="page main">
-      {load.kind === "loading" && <HeroSkeleton />}
-      {load.kind === "error" && <RpcError />}
-      {load.kind === "nodraw" && <NoDraw reason={load.reason} />}
-      {load.kind === "ready" && !current && <NoDraw reason="no-draws" />}
-      {load.kind === "ready" && current && (
+    <main id="top">
+      <div className="hero-band">
+        <div className="page">
+          {load.kind === "loading" && <HeroSkeleton />}
+          {load.kind === "error" && <RpcError />}
+          {load.kind === "nodraw" && <NoDraw reason={load.reason} />}
+          {load.kind === "ready" && !current && <NoDraw reason="no-draws" />}
+          {ready && (
+            <>
+              <StaleNote />
+              <Hero />
+            </>
+          )}
+        </div>
+      </div>
+      {ready && (
         <>
-          <StaleNote />
-          <Hero />
-          <TrustStrip />
-          <Prizes d={current} />
-          <HowItWorks />
-          <MyTickets />
-          <Winners />
-          <Rules />
-          <PlaySafe />
+          <StatsStrip d={current} />
+          <div className="page main">
+            <TrustStrip />
+            <Prizes d={current} />
+            <HowItWorks />
+            <MyTickets />
+            <Winners />
+            <Rules />
+            <PlaySafe />
+          </div>
         </>
       )}
     </main>

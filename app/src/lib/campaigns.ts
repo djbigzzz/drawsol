@@ -15,8 +15,11 @@ export interface Campaign {
   title: string;
   /** the terms file the figure is taken from */
   terms: string;
-  /** the hero artwork for this prize (a file in public/art, drawn for this figure) and what it shows */
-  art?: { file: string; alt: string };
+  /**
+   * the hero artwork for this prize (a file in public/art, drawn for this figure, on white) and what it shows;
+   * `dark` is the same picture cut out for the navy hero (transparent background, the figure in white)
+   */
+  art?: { file: string; alt: string; dark?: { file: string; width: number; height: number } };
 }
 
 export const CAMPAIGNS: Record<number, Campaign> = {
@@ -24,7 +27,11 @@ export const CAMPAIGNS: Record<number, Campaign> = {
     usd: 500,
     title: "Win $500 cash",
     terms: "scripts/terms/draw-7.md",
-    art: { file: "prize-500.png", alt: "Stacks of banknotes and gold coins under a big $500, with gold confetti" },
+    art: {
+      file: "prize-500.png",
+      alt: "Stacks of banknotes and gold coins under a big $500, with gold confetti",
+      dark: { file: "prize-500-dark.webp", width: 1200, height: 823 },
+    },
   },
 };
 

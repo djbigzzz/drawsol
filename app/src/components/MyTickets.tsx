@@ -177,7 +177,7 @@ function Row({ e, d }: { e: EntryView; d: DrawView }) {
             Reveal {e.count === 1 ? "ticket" : `${n(e.count)} tickets`}
           </button>
         ) : holds ? (
-          <span className="pill pill-accent">Won {prizeFig(grandPrize(d))} SOL</span>
+          <span className="pill pill-win">Won {prizeFig(grandPrize(d))} SOL</span>
         ) : d.status === "cancelled" ? (
           e.isFree ? (
             <span className="c-3">nothing to refund</span>

@@ -23,7 +23,7 @@ export function Hero() {
   if (!d) return null;
   const ph = phaseOf(d, now);
   return (
-    <section className={`hero card ph-${ph}`} id="draw" aria-labelledby="hero-h">
+    <section className={`hero ph-${ph}`} id="draw" aria-labelledby="hero-h">
       <PrizeBlock d={d} ph={ph} />
       <div className="hero-panel" id="entry">
         {ph === "selling" && <EntryPanel d={d} />}
@@ -131,55 +131,54 @@ function PrizeBlock({ d, ph }: { d: DrawView; ph: Phase }) {
 
       {artwork && (
         <figure className="hero-art">
-          <img src={art(artwork.file)} alt={artwork.alt} width={1600} height={1341} decoding="async" />
+          {artwork.dark ? (
+            <img src={art(artwork.dark.file)} alt={artwork.alt} width={artwork.dark.width} height={artwork.dark.height} decoding="async" />
+          ) : (
+            <img className="on-plate" src={art(artwork.file)} alt={artwork.alt} width={1600} height={1341} decoding="async" />
+          )}
         </figure>
       )}
 
-      <dl className="hero-facts">
-        <div>
-          <dt>Ticket price</dt>
-          <dd>
-            {price ? (
-              <>
-                <b>{price}</b> <span className="sub nw">{sol(d.ticketPrice, 2, 5)} SOL</span>
-              </>
-            ) : (
-              <b className="nw">{sol(d.ticketPrice, 2, 5)} SOL</b>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>{ph === "settled" ? "Drawn" : ph === "cancelled" ? "Draw time" : "Draws"}</dt>
-          <dd>
-            <b className="nw">{utcLabel(ph === "settled" ? d.settledAt : d.drawAt)}</b>
-            {local && ph !== "settled" ? <span className="sub nw">{local} your time</span> : null}
-          </dd>
-        </div>
-        {(ph === "selling" || ph === "closed") && (
+      <div className={`hero-when ${ph === "selling" || ph === "closed" ? "has-cd" : ""}`}>
+        {(ph === "selling" || ph === "closed") && <CountdownBoxes secs={d.drawAt - now} label={ph === "selling" ? "Time left" : "Draws in"} />}
+        <dl className="hero-facts">
           <div>
-            <dt>Time left</dt>
+            <dt>Ticket price</dt>
             <dd>
-              <Countdown secs={d.drawAt - now} />
+              {price ? (
+                <>
+                  <b>{price}</b> <span className="sub nw">{sol(d.ticketPrice, 2, 5)} SOL</span>
+                </>
+              ) : (
+                <b className="nw">{sol(d.ticketPrice, 2, 5)} SOL</b>
+              )}
             </dd>
           </div>
-        )}
-        {ph === "settled" && (
           <div>
-            <dt>Winning ticket</dt>
+            <dt>{ph === "settled" ? "Drawn" : ph === "cancelled" ? "Draw time" : "Draws"}</dt>
             <dd>
-              <b className="c-accent tab">{tnoOf(d, d.winningTicket)}</b> <span className="sub">of {n(d.nextPos)}</span>
+              <b className="nw">{utcLabel(ph === "settled" ? d.settledAt : d.drawAt)}</b>
+              {local && ph !== "settled" ? <span className="sub nw">{local} your time</span> : null}
             </dd>
           </div>
-        )}
-        {ph === "cancelled" && (
-          <div>
-            <dt>Refunded so far</dt>
-            <dd>
-              <b className="nw">{sol(d.refundedLamports, 2, 4)}</b> <span className="sub nw">of {sol(d.revenueLamports, 2, 4)} SOL</span>
-            </dd>
-          </div>
-        )}
-      </dl>
+          {ph === "settled" && (
+            <div>
+              <dt>Winning ticket</dt>
+              <dd>
+                <b className="c-win tab">{tnoOf(d, d.winningTicket)}</b> <span className="sub">of {n(d.nextPos)}</span>
+              </dd>
+            </div>
+          )}
+          {ph === "cancelled" && (
+            <div>
+              <dt>Refunded so far</dt>
+              <dd>
+                <b className="nw">{sol(d.refundedLamports, 2, 4)}</b> <span className="sub nw">of {sol(d.revenueLamports, 2, 4)} SOL</span>
+              </dd>
+            </div>
+          )}
+        </dl>
+      </div>
       {d.schedule.length > 0 && ph !== "settled" && ph !== "cancelled" && (
         <p className="hero-instants">
           <b>{n(instants.count)} instant prizes</b>, {usdPrize(instants.total, solUsd) ?? `${solRound(instants.total, 3, 2)} SOL`} in all:{" "}
@@ -254,6 +253,43 @@ export function Countdown({ secs, className = "" }: { secs: number; className?: 
         </span>
       )}
     </b>
+  );
+}
+
+/**
+ * The countdown as four boxes, Days / Hours / Minutes / Seconds, for the navy hero. The boxes are decoration
+ * for sighted readers; the timer’s accessible name is the same sentence as `Countdown`’s, updated once a minute.
+ */
+export function CountdownBoxes({ secs, label }: { secs: number; label: string }) {
+  const t = durationParts(secs);
+  const minuteKey = Math.floor(secs / 60);
+  const [aria, setAria] = useState("");
+  useEffect(() => {
+    const parts = t.d > 0 ? [[t.d, "day"], [t.h, "hour"], [t.m, "minute"]] : t.h > 0 ? [[t.h, "hour"], [t.m, "minute"]] : [[t.m, "minute"], [t.s, "second"]];
+    setAria(`${label}: ${(parts as [number, string][]).map(([k, w]) => `${k} ${w}${k === 1 ? "" : "s"}`).join(", ")}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [minuteKey, label]);
+  if (secs <= 0) return null;
+  const cells: [number, string][] = [
+    [t.d, "Days"],
+    [t.h, "Hours"],
+    [t.m, "Minutes"],
+    [t.s, "Seconds"],
+  ];
+  return (
+    <div className="cdb" role="timer" aria-live="off" aria-label={aria}>
+      <p className="cdb-k" aria-hidden="true">
+        {label}
+      </p>
+      <ol className="cdb-row" aria-hidden="true">
+        {cells.map(([v, u]) => (
+          <li key={u}>
+            <b className="cdb-n tab">{String(v).padStart(2, "0")}</b>
+            <span className="cdb-u">{u}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
@@ -429,11 +465,11 @@ function DrawingPanel({ d, now }: { d: DrawView; now: number }) {
           <span>
             {w !== null ? (
               <>
-                Winning ticket <b className="c-accent tab">{tnoOf(d, w)}</b> (position {n(pos!)}), computed from the randomness. Settling pays {prizeFig(grandPrize(d))} SOL to its owner.
+                Winning ticket <b className="c-win tab">{tnoOf(d, w)}</b> (position {n(pos!)}), computed from the randomness. Settling pays {prizeFig(grandPrize(d))} SOL to its owner.
               </>
             ) : pos !== null ? (
               <>
-                Position <b className="c-accent tab">{n(pos)}</b> wins, computed from the randomness. {hit ? `Entry ${hit.seq} holds it but isn’t revealed yet; settling reveals it first.` : "Reading the entry that holds it…"}{" "}
+                Position <b className="c-win tab">{n(pos)}</b> wins, computed from the randomness. {hit ? `Entry ${hit.seq} holds it but isn’t revealed yet; settling reveals it first.` : "Reading the entry that holds it…"}{" "}
                 Settling pays {prizeFig(grandPrize(d))} SOL to its owner.
               </>
             ) : (
