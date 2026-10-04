@@ -10,13 +10,14 @@ Example values in this document come from the fixture `open` scenario (`app/src/
 
 ## 1. Brand idea
 
-> **A prize draw you can check, sold the way the best prize-draw sites sell: one big card, one price, one green button.** White page, near-black navy type, a single green accent for the action, the money and the progress. No decoration carries meaning that a number can carry instead.
+> **A prize draw you can check, sold the way the best prize-draw sites sell: one big card, one price, one purple button.** White page, near-black navy type, a single purple accent (Solana purple) for the action, the money and the progress, gold only in the artwork. No decoration carries meaning that a number can carry instead.
 
 What this means in practice:
 
 - **The hero card is the product.** Prize headline on the left, the sold meter and the ticket picker on the right. Explanations live below the fold.
 - **Every promise has a link.** Prize locked (vault), winner by ORAO VRF (recompute), guaranteed draw or full refund (draw account), every entry public (entries page).
-- **One accent, used with discipline.** Green is the Enter button, the total, the per-ticket price, the progress fill, the winning ticket and a win. Nothing else is green.
+- **One accent, used with discipline.** Purple is the Enter button, the total, the per-ticket price, the progress fill, the winning ticket and a win. Nothing else is purple, except the logo mark, which carries the brighter Solana `--highlight` in its gradient.
+- **Artwork carries the prize, never a number.** Three generated graphics (`app/public/art`, white backgrounds): the $500 cash stack in the hero (through `mix-blend-mode: multiply` on the grey block), the instant-prize card beside the Prizes intro, the confetti ring behind the reveal’s “You won” total and, faintly, the settled winner card. They are referenced through `art()` in `lib/config.ts`, which prefixes the site’s base path.
 - **No template tells.** No gradient text, glow blobs, glassmorphism, emoji, decorative card grids, serif or italic labels, or filler copy.
 
 ---
@@ -34,14 +35,19 @@ What this means in practice:
 | `--surface` | `#F5F7FA` | Grey surfaces: the prize half of the hero, trust items, sums |
 | `--surface-2` | `#EBEEF3` | Meter track, disabled buttons, tab rail |
 | `--line` / `--line-2` | `#E3E7EE` / `#CBD2DC` | Card borders / control borders |
-| `--accent` | `#15803D` | The accent: primary button, prices, totals, winning ticket, wins (4.6:1 with white text) |
-| `--accent-2` | `#166534` | Primary button hover |
-| `--accent-bar` | `#16A34A` | Progress fill and the wallet dot (non-text) |
-| `--accent-tint` / `--accent-line` | `#F0FDF4` / `#BBF7D0` | Win chips, success panels, the Open pill |
+| `--accent` | `#7C3AED` | The accent: primary button, prices, totals, winning ticket, wins, progress fill (5.9:1 with white text) |
+| `--accent-2` | `#6D28D9` | Primary button hover |
+| `--accent-bar` | `#7C3AED` | Progress fill, the slider track and the wallet dot (non-text) |
+| `--highlight` | `#9945FF` | Solana purple: the logo mark’s gradient (with `--accent`) and decoration only, never text |
+| `--accent-tint` / `--accent-line` | `#F5F3FF` / `#DDD6FE` | Win chips, success panels, the Open pill |
 | `--warn` / `--warn-tint` | `#B45309` / `#FFFBEB` | Draw due / drawing pills, the stale note, devnet-SOL notes |
 | `--danger` / `--danger-tint` | `#B91C1C` / `#FEF2F2` | Errors only |
 
-The palette is closed. Orange was considered and rejected: it fails AA with white text at button size.
+The palette is closed. Green (`#15803D`) was the accent until the brand moved to Solana purple; orange was considered and rejected: it fails AA with white text at button size. Purple beside the gold of the artwork is intended.
+
+### 2.1a Logo
+
+A ticket stub tilted 12° to the left, filled with the `#9945FF` → `#7C3AED` gradient (top-left to bottom-right), rounded corners, the two notches at mid-height and a white five-point star; beside it the wordmark “DrawSol” in Plus Jakarta Sans 800, `--navy`, tight tracking (`components/Logo.tsx`, 30px in the header, 24px in the footer). Files: `app/public/brand/drawsol-mark.svg` (icon), `drawsol-logo.svg` (mark + wordmark), `app-icon-512.png`, `drawsol-logo-2000.png`, `og-1200x630.png` (the social preview, linked from `layout.tsx`); the favicon is `app/src/app/icon.svg`, the mark on a white rounded square.
 
 ### 2.2 Type
 
@@ -64,9 +70,9 @@ One family, self-hosted: **Plus Jakarta Sans Variable** (`@fontsource-variable/p
 ## 3. Structure of the page
 
 1. **Devnet bar** (`.devbar`): “Devnet demo · play money (devnet tokens are not real)”, sticky, on every page. The fixture badge sits inside its right end.
-2. **Header**: wordmark, Winners, How it works, wallet button (outline pill with the short address and balance).
+2. **Header**: the logo, Winners, How it works, wallet button (outline pill with the short address and balance).
 3. **Hero card** (`Hero.tsx`), two columns from 1024px:
-   - **Prize block** (grey): pills “DRAW № 6 · OPEN”; “WIN $500 CASH” from `lib/campaigns.ts` (the nominal headline the draw was sold under, mirrored by its terms file), “+ 69 instant prizes”; the escrow line always from chain (“4.19 SOL escrowed ↗”, and for a guaranteed draw “End prize right now $205 · becomes $500 at 1,430 sold”); facts: ticket price ($1.00 · 0.00838 SOL), draw time, live countdown; the instant-prize summary; the vault balance.
+   - **Prize block** (grey): pills “DRAW № 6 · OPEN”; “WIN $500 CASH” from `lib/campaigns.ts` (the nominal headline the draw was sold under, mirrored by its terms file), “+ 69 instant prizes”; the escrow line always from chain (“4.19 SOL escrowed ↗”, and for a guaranteed draw “End prize right now $205 · becomes $500 at 1,430 sold”); the campaign’s artwork (`Campaign.art`: the $500 cash stack), a 220px band under the lock line on phones and, from 1024px, the bottom of the column, taking the height the entry panel leaves and sitting on the card’s edge; facts: ticket price ($1.00 · 0.00838 SOL), draw time, live countdown; the instant-prize summary; the vault balance. The artwork is skipped when the headline isn’t the nominal figure (a guaranteed draw settled under its minimum) and on a cancelled draw.
    - **Entry panel** (white): the sold meter first (“29%” · “586 / 2,000 tickets sold”, accent bar, a tick at the minimum, the note “1,430 sold unlocks the full end prize · 844 to go”), the Paid / Free entry tabs of equal weight, then the **picker** (§4).
 4. **Trust strip**: four promises with links.
 5. **Prizes** (`Prizes.tsx`): the end prize row with its rule stated in full, then the instant-prize accordion (§5).

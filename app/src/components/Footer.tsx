@@ -5,7 +5,7 @@ import { useDrawSol } from "@/hooks/context";
 import { PROGRAM_ID, SOURCE_URL, solscanAccount, GAMBLE_AWARE_URL } from "@/lib/config";
 import { short } from "@/lib/format";
 import { toHex } from "@/lib/fairness";
-import { Mark } from "./Header";
+import { Logo } from "./Logo";
 
 export function Footer({ away = false }: { away?: boolean }) {
   const { current: d } = useDrawSol();
@@ -15,8 +15,7 @@ export function Footer({ away = false }: { away?: boolean }) {
     <footer className="page foot">
       <div className="foot-top">
         <div className="foot-brand">
-          <Mark size={24} />
-          <b>DrawSol</b>
+          <Logo size={24} />
         </div>
         <ul className="foot-links">
           <li>

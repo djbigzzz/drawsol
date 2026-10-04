@@ -106,7 +106,7 @@ export function Prizes({ d }: { d: DrawView }) {
           </div>
           <div className="instant-intro">
             <span className="instant-art">
-              <img src={art("instant-prizes.png")} alt="A blue ticket card with a green check, on a pile of gold coins and banknotes" width={1200} height={1500} loading="lazy" decoding="async" />
+              <img src={art("instant-prizes.png")} alt="A purple ticket with a white star and a scratch panel, on gold coins and banknotes" width={1200} height={658} loading="lazy" decoding="async" />
             </span>
             <p className="instant-how">
               Winning numbers were published on-chain before sales opened and can’t change. Your ticket numbers are assigned at random by ORAO when you reveal,

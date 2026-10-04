@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Logo } from "./Logo";
 import { WalletButton } from "./WalletButton";
 
 /**
@@ -19,24 +20,9 @@ export function DevnetBar() {
   );
 }
 
-/** The DrawSol mark: a ticket with a notch and one accent bar. */
-export function Mark({ size = 28 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true" focusable="false">
-      <rect width="28" height="28" rx="7" fill="#0B1220" />
-      <path d="M7 8h14a1.5 1.5 0 0 1 1.5 1.5v2.6a2 2 0 0 0 0 3.8v2.6A1.5 1.5 0 0 1 21 20H7a1.5 1.5 0 0 1-1.5-1.5v-2.6a2 2 0 0 0 0-3.8V9.5A1.5 1.5 0 0 1 7 8z" fill="#fff" />
-      <path d="M10 14h8" stroke="#15803D" strokeWidth="2.4" strokeLinecap="round" />
-    </svg>
-  );
-}
-
+/** The logo (components/Logo.tsx) as the home link. */
 export function Wordmark({ away = false }: { away?: boolean }) {
-  const inner = (
-    <>
-      <Mark />
-      <span className="brand-word">DrawSol</span>
-    </>
-  );
+  const inner = <Logo size={30} />;
   return away ? (
     <Link href="/" className="brand" aria-label="DrawSol, home">
       {inner}
